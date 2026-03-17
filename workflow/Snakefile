@@ -1,0 +1,107 @@
+"""
+Visium HD end-to-end Snakemake pipeline
+========================================
+    spaceranger_count
+         ↓
+    preprocess_umap  (load, QC, normalise, PCA, Harmony, UMAP, all Leiden)
+         ↓                  ↘ copies hires image for QuPath
+    leiden_analysis  (parallelised plots per sample × resolution)
+         ↓
+    pseudobulk_de  /  neighbourhood_analysis  (conditional on annotations)
+"""
+
+import os
+import sys
+import numpy as np
+import pandas as pd
+from snakemake.utils import validate, min_version
+
+min_version("8.0")
+
+configfile: "config.yaml"
+validate(config, schema="schemas/config.schema.yaml")
+
+ANALYSIS   = config.get("analysis", {})
+LOGDIR     = config["logdir"]
+OUTDIR_SR  = config["spaceranger_processing_outdir"]
+OUTDIR_PP  = config["post_processing_outdir"]
+GEOJ_DIR   = config["geojson_path"]
+
+samples_df = (
+    pd.read_csv(config["samples"])
+    .fillna("")
+    .set_index("sample_id", drop=False)
+)
+validate(samples_df, schema="schemas/samples.schema.yaml")
+
+SAMPLES    = samples_df.to_dict(orient="index")
+SAMPLE_IDS = list(SAMPLES.keys())
+
+RESOLUTIONS = [
+    str(round(r, 1))
+    for r in np.arange(
+        ANALYSIS.get("resolution_scan_min", 0.2),
+        ANALYSIS.get("resolution_scan_max", 0.8),
+        ANALYSIS.get("resolution_scan_step", 0.1),
+    )
+]
+
+def _cluster_annotations_available():
+    path = config.get("cluster_annotations", "")
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        df = pd.read_csv(path, sep="\t", index_col=0)
+        return df.shape[0] > 0 and df.shape[1] > 0 and not df.isna().all().all()
+    except Exception:
+        return False
+
+HAS_CLUSTER_ANNOT = _cluster_annotations_available()
+
+def get_resource(rule_name, key):
+    section = config.get("resources", {})
+    rule_res = section.get(rule_name, section.get("default", {}))
+    if key not in rule_res:
+        sys.exit(f"[config error] Resource '{key}' missing for rule '{rule_name}'.")
+    return rule_res[key]
+
+def fastq_dirs_comma_separated(wc):
+    s = SAMPLES[wc.sample]
+    dirs = [f"{s['fastq_dir']}/fastqs/"]
+    for col in ("resequenced_dir", "new_resequenced_dir", "third_resequencing_dir"):
+        val = s.get(col, "")
+        if val not in ("", "nan"):
+            dirs.append(f"{val}/fastqs/")
+    return ",".join(dirs)
+
+def get_all_targets(wildcards):
+    targets = []
+    for sample in SAMPLE_IDS:
+        targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}.h5ad")
+        targets.append(f"{OUTDIR_PP}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
+        for res in RESOLUTIONS:
+            targets.append(f"{OUTDIR_PP}/{sample}/leiden_resolution_{res}")
+    if HAS_CLUSTER_ANNOT:
+        for sample in SAMPLE_IDS:
+            targets.append(f"{OUTDIR_PP}/{sample}/pseudobulk_de")
+            targets.append(f"{OUTDIR_PP}/{sample}/neighbourhood_analysis")
+    return targets
+
+
+include: "rules/spaceranger.smk"
+include: "rules/preprocess_umap.smk"
+include: "rules/leiden_analysis.smk"
+include: "rules/pseudobulk_de.smk"
+include: "rules/neighbourhood_analysis.smk"
+include: "rules/generate_annotation_template.smk"
+
+
+rule all:
+    input:
+        get_all_targets,
+        f"{OUTDIR_PP}/cluster_annotations_template.tsv",
+
+rule run_downstream:
+    input:
+        expand(f"{OUTDIR_PP}/{{sample}}/pseudobulk_de", sample=SAMPLE_IDS),
+        expand(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis", sample=SAMPLE_IDS),

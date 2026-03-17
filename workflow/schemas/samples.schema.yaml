@@ -1,0 +1,44 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: Schema for the Visium HD pipeline sample sheet
+type: object
+
+properties:
+  sample_id:
+    type: string
+    description: >
+      Unique sample identifier.  Must match the FASTQ file prefix and the
+      image file stem under {fastq_dir}/images/.
+    pattern: "^[A-Za-z0-9_-]+$"
+
+  fastq_dir:
+    type: string
+    description: >
+      Root directory for this sample.  Must contain fastqs/ and images/
+      subdirectories.
+
+  slide:
+    type: string
+    description: Visium HD slide serial number
+
+  area:
+    type: string
+    description: Capture area on the slide (e.g. A1, D1)
+    pattern: "^[A-D]1$"
+
+  resequenced_dir:
+    type: string
+    description: (Optional) additional FASTQ directory from re-sequencing
+
+  new_resequenced_dir:
+    type: string
+    description: (Optional) second re-sequencing directory
+
+  third_resequencing_dir:
+    type: string
+    description: (Optional) third re-sequencing directory
+
+required:
+  - sample_id
+  - fastq_dir
+  - slide
+  - area

@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Visium HD Pipeline – main configuration
+# ═══════════════════════════════════════════════════════════════════════════
+
+samples: "config/samples.csv"
+snakemake_cell_markers: "config/snakemake_cell_markers.tsv"
+probe_set: "/scratch/CBiB/soterino/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv"
+transcriptome: "/mnt/cbib/bank/cellranger/refdata-gex-GRCh38-2024-A"
+
+cluster_annotations: "config/cluster_annotations.tsv"
+
+spaceranger: "/home/soterinosogo/spaceranger-4.0.1/spaceranger"
+
+geojson_path: "/scratch/CBiB/soterino/geojson"
+
+spaceranger_processing_outdir: "/scratch/CBiB/soterino/smk_spaceranger_results"
+post_processing_outdir: "/scratch/CBiB/soterino/smk_visiumhd_results"
+
+logdir: "/scratch/CBiB/soterino/smk_logs"
+
+analysis:
+  min_counts: 1
+  min_cells: 3
+  min_genes: 100
+  n_neighbors: 10
+  n_pcs: 30
+  de_n_genes: 10
+  # Resolution scan — each value becomes a parallel leiden_analysis job
+  resolution_scan_min: 0.6
+  resolution_scan_max: 0.8
+  resolution_scan_step: 0.1
+
+resources:
+  spaceranger_count:
+    mem_mb: 65536
+    runtime: 1200
+    threads: 16
+  preprocess_umap:
+    mem_mb: 32768
+    runtime: 240
+    threads: 8
+  leiden_analysis:
+    mem_mb: 16384
+    runtime: 120
+    threads: 4
+  pseudobulk_de:
+    mem_mb: 16384
+    runtime: 60
+    threads: 4
+  neighbourhood_analysis:
+    mem_mb: 32768
+    runtime: 120
+    threads: 8
+  default:
+    mem_mb: 8192
+    runtime: 60
+    threads: 1
