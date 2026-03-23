@@ -1,0 +1,14 @@
+# Configuration for the Snakemake Workflow Catalog
+# https://snakemake.github.io/snakemake-workflow-catalog
+
+usage:
+  mandatory-flags:
+    desc: >
+      The pipeline uses a SLURM profile for cluster execution.
+      Space Ranger must be installed locally (licence does not permit
+      redistribution).  Configure its path in config.yaml.
+    flags: "--profile profiles/default"
+  software-stack-deployment:
+    conda: true
+    singularity: false
+    singularity+conda: false

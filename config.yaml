@@ -27,8 +27,8 @@ analysis:
   de_n_genes: 10
   # Resolution scan — each value becomes a parallel leiden_analysis job
   resolution_scan_min: 0.6
-  resolution_scan_max: 0.8
-  resolution_scan_step: 0.1
+  resolution_scan_max: 1.2
+  resolution_scan_step: 0.2
 
 resources:
   spaceranger_count:

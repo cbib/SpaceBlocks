@@ -185,7 +185,7 @@ try:
     # ── UMAPs ────────────────────────────────────────────────────────────
     log.info("UMAP plots …")
     sc.pl.umap(adata, color=["leiden"], size=2, wspace=0.25, frameon=False)
-    plt.savefig(os.path.join(umap_dir, f"UMAP_clusters_{sample_id}.png"),
+    plt.savefig(os.path.join(res_dir, f"UMAP_clusters_{sample_id}.png"),
                 dpi=300, bbox_inches="tight")
     plt.close()
 
@@ -217,7 +217,7 @@ try:
     # ── Spatial cluster maps ─────────────────────────────────────────────
     log.info("Spatial plots …")
     sc.pl.spatial(adata, color="leiden", spot_size=20, title="Leiden Clusters", frameon=False)
-    plt.savefig(os.path.join(spatial_dir, f"spatial_all_{sample_id}.png"),
+    plt.savefig(os.path.join(res_dir, f"spatial_all_{sample_id}.png"),
                 dpi=300, bbox_inches="tight")
     plt.close()
 
@@ -254,7 +254,7 @@ try:
         adata, groupby="leiden", standard_scale="var", n_genes=DE_N_GENES,
         swap_axes=True, dendrogram=True,
     )
-    plt.savefig(os.path.join(markers_out_dir, f"top{DE_N_GENES}_dotplot_{sample_id}.png"),
+    plt.savefig(os.path.join(res_dir, f"top{DE_N_GENES}_dotplot_{sample_id}.png"),
                 dpi=300, bbox_inches="tight")
     plt.close()
 
@@ -262,7 +262,7 @@ try:
         adata, n_genes=DE_N_GENES, groupby="leiden", use_raw=False,
         swap_axes=True, dendrogram=True, show_gene_labels=True,
     )
-    plt.savefig(os.path.join(markers_out_dir, f"top{DE_N_GENES}_heatmap_{sample_id}.png"),
+    plt.savefig(os.path.join(res_dir, f"top{DE_N_GENES}_heatmap_{sample_id}.png"),
                 dpi=300, bbox_inches="tight")
     plt.close()
 
@@ -270,7 +270,7 @@ try:
         adata, n_genes=DE_N_GENES, groupby="leiden", use_raw=False,
         swap_axes=True, dendrogram=True,
     )
-    plt.savefig(os.path.join(markers_out_dir, f"top{DE_N_GENES}_matrixplot_{sample_id}.png"),
+    plt.savefig(os.path.join(res_dir, f"top{DE_N_GENES}_matrixplot_{sample_id}.png"),
                 dpi=300, bbox_inches="tight")
     plt.close()
 

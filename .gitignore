@@ -1,0 +1,29 @@
+# Snakemake
+.snakemake/
+*.snakemake.*
+
+# Conda environments (created by --use-conda)
+.snakemake/conda/
+
+# Singularity images (large, user-built)
+*.sif
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+.tests/output/
+
+# Results (these live on scratch, not in the repo)
+# Adjust if you prefer to track them
