@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Snakemake execution profile – SLURM
+# ═══════════════════════════════════════════════════════════════════════════
+# Invoke with:  snakemake --profile profiles/default
+
+executor: slurm
+jobs: 30
+
+# Robustness
+keep-going: true
+rerun-incomplete: true
+latency-wait: 60            # seconds to wait for NFS-lagged output files
+
+# Scheduling
+scheduler: greedy
+
+# Software deployment
+use-conda: true
+
+# Verbosity – useful for debugging
+printshellcmds: true
+
+# Global resource caps (shared across all concurrent jobs)
+resources:
+  mem_mb: 500000
+  cpus: 100

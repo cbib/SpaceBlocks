@@ -1,0 +1,50 @@
+samples: "config/samples.csv"
+snakemake_cell_markers: "config/snakemake_cell_markers.tsv"
+probe_set: "/tmp/test_probe_set.csv"
+transcriptome: "/tmp/test_transcriptome"
+spaceranger: "/tmp/test_spaceranger"
+geojson_path: "/tmp/test_geojson"
+cluster_annotations: ""
+spaceranger_processing_outdir: "/tmp/test_sr_output"
+post_processing_outdir: "/tmp/test_pp_output"
+logdir: "/tmp/test_logs"
+
+analysis:
+  min_counts: 1
+  min_cells: 3
+  min_genes: 100
+  n_top_genes: 5000
+  n_neighbors: 10
+  n_pcs: 30
+  leiden_resolution: 0.6
+  resolution_scan_min: 0.2
+  resolution_scan_max: 0.8
+  resolution_scan_step: 0.1
+  mpp: 0.5
+  de_n_genes: 10
+
+resources:
+  spaceranger_count:
+    mem_mb: 4096
+    runtime: 10
+    threads: 2
+  generate_qupath_tiff:
+    mem_mb: 4096
+    runtime: 10
+    threads: 2
+  post_processing:
+    mem_mb: 4096
+    runtime: 10
+    threads: 2
+  pseudobulk_de:
+    mem_mb: 4096
+    runtime: 10
+    threads: 2
+  neighbourhood_analysis:
+    mem_mb: 4096
+    runtime: 10
+    threads: 2
+  default:
+    mem_mb: 2048
+    runtime: 5
+    threads: 1

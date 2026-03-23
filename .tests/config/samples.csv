@@ -1,0 +1,2 @@
+sample_id,fastq_dir,slide,area,resequenced_dir,new_resequenced_dir,third_resequencing_dir
+test_sample,/tmp/test_fastqs,H1-TEST123,A1,,,
