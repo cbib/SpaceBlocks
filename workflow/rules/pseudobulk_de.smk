@@ -1,26 +1,22 @@
 rule pseudobulk_de:
     """
-    Pseudobulk differential expression per cell type and region.
+    Pseudobulk DE per cell type and region, run for both annotation types.
 
-    Requires a user-provided cluster annotation TSV mapping Leiden clusters
-    to cell-type labels.  Aggregates raw counts per cell_type × sample
-    (and × region_annotation if available), then runs pyDESeq2.
-
-    This rule only executes if the annotation file exists and is non-empty;
-    the input function in the Snakefile handles this gating.
+    The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation',
+    corresponding to obs columns 'cell_type_tsv' and 'cell_type_refined'.
     """
     input:
-        adata=f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}.h5ad",
-        cluster_annotations=config.get("cluster_annotations", ""),
+        adata=f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}_annotated.h5ad",
     output:
-        results_dir=directory(f"{OUTDIR_PP}/{{sample}}/pseudobulk_de"),
+        results_dir=directory(f"{OUTDIR_PP}/{{sample}}/pseudobulk_de/{{annot_type}}"),
     params:
         sample_id=lambda wc: wc.sample,
+        annot_type=lambda wc: wc.annot_type,
     log:
-        out=f"{LOGDIR}/pseudobulk_de/{{sample}}.out",
-        err=f"{LOGDIR}/pseudobulk_de/{{sample}}.err",
+        out=f"{LOGDIR}/pseudobulk_de/{{sample}}_{{annot_type}}.out",
+        err=f"{LOGDIR}/pseudobulk_de/{{sample}}_{{annot_type}}.err",
     benchmark:
-        f"{LOGDIR}/benchmarks/pseudobulk_de/{{sample}}.tsv"
+        f"{LOGDIR}/benchmarks/pseudobulk_de/{{sample}}_{{annot_type}}.tsv"
     conda:
         "../envs/visiumhd.yaml"
     threads:

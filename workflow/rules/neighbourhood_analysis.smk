@@ -1,23 +1,21 @@
 rule neighbourhood_analysis:
     """
-    Spatial neighbourhood analysis using squidpy.
+    Spatial neighbourhood analysis, run for both annotation types.
 
-    Computes neighbourhood enrichment and co-occurrence scores based on
-    cell-type annotations.  Requires the same cluster annotation TSV
-    as the pseudobulk_de rule.
+    The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation'.
     """
     input:
-        adata=f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}.h5ad",
-        cluster_annotations=config.get("cluster_annotations", ""),
+        adata=f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}_annotated.h5ad",
     output:
-        results_dir=directory(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis"),
+        results_dir=directory(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis/{{annot_type}}"),
     params:
         sample_id=lambda wc: wc.sample,
+        annot_type=lambda wc: wc.annot_type,
     log:
-        out=f"{LOGDIR}/neighbourhood_analysis/{{sample}}.out",
-        err=f"{LOGDIR}/neighbourhood_analysis/{{sample}}.err",
+        out=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.out",
+        err=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.err",
     benchmark:
-        f"{LOGDIR}/benchmarks/neighbourhood_analysis/{{sample}}.tsv"
+        f"{LOGDIR}/benchmarks/neighbourhood_analysis/{{sample}}_{{annot_type}}.tsv"
     conda:
         "../envs/visiumhd.yaml"
     threads:

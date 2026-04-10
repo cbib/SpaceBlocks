@@ -3,11 +3,14 @@ Visium HD end-to-end Snakemake pipeline
 ========================================
     spaceranger_count
          ↓
-    preprocess_umap  (load, QC, normalise, PCA, Harmony, UMAP, all Leiden)
-         ↓                  ↘ copies hires image for QuPath
-    leiden_analysis  (parallelised plots per sample × resolution)
+    preprocess_umap → leiden_analysis (per sample × resolution)
          ↓
-    pseudobulk_de  /  neighbourhood_analysis  (conditional on annotations)
+    annotate_cells (TSV + marker refinement)
+         ↓                    ↓
+    pseudobulk_de         neighbourhood_analysis
+    (per annot_type)      (per annot_type)
+         ↓
+    integrate_samples (concat, Harmony, geosketch)
 """
 
 import os
@@ -41,10 +44,13 @@ RESOLUTIONS = [
     str(round(r, 1))
     for r in np.arange(
         ANALYSIS.get("resolution_scan_min", 0.2),
-        ANALYSIS.get("resolution_scan_max", 0.8),
+        ANALYSIS.get("resolution_scan_max", 1.0) + ANALYSIS.get("resolution_scan_step", 0.1) / 2,
         ANALYSIS.get("resolution_scan_step", 0.1),
     )
 ]
+
+ANNOT_TYPES = ["tsv_annotation", "refined_annotation"]
+
 
 def _cluster_annotations_available():
     path = config.get("cluster_annotations", "")
@@ -57,6 +63,7 @@ def _cluster_annotations_available():
         return False
 
 HAS_CLUSTER_ANNOT = _cluster_annotations_available()
+HAS_INGEST_REF = bool(config.get("ingest_ref", ""))
 
 def get_resource(rule_name, key):
     section = config.get("resources", {})
@@ -77,23 +84,42 @@ def fastq_dirs_comma_separated(wc):
 def get_all_targets(wildcards):
     targets = []
     for sample in SAMPLE_IDS:
+        # Core
         targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}.h5ad")
         targets.append(f"{OUTDIR_PP}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
+        # Per-resolution Leiden plots
         for res in RESOLUTIONS:
             targets.append(f"{OUTDIR_PP}/{sample}/leiden_resolution_{res}")
+    # Conditional for reference ingestion
+    if HAS_INGEST_REF:
+        for sample in SAMPLE_IDS:
+            targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}_ingested.h5ad")
+    # Conditional on cluster annotations
     if HAS_CLUSTER_ANNOT:
         for sample in SAMPLE_IDS:
-            targets.append(f"{OUTDIR_PP}/{sample}/pseudobulk_de")
-            targets.append(f"{OUTDIR_PP}/{sample}/neighbourhood_analysis")
+            # Annotated object
+            targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}_annotated.h5ad")
+        #     # Per-annotation-type downstream
+        #     for at in ANNOT_TYPES:
+        #         targets.append(f"{OUTDIR_PP}/{sample}/pseudobulk_de/{at}")
+        #         targets.append(f"{OUTDIR_PP}/{sample}/neighbourhood_analysis/{at}")
+        # # Integration
+        # targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
+        # targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
+        # targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
     return targets
 
 
+# ── Include rules ────────────────────────────────────────────────────────────
 include: "rules/spaceranger.smk"
 include: "rules/preprocess_umap.smk"
 include: "rules/leiden_analysis.smk"
-include: "rules/pseudobulk_de.smk"
-include: "rules/neighbourhood_analysis.smk"
-include: "rules/generate_annotation_template.smk"
+include: "rules/annotate_cells.smk"
+include: "rules/ingest_ref.smk"
+# include: "rules/pseudobulk_de.smk"
+# include: "rules/neighbourhood_analysis.smk"
+# include: "rules/integrate_samples.smk"
+# include: "rules/generate_annotation_template.smk"
 
 
 rule all:
@@ -102,6 +128,11 @@ rule all:
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
 
 rule run_downstream:
+    """Run annotation + DE + neighbourhood + integration."""
     input:
-        expand(f"{OUTDIR_PP}/{{sample}}/pseudobulk_de", sample=SAMPLE_IDS),
-        expand(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis", sample=SAMPLE_IDS),
+        expand(f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}_annotated.h5ad", sample=SAMPLE_IDS),
+        # expand(f"{OUTDIR_PP}/{{sample}}/pseudobulk_de/{{at}}", sample=SAMPLE_IDS, at=ANNOT_TYPES),
+        # expand(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis/{{at}}", sample=SAMPLE_IDS, at=ANNOT_TYPES),
+        # f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
+        # f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
+        # f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",

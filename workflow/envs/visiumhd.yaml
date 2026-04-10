@@ -40,3 +40,4 @@ dependencies:
   - pip:
       - pyclustree>=0.4
       - pydeseq2>=0.4
+      - geosketch>=1.3
