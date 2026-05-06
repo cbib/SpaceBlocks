@@ -30,8 +30,8 @@ analysis:
   n_pcs: 30
   de_n_genes: 10
   resolution_scan_min: 0.6
-  resolution_scan_max: 1.0            # inclusive upper bound (values > 1.0 are valid)
-  resolution_scan_step: 0.1
+  resolution_scan_max: 0.8            # inclusive upper bound (values > 1.0 are valid)
+  resolution_scan_step: 0.2
   # Annotation refinement
   marker_refinement_threshold: 0.5   # normalised expression cutoff
   min_markers_expressed: 2

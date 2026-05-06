@@ -281,15 +281,16 @@ try:
     gc.collect()
 
     # ── 4. QC ────────────────────────────────────────────────────────────
+    adata.var["mt"] = adata.var_names.str.startswith("MT-")
+    adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
+    sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "hb"], inplace=True, log1p=False)
+
     log.info("QC: min_counts=%d, min_cells=%d, min_genes=%d",
              MIN_COUNTS, MIN_CELLS, MIN_GENES)
     sc.pp.filter_cells(adata, min_counts=MIN_COUNTS)
     sc.pp.filter_genes(adata, min_cells=MIN_CELLS)
     sc.pp.filter_cells(adata, min_genes=MIN_GENES)
 
-    adata.var["mt"] = adata.var_names.str.startswith("MT-")
-    adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
-    sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "hb"], inplace=True, log1p=False)
     log.info("After QC: %d cells, %d genes", adata.n_obs, adata.n_vars)
 
     # ── 5. QuPath region annotations (optional) ─────────────────────────
@@ -350,10 +351,6 @@ try:
     log.info("PCA (all genes) → Harmony → UMAP …")
     sc.pp.pca(adata, use_highly_variable=False)
     adata.obsm["X_pca_original"] = adata.obsm["X_pca"].copy()
-
-    sc.external.pp.harmony_integrate(adata, key="sample")
-    adata.obsm["X_pca"] = adata.obsm["X_pca_harmony"]
-
     sc.pp.neighbors(adata, n_neighbors=N_NEIGHBORS)
     sc.tl.umap(adata)
 

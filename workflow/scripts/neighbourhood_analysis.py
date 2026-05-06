@@ -95,11 +95,67 @@ try:
             os.path.join(results_dir, f"nhood_zscore_{sample_id}.tsv"), sep="\t"
         )
 
+    # ── Co-occurrence ────────────────────────────────────────────────────
     sq.gr.co_occurrence(adata, cluster_key="cell_type")
-    sq.pl.co_occurrence(adata, cluster_key="cell_type", figsize=(10, 6))
-    plt.savefig(os.path.join(results_dir, f"co_occurrence_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
-    plt.close()
+    n_types = adata.obs["cell_type"].nunique()
+    # ~2.5 inches per cell type, capped for readability
+    fig_width = min(max(n_types * 2.5, 10), 60)
+    fig_height = max(4, n_types * 0.6)
+
+    sq.pl.co_occurrence(
+        adata,
+        cluster_key="cell_type",
+        figsize=(fig_width, fig_height),
+    )
+
+    fig = plt.gcf()
+    axes = fig.get_axes()
+
+    seen_labels = set()
+    for i, ax in enumerate(axes):
+        # Remove duplicate legends — keep only the last non-empty one
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.remove()
+
+        # Rotate x-tick labels to prevent overlap
+        ax.tick_params(axis="x", labelrotation=45)
+        ax.tick_params(axis="y", labelsize=7)
+
+        # Only show y-axis label on leftmost plots
+        if i % n_types != 0:
+            ax.set_ylabel("")
+
+    # Collect legend handles from the last axis that has them
+    handles, labels = [], []
+    for ax in reversed(axes):
+        h, l = ax.get_legend_handles_labels()
+        if h:
+            handles, labels = h, l
+            break
+
+    # Deduplicate legend entries
+    unique = dict(zip(labels, handles))
+    if unique:
+        fig.legend(
+            unique.values(),
+            unique.keys(),
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.12),
+            ncol=min(len(unique), 6),
+            frameon=True,
+            title="Cell type",
+            fontsize=8,
+            title_fontsize=9,
+        )
+
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(results_dir, f"co_occurrence_{sample_id}.png"),
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close(fig)
 
     # Per-region analysis
     has_regions = (
