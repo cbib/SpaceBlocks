@@ -5,17 +5,20 @@ Visium HD end-to-end Snakemake pipeline
          ↓
     preprocess_umap → leiden_analysis (per sample × resolution)
          ↓
+    ingest_ref (optional, if reference h5ad configured)
+         ↓
     annotate_cells (TSV + marker refinement)
          ↓                    ↓
     pseudobulk_de         neighbourhood_analysis
-    (per annot_type)      (per annot_type)
+    (on concatenated,     (per sample × annot_type)
+     per annot_type
+     × analysis_level)
          ↓
     integrate_samples (concat, Harmony, geosketch)
 """
 
 import os
 import sys
-import numpy as np
 import pandas as pd
 from snakemake.utils import validate, min_version
 
@@ -40,16 +43,37 @@ validate(samples_df, schema="schemas/samples.schema.yaml")
 SAMPLES    = samples_df.to_dict(orient="index")
 SAMPLE_IDS = list(SAMPLES.keys())
 
+def _resolution_range(rmin, rmax, step):
+    n = round((rmax - rmin) / step)
+    return [round(rmin + i * step, 10) for i in range(n + 1)]
+
 RESOLUTIONS = [
-    str(round(r, 1))
-    for r in np.arange(
+    str(r)
+    for r in _resolution_range(
         ANALYSIS.get("resolution_scan_min", 0.2),
-        ANALYSIS.get("resolution_scan_max", 1.0) + ANALYSIS.get("resolution_scan_step", 0.1) / 2,
-        ANALYSIS.get("resolution_scan_step", 0.1),
+        ANALYSIS.get("resolution_scan_max", 1.0),
+        ANALYSIS.get("resolution_scan_step", 0.2),
     )
 ]
 
 ANNOT_TYPES = ["tsv_annotation", "refined_annotation"]
+ANALYSIS_LEVELS = ["by_region", "by_celltype_region"]
+# Future: append "by_niche_region" once niche identification is added
+
+
+def _cluster_annotations_available():
+    path = config.get("cluster_annotations", "")
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        df = pd.read_csv(path, sep="\t", index_col=0)
+        return df.shape[0] > 0 and df.shape[1] > 0 and not df.isna().all().all()
+    except Exception:
+        return False
+
+ANNOT_TYPES = ["tsv_annotation", "refined_annotation"]
+ANALYSIS_LEVELS = ["by_region", "by_celltype_region"]
+# Future: append "by_niche_region" once niche identification is added
 
 
 def _cluster_annotations_available():
@@ -90,23 +114,27 @@ def get_all_targets(wildcards):
         # Per-resolution Leiden plots
         for res in RESOLUTIONS:
             targets.append(f"{OUTDIR_PP}/{sample}/leiden_resolution_{res}")
-    # Conditional for reference ingestion
-    if HAS_INGEST_REF:
-        for sample in SAMPLE_IDS:
-            targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}_ingested.h5ad")
     # Conditional on cluster annotations
     if HAS_CLUSTER_ANNOT:
+        # Ingest (optional)
+        if HAS_INGEST_REF:
+            for sample in SAMPLE_IDS:
+                targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}_ingested.h5ad")
+        # Annotated objects
         for sample in SAMPLE_IDS:
-            # Annotated object
             targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}_annotated.h5ad")
-        #     # Per-annotation-type downstream
-        #     for at in ANNOT_TYPES:
-        #         targets.append(f"{OUTDIR_PP}/{sample}/pseudobulk_de/{at}")
-        #         targets.append(f"{OUTDIR_PP}/{sample}/neighbourhood_analysis/{at}")
-        # # Integration
-        # targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
-        # targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
-        # targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
+        # Neighbourhood (per sample × annot_type)
+        for sample in SAMPLE_IDS:
+            for at in ANNOT_TYPES:
+                targets.append(f"{OUTDIR_PP}/{sample}/neighbourhood_analysis/{at}")
+        # Pseudobulk DE (on concatenated, per annot_type × analysis_level)
+        for at in ANNOT_TYPES:
+            for level in ANALYSIS_LEVELS:
+                targets.append(f"{OUTDIR_PP}/pseudobulk_de/{at}/{level}")
+        # Integration
+        targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
+        targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
+        targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
     return targets
 
 
@@ -114,25 +142,30 @@ def get_all_targets(wildcards):
 include: "rules/spaceranger.smk"
 include: "rules/preprocess_umap.smk"
 include: "rules/leiden_analysis.smk"
-include: "rules/annotate_cells.smk"
 include: "rules/ingest_ref.smk"
-# include: "rules/pseudobulk_de.smk"
-# include: "rules/neighbourhood_analysis.smk"
-# include: "rules/integrate_samples.smk"
-# include: "rules/generate_annotation_template.smk"
+include: "rules/annotate_cells.smk"
+include: "rules/pseudobulk_de.smk"
+include: "rules/neighbourhood_analysis.smk"
+include: "rules/integrate_samples.smk"
+include: "rules/generate_annotation_template.smk"
 
 
+# ── Targets ──────────────────────────────────────────────────────────────────
 rule all:
     input:
         get_all_targets,
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
 
+
 rule run_downstream:
     """Run annotation + DE + neighbourhood + integration."""
     input:
         expand(f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}_annotated.h5ad", sample=SAMPLE_IDS),
-        # expand(f"{OUTDIR_PP}/{{sample}}/pseudobulk_de/{{at}}", sample=SAMPLE_IDS, at=ANNOT_TYPES),
-        # expand(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis/{{at}}", sample=SAMPLE_IDS, at=ANNOT_TYPES),
-        # f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
-        # f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
-        # f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",
+        expand(f"{OUTDIR_PP}/pseudobulk_de/{{at}}/{{level}}",
+               at=ANNOT_TYPES, level=ANALYSIS_LEVELS),
+        expand(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis/{{at}}",
+               sample=SAMPLE_IDS, at=ANNOT_TYPES),
+        f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
+        f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
+        f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",
+
