@@ -1,18 +1,16 @@
 """
-pseudobulk_de.py – Multi-level pseudobulk differential expression
-====================================================================
-Aggregates single cells into pseudobulk profiles (one per sample × group)
-and runs pyDESeq2 for DE analysis.
+pseudobulk_de.py – Multi-level pseudobulk DE using decoupler + pyDESeq2
+=========================================================================
+Uses decoupler.get_pseudobulk for memory-efficient aggregation and
+filter_by_expr for gene filtering (edgeR-style).
 
-Analysis levels:
-- by_region:           aggregate per sample × region, test region effect
-- by_celltype_region:  aggregate per sample × region × cell_type,
-                       test region effect within each cell type
-- by_niche_region:     (future) same, using niche labels
-
-For each level, two test types:
-- Holistic LRT:  does the factor explain variance? (full vs reduced model)
-- Pairwise Wald: all unique region pairs, BH-corrected
+Improvements over previous version:
+- Memory-efficient: decoupler aggregates without densifying full matrix
+- Saves pseudobulk count matrices before DE for further exploration
+- Filters 'nan' levels from all grouping categories
+- Results ordered by abs(log2FoldChange) descending
+- de_n_genes used for top-gene heatmaps per contrast
+- decoupler volcano plots
 """
 
 import itertools
@@ -29,9 +27,9 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 from scipy import sparse
-from pydeseq2.dds import DeseqDataSet
+import decoupler as dc
+from pydeseq2.dds import DeseqDataSet, DefaultInference
 from pydeseq2.ds import DeseqStats
-from statsmodels.stats.multitest import multipletests
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -53,8 +51,6 @@ logging.basicConfig(
 log = logging.getLogger("pseudobulk_de")
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 ANNOT_COL_MAP = {
     "tsv_annotation": "cell_type_tsv",
     "refined_annotation": "cell_type_refined",
@@ -62,249 +58,156 @@ ANNOT_COL_MAP = {
 }
 
 
-def get_raw_counts(adata):
-    """Extract raw integer counts, preferring the raw_counts layer."""
-    if "raw_counts" in adata.layers:
-        X = adata.layers["raw_counts"]
-    else:
-        X = adata.X
-    if sparse.issparse(X):
-        X = X.toarray()
-    return np.round(X).astype(int)
-
-
-def aggregate_pseudobulk(adata, groupby_cols):
-    """
-    Sum raw counts per group defined by groupby_cols.
-    Returns (counts_df, metadata_df) where each row is one pseudobulk sample.
-    """
-    raw = get_raw_counts(adata)
-
-    # Build group keys
-    group_key = adata.obs[groupby_cols].astype(str).agg("__".join, axis=1)
-    unique_groups = group_key.unique()
-
-    counts_list = []
-    meta_list = []
-
-    for grp in unique_groups:
-        mask = group_key == grp
-        n_cells = mask.sum()
-        summed = raw[mask.values].sum(axis=0)
-        counts_list.append(summed)
-        parts = dict(zip(groupby_cols, grp.split("__")))
-        parts["n_cells"] = n_cells
-        parts["pseudobulk_id"] = grp
-        meta_list.append(parts)
-
-    counts_df = pd.DataFrame(
-        np.array(counts_list),
-        columns=adata.var_names,
-        index=[m["pseudobulk_id"] for m in meta_list],
+def _clean_nan_levels(adata, col):
+    """Remove observations where col is NaN, 'nan', or empty string."""
+    mask = (
+        adata.obs[col].notna()
+        & (adata.obs[col].astype(str) != "nan")
+        & (adata.obs[col].astype(str) != "")
     )
-    metadata_df = pd.DataFrame(meta_list).set_index("pseudobulk_id")
-
-    return counts_df, metadata_df
-
-
-def filter_pseudobulk(counts_df, metadata_df, min_cells, min_replicates,
-                      condition_col):
-    """
-    Filter pseudobulk samples:
-    - Remove samples with fewer than min_cells
-    - Remove conditions with fewer than min_replicates samples
-    - Remove genes with zero total counts
-    """
-    # Min cells
-    keep = metadata_df["n_cells"] >= min_cells
-    if (~keep).sum() > 0:
-        log.info("    Dropping %d pseudobulk samples with < %d cells",
-                 (~keep).sum(), min_cells)
-    counts_df = counts_df[keep]
-    metadata_df = metadata_df[keep]
-
-    # Min replicates per condition
-    cond_counts = metadata_df[condition_col].value_counts()
-    valid_conds = cond_counts[cond_counts >= min_replicates].index
-    keep = metadata_df[condition_col].isin(valid_conds)
-    if (~keep).sum() > 0:
-        dropped_conds = set(metadata_df[condition_col]) - set(valid_conds)
-        log.info("    Dropping conditions with < %d replicates: %s",
-                 min_replicates, dropped_conds)
-    counts_df = counts_df[keep]
-    metadata_df = metadata_df[keep]
-
-    # Remove zero-count genes
-    nonzero = counts_df.sum(axis=0) > 0
-    counts_df = counts_df.loc[:, nonzero]
-
-    return counts_df, metadata_df
+    if (~mask).sum() > 0:
+        log.info("    Filtering %d 'nan' entries from '%s'", (~mask).sum(), col)
+    return adata[mask].copy()
 
 
-def run_holistic_lrt(counts_df, metadata_df, condition_col, out_dir):
-    """
-    Likelihood ratio test: full model (~ condition) vs reduced (~ 1).
-    Tests whether condition has ANY effect on gene expression.
-    """
-    log.info("    Running holistic LRT …")
+def _save_pseudobulk_matrix(pdata, out_dir, prefix):
+    """Save the pseudobulk count matrix and metadata as TSVs."""
+    if sparse.issparse(pdata.X):
+        counts = pd.DataFrame(pdata.X.toarray(), index=pdata.obs_names,
+                              columns=pdata.var_names)
+    else:
+        counts = pd.DataFrame(pdata.X, index=pdata.obs_names,
+                              columns=pdata.var_names)
+    counts.to_csv(os.path.join(out_dir, f"{prefix}_counts.tsv"), sep="\t")
+    pdata.obs.to_csv(os.path.join(out_dir, f"{prefix}_metadata.tsv"), sep="\t")
+    log.info("    Saved pseudobulk matrix: %s (%d samples × %d genes)",
+             prefix, pdata.n_obs, pdata.n_vars)
+
+
+def _run_deseq2_contrast(pdata, condition_col, cond_a, cond_b, out_dir,
+                         contrast_name, de_n_genes):
+    """Run pyDESeq2 for one pairwise contrast, save results + plots."""
+    log.info("      Contrast: %s", contrast_name)
+
     try:
+        inference = DefaultInference(n_cpus=1)
         dds = DeseqDataSet(
-            counts=counts_df,
-            metadata=metadata_df,
-            design=f"~ {condition_col}",
+            adata=pdata,
+            design_factors=condition_col,
+            ref_level=[condition_col, cond_b],
             refit_cooks=True,
+            inference=inference,
         )
         dds.deseq2()
 
-        # LRT
-        stat_res = DeseqStats(dds, contrast=None)
+        stat_res = DeseqStats(dds, contrast=[condition_col, cond_a, cond_b],
+                              inference=inference)
         stat_res.summary()
         results = stat_res.results_df.copy()
-        results = results.sort_values("padj")
-        results.to_csv(os.path.join(out_dir, "holistic_LRT.tsv"), sep="\t")
+
+        # Order by absolute log2FoldChange (descending)
+        results = results.reindex(
+            results["log2FoldChange"].abs().sort_values(ascending=False).index
+        )
+
+        # Save full results
+        results.to_csv(os.path.join(out_dir, f"{contrast_name}.tsv"), sep="\t")
 
         n_sig = (results["padj"] < 0.05).sum()
-        log.info("    LRT: %d significant genes (padj < 0.05)", n_sig)
+        n_up = ((results["padj"] < 0.05) & (results["log2FoldChange"] > 0)).sum()
+        n_down = ((results["padj"] < 0.05) & (results["log2FoldChange"] < 0)).sum()
+        log.info("      %d sig (↑%d, ↓%d)", n_sig, n_up, n_down)
 
+        # Volcano plot using decoupler
+        try:
+            logFCs = results[["log2FoldChange"]].T.rename(
+                index={"log2FoldChange": contrast_name}
+            )
+            pvals = results[["padj"]].T.rename(index={"padj": contrast_name})
+            fig, ax = plt.subplots(figsize=(8, 6))
+            dc.plot_volcano(logFCs, pvals, contrast_name, top=10,
+                            sign_thr=0.05, lFCs_thr=0.5, ax=ax)
+            plt.tight_layout()
+            safe = contrast_name.replace(" ", "_")
+            plt.savefig(os.path.join(out_dir, f"volcano_{safe}.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close()
+        except Exception as e:
+            log.warning("      Volcano plot failed: %s", e)
+
+        # Top-N DE gene heatmap (using pseudobulk expression)
+        try:
+            sig_genes = results[results["padj"] < 0.05]
+            top_up = sig_genes[sig_genes["log2FoldChange"] > 0].head(de_n_genes).index.tolist()
+            top_down = sig_genes[sig_genes["log2FoldChange"] < 0].head(de_n_genes).index.tolist()
+            top_genes = top_up + top_down
+            top_genes = [g for g in top_genes if g in pdata.var_names]
+
+            if len(top_genes) >= 2:
+                # Normalise pseudobulk for plotting
+                pdata_norm = pdata.copy()
+                sc.pp.normalize_total(pdata_norm, target_sum=1e4)
+                sc.pp.log1p(pdata_norm)
+
+                sc.pl.heatmap(
+                    pdata_norm[:, top_genes],
+                    var_names=top_genes,
+                    groupby=condition_col,
+                    swap_axes=True,
+                    show_gene_labels=True,
+                    figsize=(max(6, len(pdata_norm.obs_names) * 0.8), max(4, len(top_genes) * 0.4)),
+                )
+                plt.savefig(os.path.join(out_dir, f"heatmap_top{de_n_genes}_{safe}.png"),
+                            dpi=300, bbox_inches="tight")
+                plt.close()
+        except Exception as e:
+            log.warning("      Heatmap failed: %s", e)
+
+        return {
+            "contrast": contrast_name,
+            "n_tested": len(results),
+            "n_significant": n_sig,
+            "n_up": n_up,
+            "n_down": n_down,
+        }
+
+    except Exception as e:
+        log.warning("      pyDESeq2 failed: %s", e)
+        return {
+            "contrast": contrast_name,
+            "n_tested": 0,
+            "n_significant": 0,
+            "n_up": 0,
+            "n_down": 0,
+            "error": str(e),
+        }
+
+
+def _run_holistic_lrt(pdata, condition_col, out_dir):
+    """LRT: full model (~ condition) vs reduced (~ 1)."""
+    log.info("    Holistic LRT …")
+    try:
+        inference = DefaultInference(n_cpus=1)
+        dds = DeseqDataSet(
+            adata=pdata,
+            design_factors=condition_col,
+            refit_cooks=True,
+            inference=inference,
+        )
+        dds.deseq2()
+        stat_res = DeseqStats(dds, inference=inference)
+        stat_res.summary()
+        results = stat_res.results_df.copy()
+        results = results.reindex(
+            results["log2FoldChange"].abs().sort_values(ascending=False).index
+        )
+        results.to_csv(os.path.join(out_dir, "holistic_LRT.tsv"), sep="\t")
+        n_sig = (results["padj"] < 0.05).sum()
+        log.info("    LRT: %d significant genes (padj < 0.05)", n_sig)
         return results
     except Exception as e:
         log.warning("    LRT failed: %s", e)
         return None
-
-
-def run_pairwise_wald(counts_df, metadata_df, condition_col, out_dir,
-                      de_n_genes):
-    """
-    Run Wald test for all pairwise contrasts of the condition factor.
-    Each contrast is BH-corrected independently. A summary across all
-    contrasts is also saved.
-    """
-    pairwise_dir = os.path.join(out_dir, "pairwise")
-    os.makedirs(pairwise_dir, exist_ok=True)
-
-    conditions = sorted(metadata_df[condition_col].unique())
-    pairs = list(itertools.combinations(conditions, 2))
-    log.info("    Running %d pairwise Wald tests: %s", len(pairs), pairs)
-
-    try:
-        dds = DeseqDataSet(
-            counts=counts_df,
-            metadata=metadata_df,
-            design=f"~ {condition_col}",
-            refit_cooks=True,
-        )
-        dds.deseq2()
-    except Exception as e:
-        log.warning("    pyDESeq2 fitting failed: %s", e)
-        return
-
-    summary_rows = []
-
-    for cond_a, cond_b in pairs:
-        contrast_name = f"{cond_a}_vs_{cond_b}"
-        log.info("      Contrast: %s", contrast_name)
-        try:
-            stat_res = DeseqStats(
-                dds, contrast=[condition_col, cond_a, cond_b]
-            )
-            stat_res.summary()
-            results = stat_res.results_df.copy()
-            results = results.sort_values("padj")
-
-            # Save full results
-            results.to_csv(
-                os.path.join(pairwise_dir, f"{contrast_name}.tsv"), sep="\t"
-            )
-
-            n_sig = (results["padj"] < 0.05).sum()
-            n_up = ((results["padj"] < 0.05) & (results["log2FoldChange"] > 0)).sum()
-            n_down = ((results["padj"] < 0.05) & (results["log2FoldChange"] < 0)).sum()
-            summary_rows.append({
-                "contrast": contrast_name,
-                "n_tested": len(results),
-                "n_significant": n_sig,
-                "n_up": n_up,
-                "n_down": n_down,
-            })
-            log.info("      %d sig (↑%d, ↓%d)", n_sig, n_up, n_down)
-
-            # Volcano plot
-            _volcano_plot(results, contrast_name, pairwise_dir)
-
-            # MA plot
-            _ma_plot(results, contrast_name, pairwise_dir)
-
-        except Exception as e:
-            log.warning("      Contrast %s failed: %s", contrast_name, e)
-            summary_rows.append({
-                "contrast": contrast_name,
-                "n_tested": 0,
-                "n_significant": 0,
-                "n_up": 0,
-                "n_down": 0,
-                "error": str(e),
-            })
-
-    if summary_rows:
-        pd.DataFrame(summary_rows).to_csv(
-            os.path.join(out_dir, "pairwise_summary.tsv"), sep="\t", index=False
-        )
-
-
-def _volcano_plot(results, title, out_dir):
-    """Standard volcano plot: log2FC vs -log10(padj)."""
-    fig, ax = plt.subplots(figsize=(8, 6))
-    r = results.dropna(subset=["padj", "log2FoldChange"])
-    neg_log_p = -np.log10(r["padj"].clip(lower=1e-300))
-
-    sig = r["padj"] < 0.05
-    up = sig & (r["log2FoldChange"] > 1)
-    down = sig & (r["log2FoldChange"] < -1)
-    ns = ~(up | down)
-
-    ax.scatter(r.loc[ns, "log2FoldChange"], neg_log_p[ns],
-               c="#aaaaaa", s=3, alpha=0.5, label="NS")
-    ax.scatter(r.loc[up, "log2FoldChange"], neg_log_p[up],
-               c="#e41a1c", s=5, alpha=0.7, label=f"Up ({up.sum()})")
-    ax.scatter(r.loc[down, "log2FoldChange"], neg_log_p[down],
-               c="#377eb8", s=5, alpha=0.7, label=f"Down ({down.sum()})")
-
-    ax.axhline(-np.log10(0.05), ls="--", c="grey", lw=0.5)
-    ax.axvline(1, ls="--", c="grey", lw=0.5)
-    ax.axvline(-1, ls="--", c="grey", lw=0.5)
-    ax.set_xlabel("log2 Fold Change")
-    ax.set_ylabel("-log10(padj)")
-    ax.set_title(title)
-    ax.legend(fontsize=8)
-    plt.tight_layout()
-    safe = title.replace(" ", "_")
-    plt.savefig(os.path.join(out_dir, f"volcano_{safe}.png"),
-                dpi=300, bbox_inches="tight")
-    plt.close()
-
-
-def _ma_plot(results, title, out_dir):
-    """MA plot: log2FC vs mean expression (baseMean)."""
-    fig, ax = plt.subplots(figsize=(8, 6))
-    r = results.dropna(subset=["padj", "log2FoldChange", "baseMean"])
-    r = r[r["baseMean"] > 0]
-
-    sig = r["padj"] < 0.05
-    ax.scatter(np.log10(r.loc[~sig, "baseMean"]), r.loc[~sig, "log2FoldChange"],
-               c="#aaaaaa", s=3, alpha=0.5, label="NS")
-    ax.scatter(np.log10(r.loc[sig, "baseMean"]), r.loc[sig, "log2FoldChange"],
-               c="#e41a1c", s=5, alpha=0.7, label=f"Sig ({sig.sum()})")
-
-    ax.axhline(0, ls="-", c="black", lw=0.5)
-    ax.set_xlabel("log10(baseMean)")
-    ax.set_ylabel("log2 Fold Change")
-    ax.set_title(title)
-    ax.legend(fontsize=8)
-    plt.tight_layout()
-    safe = title.replace(" ", "_")
-    plt.savefig(os.path.join(out_dir, f"MA_{safe}.png"),
-                dpi=300, bbox_inches="tight")
-    plt.close()
 
 
 # ── Parameters ───────────────────────────────────────────────────────────────
@@ -320,7 +223,8 @@ results_dir    = str(snakemake.output.results_dir)
 try:
     log.info("=" * 70)
     log.info("Pseudobulk DE: annot_type=%s, level=%s", annot_type, analysis_level)
-    log.info("  min_cells=%d, min_replicates=%d", MIN_CELLS, MIN_REPS)
+    log.info("  min_cells=%d, min_replicates=%d, de_n_genes=%d",
+             MIN_CELLS, MIN_REPS, DE_N_GENES)
     log.info("=" * 70)
 
     os.makedirs(results_dir, exist_ok=True)
@@ -328,7 +232,7 @@ try:
     adata = sc.read_h5ad(adata_path)
     log.info("Loaded: %d cells, %d genes", adata.n_obs, adata.n_vars)
 
-    # Determine which cell-type column to use
+    # Determine cell-type column
     cell_type_col = ANNOT_COL_MAP.get(annot_type)
     if cell_type_col and cell_type_col not in adata.obs.columns:
         log.warning("Column '%s' not found. Skipping.", cell_type_col)
@@ -349,13 +253,19 @@ try:
     # Check region annotations
     region_col = "region_annotation"
     if region_col not in adata.obs.columns:
-        log.warning("No region_annotation column. Skipping.")
+        log.warning("No region_annotation. Skipping.")
         Path(os.path.join(results_dir, "SKIPPED_no_regions.txt")).write_text(
             "No region_annotation column.\n"
         )
         sys.exit(0)
 
-    # Filter out Unlabeled/Bubble regions and Unannotated cell types
+    # Clean nan levels from all grouping columns
+    for col in [region_col, sample_col]:
+        adata = _clean_nan_levels(adata, col)
+    if cell_type_col:
+        adata = _clean_nan_levels(adata, cell_type_col)
+
+    # Filter regions
     valid_regions = [r for r in adata.obs[region_col].unique()
                      if r not in ("Unlabeled", "Bubble")]
     if len(valid_regions) < 2:
@@ -366,49 +276,81 @@ try:
         sys.exit(0)
 
     adata = adata[adata.obs[region_col].isin(valid_regions)].copy()
-    log.info("After region filter: %d cells, %d regions: %s",
+    log.info("After filtering: %d cells, %d regions: %s",
              adata.n_obs, len(valid_regions), valid_regions)
+
+    # Ensure raw_counts layer exists
+    if "raw_counts" not in adata.layers:
+        raise ValueError("raw_counts layer missing.")
 
     # ── Dispatch by analysis level ───────────────────────────────────────
     if analysis_level == "by_region":
         log.info("Level: by_region (all cell types pooled)")
-        groupby = [sample_col, region_col]
 
-        counts_df, meta_df = aggregate_pseudobulk(adata, groupby)
-        log.info("  Aggregated: %d pseudobulk samples, %d genes",
-                 len(counts_df), counts_df.shape[1])
-
-        counts_df, meta_df = filter_pseudobulk(
-            counts_df, meta_df, MIN_CELLS, MIN_REPS, region_col
+        # Pseudobulk: one profile per sample × region
+        pdata = dc.get_pseudobulk(
+            adata,
+            sample_col=sample_col,
+            groups_col=region_col,
+            layer="raw_counts",
+            mode="sum",
+            min_cells=MIN_CELLS,
+            min_counts=1000,
         )
-        log.info("  After filtering: %d pseudobulk samples", len(counts_df))
+        log.info("  Pseudobulk: %d samples × %d genes", pdata.n_obs, pdata.n_vars)
 
-        if len(counts_df) < 4 or meta_df[region_col].nunique() < 2:
-            log.warning("  Insufficient data for DE. Skipping.")
+        # Save matrix
+        _save_pseudobulk_matrix(pdata, results_dir, "pseudobulk_by_region")
+
+        # Filter genes (edgeR-style)
+        dc.filter_by_expr(pdata, group=region_col, min_count=10, min_total_count=15)
+        log.info("  After gene filter: %d genes", pdata.n_vars)
+
+        # Check replicates
+        region_counts = pdata.obs[region_col].value_counts()
+        valid_conds = region_counts[region_counts >= MIN_REPS].index
+        if len(valid_conds) < 2:
+            log.warning("  < 2 regions with >= %d replicates. Skipping.", MIN_REPS)
             Path(os.path.join(results_dir, "SKIPPED_insufficient.txt")).write_text(
-                "Insufficient pseudobulk samples.\n"
+                "Insufficient replicates.\n"
             )
             sys.exit(0)
 
-        # Holistic LRT
-        run_holistic_lrt(counts_df, meta_df, region_col, results_dir)
+        pdata = pdata[pdata.obs[region_col].isin(valid_conds)].copy()
 
-        # Pairwise Wald
-        run_pairwise_wald(counts_df, meta_df, region_col, results_dir,
-                          DE_N_GENES)
+        # LRT
+        _run_holistic_lrt(pdata, region_col, results_dir)
+
+        # Pairwise
+        pairwise_dir = os.path.join(results_dir, "pairwise")
+        os.makedirs(pairwise_dir, exist_ok=True)
+        conditions = sorted(valid_conds)
+        summary_rows = []
+        for cond_a, cond_b in itertools.combinations(conditions, 2):
+            contrast_name = f"{cond_a}_vs_{cond_b}"
+            sub = pdata[pdata.obs[region_col].isin([cond_a, cond_b])].copy()
+            row = _run_deseq2_contrast(
+                sub, region_col, cond_a, cond_b,
+                pairwise_dir, contrast_name, DE_N_GENES,
+            )
+            summary_rows.append(row)
+        if summary_rows:
+            pd.DataFrame(summary_rows).to_csv(
+                os.path.join(results_dir, "pairwise_summary.tsv"),
+                sep="\t", index=False,
+            )
 
     elif analysis_level == "by_celltype_region":
         log.info("Level: by_celltype_region")
 
         if cell_type_col is None:
-            log.warning("No cell type column for this annot_type. Skipping.")
+            log.warning("No cell type column. Skipping.")
             sys.exit(0)
 
         # Filter unannotated
         adata = adata[adata.obs[cell_type_col] != "Unannotated"].copy()
-        cell_types = [ct for ct in adata.obs[cell_type_col].unique()
-                      if ct != "Unannotated"]
-        log.info("  Cell types to analyse: %s", cell_types)
+        cell_types = sorted(adata.obs[cell_type_col].unique())
+        log.info("  Cell types: %s", cell_types)
 
         for ct in cell_types:
             safe_ct = ct.replace("/", "_").replace(" ", "_")
@@ -425,32 +367,75 @@ try:
                 )
                 continue
 
-            groupby = [sample_col, region_col]
-            counts_df, meta_df = aggregate_pseudobulk(ct_adata, groupby)
-            counts_df, meta_df = filter_pseudobulk(
-                counts_df, meta_df, MIN_CELLS, MIN_REPS, region_col
-            )
+            # Pseudobulk per sample × region for this cell type
+            try:
+                pdata = dc.get_pseudobulk(
+                    ct_adata,
+                    sample_col=sample_col,
+                    groups_col=region_col,
+                    layer="raw_counts",
+                    mode="sum",
+                    min_cells=MIN_CELLS,
+                    min_counts=1000,
+                )
+            except Exception as e:
+                log.warning("    Pseudobulk aggregation failed: %s", e)
+                continue
 
-            if len(counts_df) < 4 or meta_df[region_col].nunique() < 2:
-                log.warning("    Insufficient pseudobulk samples. Skipping.")
+            if pdata.n_obs < 4:
+                log.warning("    Too few pseudobulk samples (%d). Skipping.", pdata.n_obs)
+                continue
+
+            # Save matrix
+            _save_pseudobulk_matrix(pdata, ct_dir, f"pseudobulk_{safe_ct}")
+
+            # Filter genes
+            try:
+                dc.filter_by_expr(pdata, group=region_col, min_count=10,
+                                  min_total_count=15)
+            except Exception as e:
+                log.warning("    Gene filtering failed: %s", e)
+
+            # Check replicates
+            region_counts = pdata.obs[region_col].value_counts()
+            valid_conds = region_counts[region_counts >= MIN_REPS].index
+            if len(valid_conds) < 2:
+                log.warning("    < 2 regions with >= %d replicates. Skipping.", MIN_REPS)
                 Path(os.path.join(ct_dir, "SKIPPED_insufficient.txt")).write_text(
-                    "Insufficient pseudobulk samples.\n"
+                    "Insufficient replicates.\n"
                 )
                 continue
 
-            log.info("    %d pseudobulk samples, %d regions",
-                     len(counts_df), meta_df[region_col].nunique())
+            pdata = pdata[pdata.obs[region_col].isin(valid_conds)].copy()
+            log.info("    %d pseudobulk samples, %d regions, %d genes",
+                     pdata.n_obs, len(valid_conds), pdata.n_vars)
 
-            run_holistic_lrt(counts_df, meta_df, region_col, ct_dir)
-            run_pairwise_wald(counts_df, meta_df, region_col, ct_dir,
-                              DE_N_GENES)
+            # LRT
+            _run_holistic_lrt(pdata, region_col, ct_dir)
+
+            # Pairwise
+            pairwise_dir = os.path.join(ct_dir, "pairwise")
+            os.makedirs(pairwise_dir, exist_ok=True)
+            conditions = sorted(valid_conds)
+            summary_rows = []
+            for cond_a, cond_b in itertools.combinations(conditions, 2):
+                contrast_name = f"{cond_a}_vs_{cond_b}"
+                sub = pdata[pdata.obs[region_col].isin([cond_a, cond_b])].copy()
+                row = _run_deseq2_contrast(
+                    sub, region_col, cond_a, cond_b,
+                    pairwise_dir, contrast_name, DE_N_GENES,
+                )
+                summary_rows.append(row)
+            if summary_rows:
+                pd.DataFrame(summary_rows).to_csv(
+                    os.path.join(ct_dir, "pairwise_summary.tsv"),
+                    sep="\t", index=False,
+                )
 
     elif analysis_level == "by_niche_region":
-        # Future: same logic as by_celltype_region but using niche labels
-        log.warning("by_niche_region not yet implemented. "
-                     "Run niche identification first.")
+        log.warning("by_niche_region not yet implemented.")
         Path(os.path.join(results_dir, "SKIPPED_niche_not_implemented.txt")).write_text(
-            "Niche identification must run before this analysis.\n"
+            "Niche identification must run first.\n"
         )
 
     else:

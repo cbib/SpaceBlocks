@@ -1,0 +1,23 @@
+name: pseudobulk_de
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  # ── Core ───────────────────────────────────────────────────────────
+  - anndata>=0.10
+  - scanpy>=1.10
+  - numpy>=1.24,<2
+  - scipy>=1.10
+  - pandas>=2.0
+  # ── Plotting ───────────────────────────────────────────────────────
+  - matplotlib-base>=3.7
+  - seaborn>=0.13
+  # ── I/O ────────────────────────────────────────────────────────────
+  - h5py>=3.8
+  - pyarrow>=14.0
+  - pip:
+      # decoupler v1.9.x: dc.get_pseudobulk(), dc.filter_by_expr(), dc.plot_volcano()
+      # v2.0 broke the API (moved to dc.pp.pseudobulk(), dc.pl.volcano())
+      - decoupler>=1.9.2,<2.0
+      - pydeseq2>=0.4

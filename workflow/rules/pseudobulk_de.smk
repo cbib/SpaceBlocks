@@ -27,14 +27,14 @@ rule pseudobulk_de:
         analysis_level=lambda wc: wc.analysis_level,
         min_cells_per_pseudobulk=ANALYSIS.get("min_cells_per_pseudobulk", 10),
         min_replicates=ANALYSIS.get("min_replicates", 3),
-        de_n_genes=ANALYSIS.get("de_n_genes", 10),
+        de_n_genes=ANALYSIS.get("de_n_genes", 25),
     log:
         out=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.out",
         err=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.err",
     benchmark:
         f"{LOGDIR}/benchmarks/pseudobulk_de/{{annot_type}}_{{analysis_level}}.tsv"
     conda:
-        "../envs/visiumhd.yaml"
+        "../envs/pseudobulk_de_env.yaml"
     threads:
         get_resource("pseudobulk_de", "threads")
     resources:
