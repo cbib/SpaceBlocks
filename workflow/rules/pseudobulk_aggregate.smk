@@ -2,14 +2,18 @@ rule pseudobulk_aggregate:
     """
     Aggregate single cells into pseudobulk count matrices using decoupler.
 
-    Produces TSV count matrices and metadata per analysis level,
-    ready to be consumed by the R-based pseudobulk_de rule.
+    Output structure:
+      {annot_type}/{analysis_level}/
+        ├── matrices/     count TSVs
+        ├── metadata/     metadata TSVs
+        ├── plots/        sample-level QC (pseudobulk bar, PCA)
+        └── manifest.tsv
     """
     input:
         adata=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
     output:
         agg_dir=directory(
-            f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/matrices"
+            f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated"
         ),
     wildcard_constraints:
         annot_type="tsv_annotation|refined_annotation|ingest_annotation",

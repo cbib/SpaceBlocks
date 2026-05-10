@@ -64,7 +64,7 @@ resources:
     runtime: 120
     threads: 4
   pseudobulk_aggregate:
-    mem_mb: 64768
+    mem_mb: 124768
     runtime: 60
     threads: 4
   pseudobulk_de:

@@ -1,15 +1,8 @@
 ################################################################################
 ## pseudobulk_de.R – DESeq2 Wald + LRT, EnhancedVolcano, DEGpatterns
 ##
-## Reads pseudobulk count matrices (TSV) produced by pseudobulk_aggregate.py.
-## For each subgroup listed in manifest.tsv:
-##   1. Pairwise Wald tests (all region pairs)
-##   2. Holistic LRT (does region explain variance?)
-##   3. EnhancedVolcano plots per contrast
-##   4. Top-N DE gene heatmaps
-##   5. DEGpatterns gene clustering on significant genes
-##
-## All result tables are ordered by decreasing abs(log2FoldChange).
+## Reads pseudobulk count matrices from aggregated/{matrices,metadata}/.
+## All result tables ordered by decreasing abs(log2FoldChange).
 ################################################################################
 
 suppressPackageStartupMessages({
@@ -29,33 +22,44 @@ de_n_genes     <- as.integer(snakemake@params[["de_n_genes"]])
 padj_thr       <- as.numeric(snakemake@params[["padj_threshold"]])
 lfc_thr        <- as.numeric(snakemake@params[["lfc_threshold"]])
 
-# Redirect logs
+# ── Redirect logs safely ─────────────────────────────────────────────────────
 log_out <- snakemake@log[["out"]]
 log_err <- snakemake@log[["err"]]
-if (!is.null(log_out) && nchar(log_out) > 0) {
+
+if (!is.null(log_out) && nzchar(log_out)) {
   dir.create(dirname(log_out), recursive = TRUE, showWarnings = FALSE)
-  sink(log_out, split = TRUE)
+  log_out_con <- file(log_out, open = "wt")
+  sink(log_out_con, split = TRUE)
 }
-if (!is.null(log_err) && nchar(log_err) > 0) {
+
+if (!is.null(log_err) && nzchar(log_err)) {
   dir.create(dirname(log_err), recursive = TRUE, showWarnings = FALSE)
-  sink(log_err, type = "message")
+  log_err_con <- file(log_err, open = "wt")
+  sink(log_err_con, type = "message")
 }
 
 dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 
 message("=== Pseudobulk DE (R) ===")
-message("  agg_dir:    ", agg_dir)
-message("  results_dir:", results_dir)
+message("  agg_dir:     ", agg_dir)
+message("  results_dir: ", results_dir)
+message("  min_reps:    ", min_replicates)
+message("  de_n_genes:  ", de_n_genes)
+message("  padj_thr:    ", padj_thr)
+message("  lfc_thr:     ", lfc_thr)
 
 
 # ── Helper: run DE on one pseudobulk subgroup ────────────────────────────────
 run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
 
-  counts_file   <- file.path(agg_dir, paste0("counts_", prefix, ".tsv"))
-  metadata_file <- file.path(agg_dir, paste0("metadata_", prefix, ".tsv"))
+  # Files are now in matrices/ and metadata/ subdirectories
+  counts_file   <- file.path(agg_dir, "matrices", paste0("counts_", prefix, ".tsv"))
+  metadata_file <- file.path(agg_dir, "metadata", paste0("metadata_", prefix, ".tsv"))
 
   if (!file.exists(counts_file) || !file.exists(metadata_file)) {
     message("  Skipping '", prefix, "': files not found.")
+    message("    Looked for: ", counts_file)
+    message("    Looked for: ", metadata_file)
     return(NULL)
   }
 
@@ -72,6 +76,10 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
 
   # Align
   common <- intersect(rownames(counts), rownames(meta))
+  if (length(common) == 0) {
+    message("  '", prefix, "': no common sample names between counts and metadata. Skipping.")
+    return(NULL)
+  }
   counts <- counts[common, , drop = FALSE]
   meta   <- meta[common, , drop = FALSE]
 
@@ -98,13 +106,16 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
   counts <- counts[, gene_sums > 0, drop = FALSE]
 
   message("  '", prefix, "': ", nrow(counts), " samples, ", ncol(counts), " genes, ",
-          length(conditions), " conditions")
+          length(conditions), " conditions: ", paste(conditions, collapse = ", "))
 
   # Transpose: DESeq2 expects genes as rows
   counts_t <- t(counts)
 
-  # Ensure metadata rows match count columns
-  identical(colnames(counts_t), rownames(meta)) || stop("Sample names in counts and metadata do not match")
+  # Verify alignment
+  if (!identical(colnames(counts_t), rownames(meta))) {
+    message("  WARNING: sample name mismatch after transpose. Attempting reorder.")
+    meta <- meta[colnames(counts_t), , drop = FALSE]
+  }
 
   # ── DESeq2 dataset ──────────────────────────────────────────────────────
   design_formula <- as.formula(paste("~", condition_col))
@@ -116,6 +127,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
 
   # ── 1. Holistic LRT ────────────────────────────────────────────────────
   message("    LRT …")
+  dds_lrt <- NULL
   tryCatch({
     dds_lrt <- DESeq(dds, test = "LRT", reduced = ~ 1)
     res_lrt <- results(dds_lrt)
@@ -161,7 +173,6 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
         rownames_to_column("gene") %>%
         arrange(desc(abs(log2FoldChange)))
 
-      # Save results
       write.table(res_df, file.path(pairwise_dir, paste0(contrast_name, ".tsv")),
                   sep = "\t", quote = FALSE, row.names = FALSE)
 
@@ -241,7 +252,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
   }
 
   # ── 3. DEGpatterns on LRT significant genes ─────────────────────────────
-  if (exists("dds_lrt")) {
+  if (!is.null(dds_lrt)) {
     tryCatch({
       res_lrt_all <- results(dds_lrt)
       sig_genes <- rownames(res_lrt_all)[which(res_lrt_all$padj < padj_thr)]
@@ -261,13 +272,11 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
           plot = FALSE
         )
 
-        # Save cluster assignments
         if (!is.null(clusters$df)) {
           cluster_df <- clusters$df %>% arrange(cluster, genes)
           write.table(cluster_df, file.path(deg_dir, "gene_clusters.tsv"),
                       sep = "\t", quote = FALSE, row.names = FALSE)
 
-          # Plot
           p <- degPlotCluster(
             clusters$normalized,
             time = condition_col,
@@ -296,6 +305,9 @@ manifest_file <- file.path(agg_dir, "manifest.tsv")
 if (!file.exists(manifest_file)) {
   message("No manifest.tsv found. Nothing to process.")
   writeLines("No pseudobulk matrices found.", file.path(results_dir, "SKIPPED_no_manifest.txt"))
+  # Close sinks before exit
+  if (exists("log_err_con")) { sink(type = "message"); close(log_err_con) }
+  if (exists("log_out_con")) { sink(); close(log_out_con) }
   quit(save = "no", status = 0)
 }
 
@@ -304,9 +316,9 @@ message("Manifest: ", nrow(manifest), " subgroups")
 
 for (i in seq_len(nrow(manifest))) {
   row <- manifest[i, ]
-  prefix       <- row$prefix
+  prefix        <- row$prefix
   condition_col <- row$condition_col
-  sample_col   <- row$sample_col
+  sample_col    <- row$sample_col
 
   message("\n--- Processing: ", prefix, " ---")
 
@@ -321,5 +333,6 @@ for (i in seq_len(nrow(manifest))) {
 
 message("\n=== Pseudobulk DE complete ===")
 
-sink(type = "message")
-sink()
+# Close sinks properly (reverse order)
+if (exists("log_err_con")) { sink(type = "message"); close(log_err_con) }
+if (exists("log_out_con")) { sink(); close(log_out_con) }

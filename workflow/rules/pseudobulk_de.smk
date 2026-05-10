@@ -1,11 +1,10 @@
 rule pseudobulk_de:
     """
-    Differential expression with R DESeq2 (Wald + LRT) and DEGpatterns
-    for gene clustering.  Reads pseudobulk TSV matrices produced by
-    pseudobulk_aggregate.
+    Differential expression with R DESeq2 (Wald + LRT) and DEGpatterns.
+    Reads pseudobulk TSV matrices from the aggregated/ directory.
     """
     input:
-        agg_dir=f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/matrices",
+        agg_dir=f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated",
     output:
         results_dir=directory(
             f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/de_results"

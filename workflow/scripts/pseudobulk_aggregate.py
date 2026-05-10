@@ -2,15 +2,19 @@
 pseudobulk_aggregate.py – Aggregate cells into pseudobulk matrices
 ====================================================================
 Uses decoupler.get_pseudobulk for memory-efficient aggregation.
-Saves count matrices and metadata as TSVs for downstream R-based DE.
 
-Output structure per analysis level:
-  matrices/
-  ├── manifest.tsv              (lists all available subgroups)
-  ├── counts_pooled.tsv         (by_region: all cell types pooled)
-  ├── metadata_pooled.tsv
-  ├── counts_{CellType}.tsv     (by_celltype_region: one per type)
-  └── metadata_{CellType}.tsv
+Output structure:
+  aggregated/
+  ├── manifest.tsv
+  ├── matrices/
+  │     ├── counts_pooled.tsv
+  │     └── counts_{CellType}.tsv
+  ├── metadata/
+  │     ├── metadata_pooled.tsv
+  │     └── metadata_{CellType}.tsv
+  └── plots/
+        ├── pooled_qc.png
+        └── {CellType}_qc.png
 """
 
 import logging
@@ -21,10 +25,12 @@ from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scanpy as sc
 from scipy import sparse
+from sklearn.decomposition import PCA
 import decoupler as dc
 
 
@@ -65,8 +71,8 @@ def _clean_nan(adata, col):
     return adata[mask].copy()
 
 
-def _save_pseudobulk(pdata, out_dir, prefix):
-    """Save count matrix and metadata from a pseudobulk AnnData."""
+def _save_pseudobulk(pdata, matrices_dir, metadata_dir, prefix):
+    """Save count matrix and metadata as separate TSVs."""
     if sparse.issparse(pdata.X):
         counts = pd.DataFrame(pdata.X.toarray(), index=pdata.obs_names,
                               columns=pdata.var_names)
@@ -74,9 +80,105 @@ def _save_pseudobulk(pdata, out_dir, prefix):
         counts = pd.DataFrame(np.asarray(pdata.X), index=pdata.obs_names,
                               columns=pdata.var_names)
     counts = counts.round().astype(int)
-    counts.to_csv(os.path.join(out_dir, f"counts_{prefix}.tsv"), sep="\t")
-    pdata.obs.to_csv(os.path.join(out_dir, f"metadata_{prefix}.tsv"), sep="\t")
+    counts.to_csv(os.path.join(matrices_dir, f"counts_{prefix}.tsv"), sep="\t")
+    pdata.obs.to_csv(os.path.join(metadata_dir, f"metadata_{prefix}.tsv"), sep="\t")
     log.info("  Saved: %s (%d samples × %d genes)", prefix, pdata.n_obs, pdata.n_vars)
+
+
+def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
+    """
+    Generate a 3-panel QC figure:
+      1. dc.plot_pseudobulk_samples — cell count per pseudobulk sample
+      2. PCA coloured by condition (region)
+      3. PCA coloured by sample
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(f"Pseudobulk QC — {prefix}", fontsize=14, fontweight="bold")
+
+    # Panel 1: pseudobulk sample barplot
+    try:
+        dc.plot_pseudobulk_samples(
+            pdata,
+            sample_col=sample_col,
+            groups_col=condition_col,
+            ax=axes[0],
+        )
+        axes[0].set_title("Cells per pseudobulk sample")
+        axes[0].tick_params(axis="x", rotation=45)
+    except Exception as e:
+        log.warning("  plot_pseudobulk_samples failed: %s", e)
+        axes[0].text(0.5, 0.5, f"Plot failed:\n{e}", ha="center", va="center",
+                     transform=axes[0].transAxes, fontsize=8)
+
+    # Panels 2-3: PCA
+    try:
+        # Normalise for PCA
+        pdata_norm = pdata.copy()
+        sc.pp.normalize_total(pdata_norm, target_sum=1e6)
+        sc.pp.log1p(pdata_norm)
+
+        if sparse.issparse(pdata_norm.X):
+            X_dense = pdata_norm.X.toarray()
+        else:
+            X_dense = np.asarray(pdata_norm.X)
+
+        # Remove zero-variance genes
+        gene_var = X_dense.var(axis=0)
+        X_dense = X_dense[:, gene_var > 0]
+
+        n_components = min(2, X_dense.shape[0], X_dense.shape[1])
+        if n_components < 2:
+            raise ValueError(f"Too few samples/genes for PCA ({X_dense.shape})")
+
+        pca = PCA(n_components=n_components)
+        pcs = pca.fit_transform(X_dense)
+        var_explained = pca.explained_variance_ratio_ * 100
+
+        conditions = pdata.obs[condition_col].values
+        samples = pdata.obs[sample_col].values if sample_col in pdata.obs.columns else None
+
+        # Panel 2: PCA by condition
+        unique_conds = sorted(set(conditions))
+        cmap = plt.cm.get_cmap("Set1", len(unique_conds))
+        cond_colors = {c: cmap(i) for i, c in enumerate(unique_conds)}
+
+        for cond in unique_conds:
+            mask = conditions == cond
+            axes[1].scatter(pcs[mask, 0], pcs[mask, 1], c=[cond_colors[cond]],
+                            label=cond, s=60, edgecolors="black", linewidths=0.5)
+        axes[1].set_xlabel(f"PC1 ({var_explained[0]:.1f}%)")
+        axes[1].set_ylabel(f"PC2 ({var_explained[1]:.1f}%)")
+        axes[1].set_title(f"PCA — {condition_col}")
+        axes[1].legend(fontsize=7, loc="best")
+
+        # Panel 3: PCA by sample
+        if samples is not None:
+            unique_samples = sorted(set(samples))
+            cmap_s = plt.cm.get_cmap("tab20", len(unique_samples))
+            sample_colors = {s: cmap_s(i) for i, s in enumerate(unique_samples)}
+            for s in unique_samples:
+                mask = samples == s
+                axes[2].scatter(pcs[mask, 0], pcs[mask, 1], c=[sample_colors[s]],
+                                label=s, s=60, edgecolors="black", linewidths=0.5)
+            axes[2].set_xlabel(f"PC1 ({var_explained[0]:.1f}%)")
+            axes[2].set_ylabel(f"PC2 ({var_explained[1]:.1f}%)")
+            axes[2].set_title(f"PCA — {sample_col}")
+            axes[2].legend(fontsize=5, loc="best", ncol=2)
+        else:
+            axes[2].text(0.5, 0.5, "No sample column", ha="center", va="center",
+                         transform=axes[2].transAxes)
+
+    except Exception as e:
+        log.warning("  PCA plots failed: %s", e)
+        for ax_idx in [1, 2]:
+            axes[ax_idx].text(0.5, 0.5, f"PCA failed:\n{e}", ha="center",
+                              va="center", transform=axes[ax_idx].transAxes, fontsize=8)
+
+    plt.tight_layout()
+    safe_prefix = prefix.replace("/", "_").replace(" ", "_")
+    plt.savefig(os.path.join(plots_dir, f"{safe_prefix}_qc.png"),
+                dpi=300, bbox_inches="tight")
+    plt.close()
 
 
 # ── Parameters ───────────────────────────────────────────────────────────────
@@ -92,7 +194,12 @@ try:
     log.info("  min_cells=%d, min_counts=%d", MIN_CELLS, MIN_COUNTS)
     log.info("=" * 70)
 
-    os.makedirs(agg_dir, exist_ok=True)
+    # Create subdirectories
+    matrices_dir = os.path.join(agg_dir, "matrices")
+    metadata_dir = os.path.join(agg_dir, "metadata")
+    plots_dir    = os.path.join(agg_dir, "plots")
+    for d in [agg_dir, matrices_dir, metadata_dir, plots_dir]:
+        os.makedirs(d, exist_ok=True)
 
     adata = sc.read_h5ad(str(snakemake.input.adata))
     log.info("Loaded: %d cells, %d genes", adata.n_obs, adata.n_vars)
@@ -120,7 +227,7 @@ try:
         Path(os.path.join(agg_dir, "SKIPPED_no_regions.txt")).write_text("")
         sys.exit(0)
 
-    # Clean NaN from grouping columns
+    # Clean NaN
     for col in [region_col, sample_col]:
         adata = _clean_nan(adata, col)
     if cell_type_col:
@@ -147,7 +254,8 @@ try:
             layer="raw_counts", mode="sum",
             min_cells=MIN_CELLS, min_counts=MIN_COUNTS,
         )
-        _save_pseudobulk(pdata, agg_dir, "pooled")
+        _save_pseudobulk(pdata, matrices_dir, metadata_dir, "pooled")
+        _plot_pseudobulk_qc(pdata, region_col, sample_col, "pooled", plots_dir)
         manifest_rows.append({
             "prefix": "pooled", "grouping": "all_cells",
             "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,
@@ -180,7 +288,8 @@ try:
                 log.warning("  '%s': too few pseudobulk samples (%d). Skipping.", ct, pdata.n_obs)
                 continue
 
-            _save_pseudobulk(pdata, agg_dir, safe_ct)
+            _save_pseudobulk(pdata, matrices_dir, metadata_dir, safe_ct)
+            _plot_pseudobulk_qc(pdata, region_col, sample_col, safe_ct, plots_dir)
             manifest_rows.append({
                 "prefix": safe_ct, "grouping": ct,
                 "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,
