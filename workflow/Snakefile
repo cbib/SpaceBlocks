@@ -56,24 +56,8 @@ RESOLUTIONS = [
     )
 ]
 
-ANNOT_TYPES = ["tsv_annotation", "refined_annotation"]
-ANALYSIS_LEVELS = ["by_region", "by_celltype_region"]
-# Future: append "by_niche_region" once niche identification is added
-
-
-def _cluster_annotations_available():
-    path = config.get("cluster_annotations", "")
-    if not path or not os.path.isfile(path):
-        return False
-    try:
-        df = pd.read_csv(path, sep="\t", index_col=0)
-        return df.shape[0] > 0 and df.shape[1] > 0 and not df.isna().all().all()
-    except Exception:
-        return False
-
-ANNOT_TYPES = ["tsv_annotation", "refined_annotation"]
-ANALYSIS_LEVELS = ["by_region", "by_celltype_region"]
-# Future: append "by_niche_region" once niche identification is added
+ANNOT_TYPES = ["tsv_annotation"] # "refined_annotation"
+ANALYSIS_LEVELS = ["by_region", "by_celltype_region"] # Future: append "by_niche_region" once niche identification is added
 
 
 def _cluster_annotations_available():
@@ -130,7 +114,8 @@ def get_all_targets(wildcards):
         # Pseudobulk DE (on concatenated, per annot_type × analysis_level)
         for at in ANNOT_TYPES:
             for level in ANALYSIS_LEVELS:
-                targets.append(f"{OUTDIR_PP}/pseudobulk_de/{at}/{level}")
+                targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/matrices")
+                targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/de_results")
         # Integration
         targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
@@ -144,6 +129,7 @@ include: "rules/preprocess_umap.smk"
 include: "rules/leiden_analysis.smk"
 include: "rules/ingest_ref.smk"
 include: "rules/annotate_cells.smk"
+include: "rules/pseudobulk_aggregate.smk"
 include: "rules/pseudobulk_de.smk"
 include: "rules/neighbourhood_analysis.smk"
 include: "rules/integrate_samples.smk"
@@ -161,8 +147,8 @@ rule run_downstream:
     """Run annotation + DE + neighbourhood + integration."""
     input:
         expand(f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}_annotated.h5ad", sample=SAMPLE_IDS),
-        expand(f"{OUTDIR_PP}/pseudobulk_de/{{at}}/{{level}}",
-               at=ANNOT_TYPES, level=ANALYSIS_LEVELS),
+        expand(f"{OUTDIR_PP}/pseudobulk/{{at}}/{{level}}/de_results",
+                at=ANNOT_TYPES, level=ANALYSIS_LEVELS),
         expand(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis/{{at}}",
                sample=SAMPLE_IDS, at=ANNOT_TYPES),
         f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",

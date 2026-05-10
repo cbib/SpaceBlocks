@@ -1,0 +1,14 @@
+name: pseudobulk_de
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base>=4.3
+  - r-tidyverse
+  - r-pheatmap
+  - r-rcolorbrewer
+  - r-ggrepel
+  - bioconductor-deseq2>=1.40
+  - bioconductor-enhancedvolcano
+  - bioconductor-degreport
+  - bioconductor-summarizedexperiment

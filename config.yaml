@@ -38,6 +38,13 @@ analysis:
   min_cells_per_type: 15
   # Integration
   sketch_fraction: 0.25              # fraction of cells for geosketch
+  # Pseudobulk
+  min_cells_per_pseudobulk: 10   # minimum cells to form a pseudobulk sample
+  min_replicates: 3              # minimum samples per condition for DE
+  de_n_genes: 25                 # number of DE genes to plot
+  min_counts_per_pseudobulk: 1000
+  padj_threshold: 0.05
+  lfc_threshold: 0.25
 
 resources:
   spaceranger_count:
@@ -56,9 +63,13 @@ resources:
     mem_mb: 16384
     runtime: 120
     threads: 4
-  pseudobulk_de:
-    mem_mb: 16384
+  pseudobulk_aggregate:
+    mem_mb: 64768
     runtime: 60
+    threads: 4
+  pseudobulk_de:
+    mem_mb: 24384
+    runtime: 120
     threads: 4
   neighbourhood_analysis:
     mem_mb: 32768

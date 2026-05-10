@@ -1,23 +1,14 @@
 rule pseudobulk_de:
     """
-    Pseudobulk differential expression on the concatenated multi-sample
-    dataset.  Each sample is one biological replicate.
-
-    Wildcards:
-    - annot_type:     tsv_annotation | refined_annotation
-    - analysis_level: by_region | by_celltype_region (| by_niche_region)
-
-    For each level:
-    - Holistic LRT: does the factor (region) explain variance?
-    - Pairwise Wald: all region pairs, BH-corrected
-
-    Input is the concatenated h5ad from integrate_samples.
+    Differential expression with R DESeq2 (Wald + LRT) and DEGpatterns
+    for gene clustering.  Reads pseudobulk TSV matrices produced by
+    pseudobulk_aggregate.
     """
     input:
-        adata=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
+        agg_dir=f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/matrices",
     output:
         results_dir=directory(
-            f"{OUTDIR_PP}/pseudobulk_de/{{annot_type}}/{{analysis_level}}"
+            f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/de_results"
         ),
     wildcard_constraints:
         annot_type="tsv_annotation|refined_annotation|ingest_annotation",
@@ -25,20 +16,21 @@ rule pseudobulk_de:
     params:
         annot_type=lambda wc: wc.annot_type,
         analysis_level=lambda wc: wc.analysis_level,
-        min_cells_per_pseudobulk=ANALYSIS.get("min_cells_per_pseudobulk", 10),
         min_replicates=ANALYSIS.get("min_replicates", 3),
-        de_n_genes=ANALYSIS.get("de_n_genes", 25),
+        de_n_genes=ANALYSIS.get("de_n_genes", 10),
+        padj_threshold=ANALYSIS.get("padj_threshold", 0.05),
+        lfc_threshold=ANALYSIS.get("lfc_threshold", 0.5),
     log:
         out=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.out",
         err=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.err",
     benchmark:
         f"{LOGDIR}/benchmarks/pseudobulk_de/{{annot_type}}_{{analysis_level}}.tsv"
     conda:
-        "../envs/pseudobulk_de_env.yaml"
+        "../envs/pseudobulk_de.yaml"
     threads:
         get_resource("pseudobulk_de", "threads")
     resources:
         mem_mb=get_resource("pseudobulk_de", "mem_mb"),
         runtime=get_resource("pseudobulk_de", "runtime"),
     script:
-        "../scripts/pseudobulk_de.py"
+        "../scripts/pseudobulk_de.R"

@@ -1,0 +1,16 @@
+name: pseudobulk_aggregate
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - anndata>=0.10
+  - scanpy>=1.10
+  - numpy>=1.24,<2
+  - scipy>=1.10
+  - pandas>=2.0
+  - h5py>=3.8
+  - pyarrow>=14.0
+  - matplotlib-base>=3.7
+  - pip:
+      - decoupler>=1.9.2,<2.0
