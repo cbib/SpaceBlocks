@@ -123,7 +123,7 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       name = "Z-score",
       col = col_fun,
       top_annotation = col_anno,
-      cluster_columns = FALSE,
+      cluster_columns = TRUE,
       cluster_rows = TRUE,
       show_row_names = TRUE,
       show_column_names = TRUE,
@@ -134,7 +134,7 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
     )
     png(file.path(out_dir, paste0("heatmap_unsplit_", contrast_name, ".png")),
         width = max(800, ncol(mat_ordered) * 50),
-        height = max(400, nrow(mat_ordered) * 20), res = 150)
+        height = max(500, nrow(mat_ordered) * 25), res = 150)
     draw(ht_unsplit, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Unsplit heatmap failed: ", conditionMessage(e)))
@@ -148,7 +148,7 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       top_annotation = col_anno,
       column_split = split_factor,
       cluster_columns = FALSE,
-      cluster_column_slices = FALSE,
+      cluster_column_slices = TRUE,
       cluster_rows = TRUE,
       show_row_names = TRUE,
       show_column_names = TRUE,
@@ -159,7 +159,7 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
     )
     png(file.path(out_dir, paste0("heatmap_split_", contrast_name, ".png")),
         width = max(900, ncol(mat_ordered) * 55),
-        height = max(400, nrow(mat_ordered) * 20), res = 150)
+        height = max(500, nrow(mat_ordered) * 25), res = 150)
     draw(ht_split, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Split heatmap failed: ", conditionMessage(e)))
