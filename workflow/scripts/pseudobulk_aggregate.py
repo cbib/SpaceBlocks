@@ -1,20 +1,12 @@
 """
 pseudobulk_aggregate.py – Aggregate cells into pseudobulk matrices
 ====================================================================
-Uses decoupler.get_pseudobulk for memory-efficient aggregation.
-
 Output structure:
   aggregated/
   ├── manifest.tsv
-  ├── matrices/
-  │     ├── counts_pooled.tsv
-  │     └── counts_{CellType}.tsv
-  ├── metadata/
-  │     ├── metadata_pooled.tsv
-  │     └── metadata_{CellType}.tsv
-  └── plots/
-        ├── pooled_qc.png
-        └── {CellType}_qc.png
+  ├── matrices/     count TSVs
+  ├── metadata/     metadata TSVs
+  └── plots/        3-panel QC per subgroup
 """
 
 import logging
@@ -72,7 +64,6 @@ def _clean_nan(adata, col):
 
 
 def _save_pseudobulk(pdata, matrices_dir, metadata_dir, prefix):
-    """Save count matrix and metadata as separate TSVs."""
     if sparse.issparse(pdata.X):
         counts = pd.DataFrame(pdata.X.toarray(), index=pdata.obs_names,
                               columns=pdata.var_names)
@@ -87,32 +78,28 @@ def _save_pseudobulk(pdata, matrices_dir, metadata_dir, prefix):
 
 def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
     """
-    Generate a 3-panel QC figure:
-      1. dc.plot_psbulk_samples — cell count per pseudobulk sample
-      2. PCA coloured by condition (region)
-      3. PCA coloured by sample
+    3-panel QC: dc.plot_psbulk_samples + 2 PCAs (by condition, by sample).
+    Legends placed outside the plot area.
     """
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(22, 5))
     fig.suptitle(f"Pseudobulk QC — {prefix}", fontsize=14, fontweight="bold")
 
     # Panel 1: pseudobulk sample barplot
     try:
         dc.plot_psbulk_samples(
             pdata,
-            sample_col=sample_col,
-            groups_col=condition_col,
+            groupby=condition_col,
             ax=axes[0],
         )
         axes[0].set_title("Cells per pseudobulk sample")
         axes[0].tick_params(axis="x", rotation=45)
     except Exception as e:
-        log.warning("  plot_pseudobulk_samples failed: %s", e)
+        log.warning("  plot_psbulk_samples failed: %s", e)
         axes[0].text(0.5, 0.5, f"Plot failed:\n{e}", ha="center", va="center",
                      transform=axes[0].transAxes, fontsize=8)
 
-    # Panels 2-3: PCA
+    # PCA computation
     try:
-        # Normalise for PCA
         pdata_norm = pdata.copy()
         sc.pp.normalize_total(pdata_norm, target_sum=1e6)
         sc.pp.log1p(pdata_norm)
@@ -122,7 +109,6 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
         else:
             X_dense = np.asarray(pdata_norm.X)
 
-        # Remove zero-variance genes
         gene_var = X_dense.var(axis=0)
         X_dense = X_dense[:, gene_var > 0]
 
@@ -139,7 +125,7 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
 
         # Panel 2: PCA by condition
         unique_conds = sorted(set(conditions))
-        cmap = plt.cm.get_cmap("Set1", len(unique_conds))
+        cmap = plt.cm.get_cmap("Set1", max(len(unique_conds), 1))
         cond_colors = {c: cmap(i) for i, c in enumerate(unique_conds)}
 
         for cond in unique_conds:
@@ -149,12 +135,13 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
         axes[1].set_xlabel(f"PC1 ({var_explained[0]:.1f}%)")
         axes[1].set_ylabel(f"PC2 ({var_explained[1]:.1f}%)")
         axes[1].set_title(f"PCA — {condition_col}")
-        axes[1].legend(fontsize=7, loc="best")
+        axes[1].legend(fontsize=7, loc="center left", bbox_to_anchor=(1.02, 0.5),
+                       borderaxespad=0, frameon=False)
 
         # Panel 3: PCA by sample
         if samples is not None:
             unique_samples = sorted(set(samples))
-            cmap_s = plt.cm.get_cmap("tab20", len(unique_samples))
+            cmap_s = plt.cm.get_cmap("tab20", max(len(unique_samples), 1))
             sample_colors = {s: cmap_s(i) for i, s in enumerate(unique_samples)}
             for s in unique_samples:
                 mask = samples == s
@@ -163,7 +150,8 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
             axes[2].set_xlabel(f"PC1 ({var_explained[0]:.1f}%)")
             axes[2].set_ylabel(f"PC2 ({var_explained[1]:.1f}%)")
             axes[2].set_title(f"PCA — {sample_col}")
-            axes[2].legend(fontsize=5, loc="best", ncol=2)
+            axes[2].legend(fontsize=5, loc="center left", bbox_to_anchor=(1.02, 0.5),
+                           borderaxespad=0, frameon=False, ncol=1)
         else:
             axes[2].text(0.5, 0.5, "No sample column", ha="center", va="center",
                          transform=axes[2].transAxes)
@@ -174,7 +162,7 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
             axes[ax_idx].text(0.5, 0.5, f"PCA failed:\n{e}", ha="center",
                               va="center", transform=axes[ax_idx].transAxes, fontsize=8)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     safe_prefix = prefix.replace("/", "_").replace(" ", "_")
     plt.savefig(os.path.join(plots_dir, f"{safe_prefix}_qc.png"),
                 dpi=300, bbox_inches="tight")
@@ -194,7 +182,6 @@ try:
     log.info("  min_cells=%d, min_counts=%d", MIN_CELLS, MIN_COUNTS)
     log.info("=" * 70)
 
-    # Create subdirectories
     matrices_dir = os.path.join(agg_dir, "matrices")
     metadata_dir = os.path.join(agg_dir, "metadata")
     plots_dir    = os.path.join(agg_dir, "plots")
@@ -212,7 +199,6 @@ try:
         )
         sys.exit(0)
 
-    # Find sample column
     sample_col = None
     for c in ["sample", "sample_batch"]:
         if c in adata.obs.columns:
@@ -227,13 +213,11 @@ try:
         Path(os.path.join(agg_dir, "SKIPPED_no_regions.txt")).write_text("")
         sys.exit(0)
 
-    # Clean NaN
     for col in [region_col, sample_col]:
         adata = _clean_nan(adata, col)
     if cell_type_col:
         adata = _clean_nan(adata, cell_type_col)
 
-    # Filter regions
     valid_regions = [r for r in adata.obs[region_col].unique()
                      if r not in ("Unlabeled", "Bubble")]
     adata = adata[adata.obs[region_col].isin(valid_regions)].copy()
@@ -300,7 +284,6 @@ try:
         log.warning("by_niche_region not yet implemented.")
         Path(os.path.join(agg_dir, "SKIPPED_niche_not_implemented.txt")).write_text("")
 
-    # Save manifest
     if manifest_rows:
         pd.DataFrame(manifest_rows).to_csv(
             os.path.join(agg_dir, "manifest.tsv"), sep="\t", index=False
