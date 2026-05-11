@@ -249,7 +249,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
     res_lrt <- results(dds_lrt)
     res_lrt_df <- as.data.frame(res_lrt) %>%
       rownames_to_column("gene") %>%
-      arrange(desc(abs(log2FoldChange)))
+      arrange(desc(log2FoldChange))
     write.table(res_lrt_df, file.path(out_base, "LRT_results.tsv"),
                 sep = "\t", quote = FALSE, row.names = FALSE)
     n_sig <- sum(res_lrt_df$padj < padj_thr, na.rm = TRUE)
@@ -285,7 +285,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
       res <- results(dds_wald, contrast = c(condition_col, cond_a, cond_b))
       res_df <- as.data.frame(res) %>%
         rownames_to_column("gene") %>%
-        arrange(desc(abs(log2FoldChange)))
+        arrange(desc(log2FoldChange))
 
       write.table(res_df, file.path(pairwise_dir, paste0(contrast_name, ".tsv")),
                   sep = "\t", quote = FALSE, row.names = FALSE)
@@ -374,12 +374,38 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
           write.table(cluster_df, file.path(deg_dir, "gene_clusters.tsv"),
                       sep = "\t", quote = FALSE, row.names = FALSE)
 
+          # Base plot from degPlotCluster
           p <- degPlotCluster(
             clusters$normalized, time = condition_col,
             color = condition_col, points = TRUE
           )
+
+          # Apply custom colors if available
+          if (length(region_colors) > 0) {
+            p <- p +
+              ggplot2::aes(col = .data[[condition_col]]) +
+              ggplot2::scale_color_manual(values = region_colors)
+          }
+
+          # Add loess trend line and rotate x-axis labels
+          p <- p +
+            ggplot2::geom_smooth(
+              mapping = ggplot2::aes(
+                x = .data[[condition_col]],
+                y = value,
+                group = 1
+              ),
+              method = "loess",
+              color = "black",
+              se = FALSE,
+              linewidth = 1.2
+            ) +
+            ggplot2::theme(
+              axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
+            )
+
           ggsave(file.path(deg_dir, "DEGpatterns_clusters.png"),
-                 plot = p, width = 12, height = 8, dpi = 500)
+                 plot = p, width = 14, height = 10, dpi = 500)
           message("    DEGpatterns: ", length(unique(cluster_df$cluster)), " clusters")
         }
       } else {

@@ -50,19 +50,23 @@ analysis:
   # Regions not listed here are excluded from pseudobulk DE.
   region_levels:
     - "Healthy area"
+    - "Heatlhy over tumor"
     - "Dysplastic area"
     - "AK area"
     - "AK over tumor"
+    - "In situ area"
     - "Tumor area"
     - "Invasive area"
   # - "Ulcerated aread" # excluded from the analyses
   # Color code for each region level (must match region_levels names)
   region_colors:
     "Healthy area" : "#FDE725FF"
-    "Dysplastic area" : "#7AD151FF"
-    "AK area" : "#22A884FF"
-    "AK over tumor" : "#2A788EFF"
-    "Tumor area" : "#414487FF"
+    "Heatlhy over tumor" : "#9FDA3AFF"
+    "Dysplastic area" : "#4AC16DFF"
+    "AK area" : "#1FA187FF"
+    "AK over tumor" : "#277F8EFF"
+    "In situ area" : "#365C8DFF"
+    "Tumor area" : "#46337EFF"
     "Invasive area" : "#440154FF"
 
 resources:
