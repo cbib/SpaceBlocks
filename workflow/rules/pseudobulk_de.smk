@@ -1,7 +1,7 @@
 rule pseudobulk_de:
     """
-    Differential expression with R DESeq2 (Wald + LRT) and DEGpatterns.
-    Reads pseudobulk TSV matrices from the aggregated/ directory.
+    DE with R DESeq2 (Wald + LRT), EnhancedVolcano, ComplexHeatmap, DEGpatterns.
+    Region levels and colors from config control ordering and visualization.
     """
     input:
         agg_dir=f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated",
@@ -19,6 +19,10 @@ rule pseudobulk_de:
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         padj_threshold=ANALYSIS.get("padj_threshold", 0.05),
         lfc_threshold=ANALYSIS.get("lfc_threshold", 0.5),
+        region_levels=ANALYSIS.get("region_levels", []),
+        # Pass colors as two parallel lists for safe Python→R conversion
+        region_color_names=list(ANALYSIS.get("region_colors", {}).keys()),
+        region_color_values=list(ANALYSIS.get("region_colors", {}).values()),
     log:
         out=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.out",
         err=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.err",

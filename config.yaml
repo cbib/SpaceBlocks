@@ -45,6 +45,25 @@ analysis:
   min_counts_per_pseudobulk: 1000
   padj_threshold: 0.05
   lfc_threshold: 0.25
+  # Region levels: ordered list controlling LRT factor ordering,
+  # heatmap column order, and which regions to include in DE.
+  # Regions not listed here are excluded from pseudobulk DE.
+  region_levels:
+    - "Healthy area"
+    - "Dysplastic area"
+    - "AK area"
+    - "AK over tumor"
+    - "Tumor area"
+    - "Invasive area"
+  # - "Ulcerated aread" # excluded from the analyses
+  # Color code for each region level (must match region_levels names)
+  region_colors:
+    "Healthy area" : "#FDE725FF"
+    "Dysplastic area" : "#7AD151FF"
+    "AK area" : "#22A884FF"
+    "AK over tumor" : "#2A788EFF"
+    "Tumor area" : "#414487FF"
+    "Invasive area" : "#440154FF"
 
 resources:
   spaceranger_count:
