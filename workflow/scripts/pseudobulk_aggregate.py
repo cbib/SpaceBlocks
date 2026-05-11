@@ -88,7 +88,7 @@ def _save_pseudobulk(pdata, matrices_dir, metadata_dir, prefix):
 def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
     """
     Generate a 3-panel QC figure:
-      1. dc.plot_pseudobulk_samples — cell count per pseudobulk sample
+      1. dc.plot_psbulk_samples — cell count per pseudobulk sample
       2. PCA coloured by condition (region)
       3. PCA coloured by sample
     """
@@ -97,7 +97,7 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
 
     # Panel 1: pseudobulk sample barplot
     try:
-        dc.plot_pseudobulk_samples(
+        dc.plot_psbulk_samples(
             pdata,
             sample_col=sample_col,
             groups_col=condition_col,
@@ -270,7 +270,7 @@ try:
             safe_ct = ct.replace("/", "_").replace(" ", "_")
             ct_adata = adata[adata.obs[cell_type_col] == ct].copy()
 
-            if ct_adata.n_obs < MIN_CELLS * 2:
+            if ct_adata.n_obs < MIN_CELLS:
                 log.warning("  '%s': too few cells (%d). Skipping.", ct, ct_adata.n_obs)
                 continue
 
