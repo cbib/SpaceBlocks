@@ -250,7 +250,10 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
     res_lrt_df <- as.data.frame(res_lrt) %>%
       rownames_to_column("gene") %>%
       arrange(desc(log2FoldChange))
-    write.table(res_lrt_df, file.path(out_base, "LRT_results.tsv"),
+    # LRT results saved inside DEGpatterns dir (created later)
+    lrt_save_dir <- file.path(out_base, "DEGpatterns")
+    dir.create(lrt_save_dir, recursive = TRUE, showWarnings = FALSE)
+    write.table(res_lrt_df, file.path(lrt_save_dir, "LRT_results.tsv"),
                 sep = "\t", quote = FALSE, row.names = FALSE)
     n_sig <- sum(res_lrt_df$padj < padj_thr, na.rm = TRUE)
     message("    LRT: ", n_sig, " significant genes (padj < ", padj_thr, ")")
@@ -371,8 +374,6 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
 
         if (!is.null(clusters$df)) {
           cluster_df <- clusters$df %>% arrange(cluster, genes)
-          write.table(cluster_df, file.path(deg_dir, "gene_clusters.tsv"),
-                      sep = "\t", quote = FALSE, row.names = FALSE)
 
           # Base plot from degPlotCluster
           p <- degPlotCluster(
@@ -401,12 +402,36 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
               linewidth = 1.2
             ) +
             ggplot2::theme(
-              axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
+              axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5)
             )
 
           ggsave(file.path(deg_dir, "DEGpatterns_clusters.png"),
                  plot = p, width = 14, height = 10, dpi = 500)
           message("    DEGpatterns: ", length(unique(cluster_df$cluster)), " clusters")
+
+          # Save gene groups as TSV with sanitised column headers
+          tryCatch({
+            gene_group_data <- p$data
+            grouped_genes <- split(unique(gene_group_data$genes), gene_group_data$title)
+
+            # Pad lists to equal length
+            max_len <- max(sapply(grouped_genes, length))
+            gene_df <- as.data.frame(do.call(cbind, lapply(grouped_genes, function(x) {
+              c(x, rep("", max_len - length(x)))
+            })))
+
+            # Sanitise column names: replace special chars with underscores
+            colnames(gene_df) <- gsub("[^A-Za-z0-9_]", "_", colnames(gene_df))
+            # Collapse multiple underscores and trim trailing ones
+            colnames(gene_df) <- gsub("_+", "_", colnames(gene_df))
+            colnames(gene_df) <- gsub("_$", "", colnames(gene_df))
+
+            write.table(gene_df, file.path(deg_dir, "gene_groups.tsv"),
+                        sep = "\t", quote = FALSE, row.names = FALSE)
+            message("    Gene groups saved: ", ncol(gene_df), " groups")
+          }, error = function(e) {
+            message("    Gene groups export failed: ", conditionMessage(e))
+          })
         }
       } else {
         message("    Too few LRT-significant genes for DEGpatterns (", length(sig_genes), ")")
