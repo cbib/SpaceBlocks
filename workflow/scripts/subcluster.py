@@ -1,0 +1,387 @@
+"""
+subcluster.py – Subset and subcluster a cell compartment
+==========================================================
+Subsets the concatenated adata by matching cell type strings, then
+runs two parallel analyses (with and without Harmony integration):
+  - PCA → (Harmony) → UMAP → Leiden at multiple resolutions
+  - Silhouette + clustree for clustering evaluation
+  - QC violins per cluster (metrics recalculated on subset)
+  - UMAPs coloured by cluster, sample, original cell type, region
+  - Split UMAPs by sample and region
+"""
+
+import logging
+import os
+import sys
+import traceback
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from pyclustree import clustree
+import scanpy as sc
+import scanpy.external as sce
+from sklearn.metrics import silhouette_samples, silhouette_score
+from sklearn.preprocessing import StandardScaler
+
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+log_handlers = [logging.StreamHandler(sys.stderr)]
+if hasattr(snakemake, "log"):
+    if snakemake.log.out:
+        Path(snakemake.log.out).parent.mkdir(parents=True, exist_ok=True)
+        log_handlers.append(logging.FileHandler(snakemake.log.out, mode="w"))
+    if snakemake.log.err:
+        Path(snakemake.log.err).parent.mkdir(parents=True, exist_ok=True)
+        sys.stderr = open(snakemake.log.err, "w")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=log_handlers,
+)
+log = logging.getLogger("subcluster")
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _resolution_range(rmin, rmax, step):
+    n = round((rmax - rmin) / step)
+    return [round(rmin + i * step, 10) for i in range(n + 1)]
+
+
+def split_umap(adata, split_by, ncol=None, nrow=None, **kwargs):
+    categories = adata.obs[split_by].cat.categories
+    ncol = ncol or len(categories)
+    nrow = nrow or int(np.ceil(len(categories) / ncol))
+    fig, axs = plt.subplots(nrow, ncol, figsize=(5 * ncol, 4 * nrow))
+    axs = np.atleast_1d(axs).flatten()
+    for i, cat in enumerate(categories):
+        sc.pl.umap(
+            adata[adata.obs[split_by] == cat],
+            ax=axs[i], show=False, title=cat, **kwargs,
+        )
+    for j in range(i + 1, len(axs)):
+        axs[j].set_visible(False)
+    plt.tight_layout()
+
+
+def recalculate_qc_metrics(adata):
+    """
+    Recalculate QC metrics on the subset so pct_counts_in_top_N_genes
+    reflects the gene expression profile of this subcompartment,
+    not the full dataset.
+    """
+    log.info("    Recalculating QC metrics on subset …")
+    # Use raw_counts if available, otherwise X
+    layer = "raw_counts" if "raw_counts" in adata.layers else None
+
+    # Recompute MT and HB flags in case var changed
+    adata.var["mt"] = adata.var_names.str.startswith("MT-")
+    adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
+
+    # Drop old QC columns to avoid conflicts
+    qc_cols_to_drop = [c for c in adata.obs.columns if c in [
+        "n_genes_by_counts", "total_counts", "total_counts_mt", "total_counts_hb",
+        "pct_counts_mt", "pct_counts_hb",
+        "pct_counts_in_top_50_genes", "pct_counts_in_top_100_genes",
+        "pct_counts_in_top_200_genes", "pct_counts_in_top_500_genes",
+    ]]
+    adata.obs.drop(columns=qc_cols_to_drop, inplace=True, errors="ignore")
+
+    sc.pp.calculate_qc_metrics(
+        adata, qc_vars=["mt", "hb"], inplace=True, log1p=False, layer=layer,
+    )
+    log.info("    QC metrics recalculated on %d cells, %d genes", adata.n_obs, adata.n_vars)
+
+
+def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
+                          n_neighbors, subcompartment, annot_col):
+    """
+    Run Leiden at multiple resolutions, produce clustering evaluation,
+    QC plots, UMAPs, and split UMAPs for one branch.
+    """
+    clust_eval_dir = os.path.join(branch_dir, "Clustering_evaluation")
+    qc_dir         = os.path.join(branch_dir, "QC_plots")
+    umap_dir       = os.path.join(branch_dir, "UMAPs")
+    for d in [clust_eval_dir, qc_dir, umap_dir]:
+        os.makedirs(d, exist_ok=True)
+
+    # ── Leiden at all resolutions ────────────────────────────────────────
+    leiden_keys = []
+    for res in resolutions:
+        key = f"leiden_{str(res).replace('.', '_')}"
+        sc.tl.leiden(adata, resolution=res, key_added=key)
+        leiden_keys.append(key)
+        log.info("    [%s] res=%.1f → %d clusters", branch_name, res, adata.obs[key].nunique())
+
+    # ── Silhouette per resolution ────────────────────────────────────────
+    log.info("    [%s] Silhouette analysis …", branch_name)
+    embedding_scaled = StandardScaler().fit_transform(adata.obsm["X_pca"])
+
+    for res, key in zip(resolutions, leiden_keys):
+        try:
+            labels = adata.obs[key].astype(int)
+            sil_values = silhouette_samples(embedding_scaled, labels)
+            sil_avg = silhouette_score(embedding_scaled, labels)
+
+            plt.figure(figsize=(12, 6))
+            unique_labels = np.unique(labels)
+            colours = plt.cm.tab10(np.linspace(0, 1, max(len(unique_labels), 1)))
+            x_pos = 0
+            for label, colour in zip(unique_labels, colours):
+                vals = np.sort(sil_values[labels == label])
+                xs = np.arange(len(vals)) + x_pos
+                plt.bar(xs, vals, color=colour, label=f"Cluster {label}", width=1, alpha=0.7)
+                x_pos = xs[-1] + 5
+            plt.axhline(y=sil_avg, color="red", linestyle="--", label="Average")
+            plt.ylabel("Silhouette Score")
+            plt.xlabel("Cluster and Cell Index")
+            plt.title(f"Silhouette — {branch_name} (res {res})")
+            plt.ylim(-1, 1)
+            plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1))
+            plt.grid(axis="y")
+            plt.savefig(os.path.join(clust_eval_dir, f"silhouette_res{res}.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close()
+        except Exception as e:
+            log.warning("    [%s] Silhouette res=%.1f failed: %s", branch_name, res, e)
+
+    # ── Clustree ─────────────────────────────────────────────────────────
+    if len(leiden_keys) >= 2:
+        available = [k for k in leiden_keys if k in adata.obs.columns]
+        if len(available) >= 2:
+            try:
+                fig = clustree(adata, available, edge_weight_threshold=0.00,
+                               show_fraction=True)
+                fig.savefig(os.path.join(clust_eval_dir, "clustree.png"),
+                            dpi=300, bbox_inches="tight")
+                plt.close()
+            except Exception as e:
+                log.warning("    [%s] Clustree failed: %s", branch_name, e)
+
+    # ── QC plots ─────────────────────────────────────────────────────────
+    log.info("    [%s] QC plots …", branch_name)
+
+    # QC UMAPs (resolution-independent)
+    qc_cols = [c for c in ["n_genes_by_counts", "total_counts", "pct_counts_mt", "pct_counts_hb"]
+               if c in adata.obs.columns]
+    if qc_cols:
+        sc.pl.umap(adata, color=qc_cols, size=2, wspace=0.25, frameon=False)
+        plt.savefig(os.path.join(qc_dir, "QC_UMAPs.png"), dpi=300, bbox_inches="tight")
+        plt.close()
+
+    # QC violins per cluster (per resolution)
+    violin_cols = [c for c in ["n_genes_by_counts", "total_counts",
+                                "pct_counts_in_top_50_genes", "pct_counts_in_top_100_genes",
+                                "pct_counts_mt", "pct_counts_hb"]
+                   if c in adata.obs.columns]
+
+    for res, key in zip(resolutions, leiden_keys):
+        if violin_cols:
+            try:
+                layer = "raw_counts" if "raw_counts" in adata.layers else None
+                sc.pl.violin(
+                    adata, violin_cols, groupby=key, layer=layer,
+                    jitter=0.1, multi_panel=True, show=True,
+                )
+                plt.savefig(os.path.join(qc_dir, f"QC_by_cluster_res{res}.png"),
+                            dpi=300, bbox_inches="tight")
+                plt.close()
+            except Exception as e:
+                log.warning("    [%s] QC violin res=%.1f failed: %s", branch_name, res, e)
+
+    # ── UMAPs ────────────────────────────────────────────────────────────
+    log.info("    [%s] UMAPs …", branch_name)
+
+    # Per-resolution cluster UMAPs
+    for res, key in zip(resolutions, leiden_keys):
+        sc.pl.umap(adata, color=[key], size=2, wspace=0.25, frameon=False,
+                   title=f"Leiden {res}")
+        plt.savefig(os.path.join(umap_dir, f"UMAP_clusters_res{res}.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
+
+    # By sample
+    sample_col = None
+    for c in ["sample", "sample_batch"]:
+        if c in adata.obs.columns:
+            sample_col = c
+            break
+    if sample_col:
+        sc.pl.umap(adata, color=[sample_col], size=2, wspace=0.25, frameon=False,
+                   title="By sample")
+        plt.savefig(os.path.join(umap_dir, "UMAP_by_sample.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
+
+    # By original cell type annotation
+    if annot_col in adata.obs.columns:
+        sc.pl.umap(adata, color=[annot_col], size=2, wspace=0.25, frameon=False,
+                   title=f"Original annotation ({annot_col})")
+        plt.savefig(os.path.join(umap_dir, f"UMAP_by_{annot_col}.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
+
+    # By region if available
+    has_regions = (
+        "region_annotation" in adata.obs.columns
+        and adata.obs["region_annotation"].nunique() > 1
+        and not all(adata.obs["region_annotation"] == "Unlabeled")
+    )
+    if has_regions:
+        adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
+        sc.pl.umap(adata, color=["region_annotation"], size=2, wspace=0.25, frameon=False,
+                   title="By region")
+        plt.savefig(os.path.join(umap_dir, "UMAP_by_region.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
+
+    # ── Split UMAPs ──────────────────────────────────────────────────────
+    log.info("    [%s] Split UMAPs …", branch_name)
+
+    # Use the middle resolution for split UMAPs
+    mid_idx = len(leiden_keys) // 2
+    split_leiden_key = leiden_keys[mid_idx]
+
+    # Split by sample
+    if sample_col and adata.obs[sample_col].nunique() > 1:
+        try:
+            adata.obs[sample_col] = adata.obs[sample_col].astype("category")
+            split_umap(adata, color=split_leiden_key, split_by=sample_col,
+                       size=10, ncol=4)
+            plt.savefig(os.path.join(umap_dir, "UMAP_split_by_sample.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close()
+        except Exception as e:
+            log.warning("    [%s] Split UMAP by sample failed: %s", branch_name, e)
+
+    # Split by region
+    if has_regions:
+        try:
+            split_umap(adata, color=split_leiden_key, split_by="region_annotation",
+                       size=10, ncol=3)
+            plt.savefig(os.path.join(umap_dir, "UMAP_split_by_region.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close()
+        except Exception as e:
+            log.warning("    [%s] Split UMAP by region failed: %s", branch_name, e)
+
+    return adata
+
+
+# ── Parameters ───────────────────────────────────────────────────────────────
+subcompartment = snakemake.params.subcompartment
+match_strings  = list(snakemake.params.strings)
+annot_col      = str(snakemake.params.annot_col)
+RES_MIN        = float(snakemake.params.resolution_min)
+RES_MAX        = float(snakemake.params.resolution_max)
+RES_STEP       = float(snakemake.params.resolution_step)
+N_NEIGHBORS    = int(snakemake.params.n_neighbors)
+N_PCS          = int(snakemake.params.n_pcs)
+sub_dir        = str(snakemake.output.sub_dir)
+
+try:
+    log.info("=" * 70)
+    log.info("Subclustering: %s", subcompartment)
+    log.info("  Match strings: %s", match_strings)
+    log.info("  Annotation col: %s", annot_col)
+    log.info("  Resolutions: %.1f → %.1f (step %.1f)", RES_MIN, RES_MAX, RES_STEP)
+    log.info("=" * 70)
+
+    resolutions = _resolution_range(RES_MIN, RES_MAX, RES_STEP)
+    log.info("  Resolution values: %s", resolutions)
+
+    noharmony_dir = os.path.join(sub_dir, "NoHarmony")
+    harmony_dir   = os.path.join(sub_dir, "Harmony")
+    for d in [sub_dir, noharmony_dir, harmony_dir]:
+        os.makedirs(d, exist_ok=True)
+
+    # ── Load and subset ──────────────────────────────────────────────────
+    adata_full = sc.read_h5ad(str(snakemake.input.adata))
+    log.info("Loaded: %d cells, %d genes", adata_full.n_obs, adata_full.n_vars)
+
+    if annot_col not in adata_full.obs.columns:
+        raise ValueError(f"Annotation column '{annot_col}' not found. "
+                         f"Available: {list(adata_full.obs.columns)}")
+
+    mask = adata_full.obs[annot_col].astype(str).isin(match_strings)
+    n_matched = mask.sum()
+    log.info("  Matched %d / %d cells for '%s'", n_matched, adata_full.n_obs, subcompartment)
+
+    if n_matched < 50:
+        raise ValueError(f"Too few cells matched ({n_matched}). "
+                         f"Check strings and annotation column.")
+
+    adata = adata_full[mask].copy()
+    del adata_full
+
+    adata.obs["original_annotation"] = adata.obs[annot_col].copy()
+    log.info("  Subset: %d cells, %d genes", adata.n_obs, adata.n_vars)
+
+    # Recalculate QC metrics on the subset so pct_counts_in_top_N_genes
+    # reflects this subcompartment's expression profile
+    recalculate_qc_metrics(adata)
+
+    # ── PCA ──────────────────────────────────────────────────────────────
+    log.info("  PCA …")
+    sc.pp.pca(adata, use_highly_variable=False)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Branch 1: NoHarmony
+    # ══════════════════════════════════════════════════════════════════════
+    log.info("  === NoHarmony branch ===")
+    adata_noharmony = adata.copy()
+    sc.pp.neighbors(adata_noharmony, n_neighbors=N_NEIGHBORS, n_pcs=N_PCS)
+    sc.tl.umap(adata_noharmony)
+
+    adata_noharmony = run_clustering_branch(
+        adata_noharmony, "NoHarmony", noharmony_dir, resolutions,
+        N_NEIGHBORS, subcompartment, annot_col,
+    )
+
+    log.info("  Saving NoHarmony adata …")
+    adata_noharmony.write(os.path.join(noharmony_dir,
+                                        f"adata_{subcompartment}_noharmony.h5ad"))
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Branch 2: Harmony
+    # ══════════════════════════════════════════════════════════════════════
+    log.info("  === Harmony branch ===")
+    adata_harmony = adata.copy()
+
+    sample_col = None
+    for c in ["sample", "sample_batch"]:
+        if c in adata_harmony.obs.columns:
+            sample_col = c
+            break
+
+    if sample_col and adata_harmony.obs[sample_col].nunique() > 1:
+        adata_harmony.obsm["X_pca_original"] = adata_harmony.obsm["X_pca"].copy()
+        sc.external.pp.harmony_integrate(adata_harmony, key=sample_col)
+        adata_harmony.obsm["X_pca"] = adata_harmony.obsm["X_pca_harmony"]
+    else:
+        log.warning("  Only 1 sample or no sample column — Harmony skipped, "
+                     "using uncorrected PCA.")
+
+    sc.pp.neighbors(adata_harmony, n_neighbors=N_NEIGHBORS, n_pcs=N_PCS)
+    sc.tl.umap(adata_harmony)
+
+    adata_harmony = run_clustering_branch(
+        adata_harmony, "Harmony", harmony_dir, resolutions,
+        N_NEIGHBORS, subcompartment, annot_col,
+    )
+
+    log.info("  Saving Harmony adata …")
+    adata_harmony.write(os.path.join(harmony_dir,
+                                      f"adata_{subcompartment}_harmony.h5ad"))
+
+    log.info("Subclustering complete for %s.", subcompartment)
+
+except Exception:
+    log.error("FAILED for %s:\n%s", subcompartment, traceback.format_exc())
+    raise

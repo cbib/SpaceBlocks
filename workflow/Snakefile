@@ -120,6 +120,10 @@ def get_all_targets(wildcards):
         targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
+    subcomps = config.get("subcompartments", {})
+    if subcomps:
+        for sc_name in subcomps:
+            targets.append(f"{OUTDIR_PP}/Subcompartments/{sc_name}")
     return targets
 
 
@@ -133,6 +137,7 @@ include: "rules/pseudobulk_aggregate.smk"
 include: "rules/pseudobulk_de.smk"
 include: "rules/neighbourhood_analysis.smk"
 include: "rules/integrate_samples.smk"
+include: "rules/subcluster.smk"
 include: "rules/generate_annotation_template.smk"
 
 
@@ -155,3 +160,7 @@ rule run_downstream:
         f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
         f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",
 
+rule subcluster_all:
+    input:
+        expand(f"{OUTDIR_PP}/Subcompartments/{{sc}}",
+                sc=list(config.get("subcompartments", {}).keys())),
