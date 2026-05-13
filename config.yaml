@@ -69,6 +69,31 @@ analysis:
     "Tumor area" : "#46337EFF"
     "Invasive area" : "#440154FF"
 
+# Subcompartment subclustering — leave empty or omit to skip
+# Keys become subcompartment names, strings are matched against the
+# annotation column (case-sensitive, exact match)
+subcompartments:
+  Fibroblasts:
+    strings: ["Fibroblasts", "Fibroblasts_Tcells", "CD74_Fibroblasts_Macro", "TMSB4X_CD74_Macro_Fibroblasts", "TMSB4X_Fibroblasts_Macro", "Fibroblasts_Endothelial", "Fibroblasts_Keratinocytes", "Fibroblasts_Plasma"]
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+  Keratinocytes:
+    strings: ["Keratinocytes", "Keratinocytes_Mal", "Keratinocytes_Basal", "Keratinocytes_Suprabasal", "Fibroblasts_Keratinocytes"]
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+  MonoMacro_Tcells:
+    strings: ["Complement_Mono", "Tcells","Fibroblasts_Tcells", "CD74_Macro_Tcells", "TMSB4X_CD74_Macro_Tcells", "TMSB4X_Fibroblasts_Macro", "CD74_Fibroblasts_Macro", "TMSB4X_CD74_Macro", "TMSB4X_CD74_Macro_Tcells", "Fibroblasts_Macro", "Mono_Macro", "Endothelial_Macro"]
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+  Plasma_Bcells:
+    strings: ["TMSB4X_CD74_Bcells", "Plasma_cells", "Fibroblasts_Plasma", "Fibroblasts_Plasma_cells"]
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+
 resources:
   spaceranger_count:
     mem_mb: 65536
@@ -105,6 +130,10 @@ resources:
   integrate_samples:
     mem_mb: 65536
     runtime: 360
+    threads: 8
+  subcluster:
+    mem_mb: 32768
+    runtime: 180
     threads: 8
   default:
     mem_mb: 8192
