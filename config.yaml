@@ -132,9 +132,9 @@ resources:
     runtime: 360
     threads: 8
   subcluster:
-    mem_mb: 32768
-    runtime: 180
-    threads: 8
+    mem_mb: 120768
+    runtime: 1440
+    threads: 16
   default:
     mem_mb: 8192
     runtime: 60

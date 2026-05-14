@@ -1,13 +1,14 @@
 """
 subcluster.py – Subset and subcluster a cell compartment
 ==========================================================
-Subsets the concatenated adata by matching cell type strings, then
-runs two parallel analyses (with and without Harmony integration):
-  - PCA → (Harmony) → UMAP → Leiden at multiple resolutions
-  - Silhouette + clustree for clustering evaluation
-  - QC violins per cluster (metrics recalculated on subset)
-  - UMAPs coloured by cluster, sample, original cell type, region
-  - Split UMAPs by sample and region
+Output per branch (Harmony / NoHarmony):
+  ├── adata_{subcompartment}_{branch}.h5ad
+  ├── cell_counts_summary.tsv
+  ├── Clustering_evaluation/   silhouette + clustree
+  ├── QC_plots/                QC UMAPs + violins per cluster
+  ├── UMAPs/                   cluster, sample, region, split UMAPs
+  ├── ClusterMarkers/          top-N DE dotplot, heatmap, matrixplot, TSV
+  └── Barplots/                stacked barplots (abs + rel) for all combos
 """
 
 import logging
@@ -71,20 +72,10 @@ def split_umap(adata, split_by, ncol=None, nrow=None, **kwargs):
 
 
 def recalculate_qc_metrics(adata):
-    """
-    Recalculate QC metrics on the subset so pct_counts_in_top_N_genes
-    reflects the gene expression profile of this subcompartment,
-    not the full dataset.
-    """
     log.info("    Recalculating QC metrics on subset …")
-    # Use raw_counts if available, otherwise X
     layer = "raw_counts" if "raw_counts" in adata.layers else None
-
-    # Recompute MT and HB flags in case var changed
     adata.var["mt"] = adata.var_names.str.startswith("MT-")
     adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
-
-    # Drop old QC columns to avoid conflicts
     qc_cols_to_drop = [c for c in adata.obs.columns if c in [
         "n_genes_by_counts", "total_counts", "total_counts_mt", "total_counts_hb",
         "pct_counts_mt", "pct_counts_hb",
@@ -92,24 +83,166 @@ def recalculate_qc_metrics(adata):
         "pct_counts_in_top_200_genes", "pct_counts_in_top_500_genes",
     ]]
     adata.obs.drop(columns=qc_cols_to_drop, inplace=True, errors="ignore")
-
     sc.pp.calculate_qc_metrics(
         adata, qc_vars=["mt", "hb"], inplace=True, log1p=False, layer=layer,
     )
-    log.info("    QC metrics recalculated on %d cells, %d genes", adata.n_obs, adata.n_vars)
+
+
+def _make_barplot(crosstab_df, title, ylabel, out_path, normalize=False):
+    """Create a stacked barplot from a crosstab DataFrame."""
+    if normalize:
+        crosstab_df = crosstab_df.div(crosstab_df.sum(axis=1), axis=0)
+    ax = crosstab_df.plot(kind="bar", stacked=True, figsize=(max(8, len(crosstab_df) * 0.8), 5))
+    ax.set_title(title)
+    ax.set_ylabel(ylabel)
+    ax.legend(title=crosstab_df.columns.name, bbox_to_anchor=(1.02, 1), loc="upper left",
+              fontsize=7, frameon=False)
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def generate_barplots(adata, leiden_key, res, barplots_dir, sample_col, annot_col):
+    """Generate all stacked barplot combinations for one resolution."""
+    res_dir = os.path.join(barplots_dir, f"res{res}")
+    os.makedirs(res_dir, exist_ok=True)
+
+    cluster_col = leiden_key
+    has_regions = (
+        "region_annotation" in adata.obs.columns
+        and adata.obs["region_annotation"].nunique() > 1
+        and not all(adata.obs["region_annotation"] == "Unlabeled")
+    )
+
+    # 1. Cluster × Sample
+    if sample_col and sample_col in adata.obs.columns:
+        ct = pd.crosstab(adata.obs[cluster_col], adata.obs[sample_col])
+        _make_barplot(ct, f"Cluster × Sample (res {res})", "Cells",
+                      os.path.join(res_dir, "cluster_by_sample_absolute.png"))
+        _make_barplot(ct, f"Cluster × Sample (res {res}) — relative", "Fraction",
+                      os.path.join(res_dir, "cluster_by_sample_relative.png"), normalize=True)
+
+        # Transposed: Sample × Cluster
+        ct_t = pd.crosstab(adata.obs[sample_col], adata.obs[cluster_col])
+        _make_barplot(ct_t, f"Sample × Cluster (res {res})", "Cells",
+                      os.path.join(res_dir, "sample_by_cluster_absolute.png"))
+        _make_barplot(ct_t, f"Sample × Cluster (res {res}) — relative", "Fraction",
+                      os.path.join(res_dir, "sample_by_cluster_relative.png"), normalize=True)
+
+    # 2. Cluster × Region
+    if has_regions:
+        ct = pd.crosstab(adata.obs[cluster_col], adata.obs["region_annotation"])
+        _make_barplot(ct, f"Cluster × Region (res {res})", "Cells",
+                      os.path.join(res_dir, "cluster_by_region_absolute.png"))
+        _make_barplot(ct, f"Cluster × Region (res {res}) — relative", "Fraction",
+                      os.path.join(res_dir, "cluster_by_region_relative.png"), normalize=True)
+
+        # Transposed: Region × Cluster
+        ct_t = pd.crosstab(adata.obs["region_annotation"], adata.obs[cluster_col])
+        _make_barplot(ct_t, f"Region × Cluster (res {res})", "Cells",
+                      os.path.join(res_dir, "region_by_cluster_absolute.png"))
+        _make_barplot(ct_t, f"Region × Cluster (res {res}) — relative", "Fraction",
+                      os.path.join(res_dir, "region_by_cluster_relative.png"), normalize=True)
+
+    # 3. Sample × Region (resolution-independent, but placed per-res for context)
+    if sample_col and has_regions:
+        ct = pd.crosstab(adata.obs[sample_col], adata.obs["region_annotation"])
+        _make_barplot(ct, f"Sample × Region", "Cells",
+                      os.path.join(res_dir, "sample_by_region_absolute.png"))
+        _make_barplot(ct, f"Sample × Region — relative", "Fraction",
+                      os.path.join(res_dir, "sample_by_region_relative.png"), normalize=True)
+
+    # 4. Cluster × Original annotation
+    if annot_col in adata.obs.columns and adata.obs[annot_col].nunique() > 1:
+        ct = pd.crosstab(adata.obs[cluster_col], adata.obs[annot_col])
+        _make_barplot(ct, f"Cluster × Annotation (res {res})", "Cells",
+                      os.path.join(res_dir, "cluster_by_annotation_absolute.png"))
+        _make_barplot(ct, f"Cluster × Annotation (res {res}) — relative", "Fraction",
+                      os.path.join(res_dir, "cluster_by_annotation_relative.png"), normalize=True)
+
+
+def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
+    """Generate top-N DE marker plots and TSV for one resolution."""
+    res_dir = os.path.join(markers_dir, f"res{res}")
+    os.makedirs(res_dir, exist_ok=True)
+
+    n_clusters = adata.obs[leiden_key].nunique()
+    if n_clusters < 2:
+        log.warning("      Only %d cluster(s) at res %s. Skipping markers.", n_clusters, res)
+        return
+
+    try:
+        sc.tl.rank_genes_groups(adata, groupby=leiden_key, method="wilcoxon")
+        sc.tl.dendrogram(adata, groupby=leiden_key, use_rep="X_pca")
+    except Exception as e:
+        log.warning("      DE/dendrogram failed at res %s: %s", res, e)
+        return
+
+    # Save full results TSV
+    try:
+        df = sc.get.rank_genes_groups_df(adata, None)
+        df.to_csv(os.path.join(res_dir, f"cluster_markers_res{res}.tsv"),
+                  sep="\t", index=False)
+    except Exception as e:
+        log.warning("      Marker TSV failed: %s", e)
+
+    # Dotplot
+    try:
+        sc.pl.rank_genes_groups_dotplot(
+            adata, groupby=leiden_key, standard_scale="var",
+            n_genes=de_n_genes, swap_axes=True, dendrogram=True,
+        )
+        plt.savefig(os.path.join(res_dir, f"dotplot_top{de_n_genes}_res{res}.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
+    except Exception as e:
+        log.warning("      Dotplot failed: %s", e)
+
+    # Heatmap
+    try:
+        sc.pl.rank_genes_groups_heatmap(
+            adata, n_genes=de_n_genes, groupby=leiden_key, use_raw=False,
+            swap_axes=True, dendrogram=True, show_gene_labels=True,
+        )
+        plt.savefig(os.path.join(res_dir, f"heatmap_top{de_n_genes}_res{res}.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
+    except Exception as e:
+        log.warning("      Heatmap failed: %s", e)
+
+    # Matrixplot
+    try:
+        sc.pl.rank_genes_groups_matrixplot(
+            adata, n_genes=de_n_genes, groupby=leiden_key, use_raw=False,
+            swap_axes=True, dendrogram=True,
+        )
+        plt.savefig(os.path.join(res_dir, f"matrixplot_top{de_n_genes}_res{res}.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
+    except Exception as e:
+        log.warning("      Matrixplot failed: %s", e)
 
 
 def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
-                          n_neighbors, subcompartment, annot_col):
+                          n_neighbors, subcompartment, annot_col, de_n_genes):
     """
-    Run Leiden at multiple resolutions, produce clustering evaluation,
-    QC plots, UMAPs, and split UMAPs for one branch.
+    Run Leiden at multiple resolutions, produce all analysis outputs.
     """
     clust_eval_dir = os.path.join(branch_dir, "Clustering_evaluation")
     qc_dir         = os.path.join(branch_dir, "QC_plots")
     umap_dir       = os.path.join(branch_dir, "UMAPs")
-    for d in [clust_eval_dir, qc_dir, umap_dir]:
+    markers_dir    = os.path.join(branch_dir, "ClusterMarkers")
+    barplots_dir   = os.path.join(branch_dir, "Barplots")
+    for d in [clust_eval_dir, qc_dir, umap_dir, markers_dir, barplots_dir]:
         os.makedirs(d, exist_ok=True)
+
+    # Find sample column
+    sample_col = None
+    for c in ["sample", "sample_batch"]:
+        if c in adata.obs.columns:
+            sample_col = c
+            break
 
     # ── Leiden at all resolutions ────────────────────────────────────────
     leiden_keys = []
@@ -167,7 +300,6 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
     # ── QC plots ─────────────────────────────────────────────────────────
     log.info("    [%s] QC plots …", branch_name)
 
-    # QC UMAPs (resolution-independent)
     qc_cols = [c for c in ["n_genes_by_counts", "total_counts", "pct_counts_mt", "pct_counts_hb"]
                if c in adata.obs.columns]
     if qc_cols:
@@ -175,7 +307,6 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
         plt.savefig(os.path.join(qc_dir, "QC_UMAPs.png"), dpi=300, bbox_inches="tight")
         plt.close()
 
-    # QC violins per cluster (per resolution)
     violin_cols = [c for c in ["n_genes_by_counts", "total_counts",
                                 "pct_counts_in_top_50_genes", "pct_counts_in_top_100_genes",
                                 "pct_counts_mt", "pct_counts_hb"]
@@ -198,7 +329,6 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
     # ── UMAPs ────────────────────────────────────────────────────────────
     log.info("    [%s] UMAPs …", branch_name)
 
-    # Per-resolution cluster UMAPs
     for res, key in zip(resolutions, leiden_keys):
         sc.pl.umap(adata, color=[key], size=2, wspace=0.25, frameon=False,
                    title=f"Leiden {res}")
@@ -206,12 +336,6 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                     dpi=300, bbox_inches="tight")
         plt.close()
 
-    # By sample
-    sample_col = None
-    for c in ["sample", "sample_batch"]:
-        if c in adata.obs.columns:
-            sample_col = c
-            break
     if sample_col:
         sc.pl.umap(adata, color=[sample_col], size=2, wspace=0.25, frameon=False,
                    title="By sample")
@@ -219,7 +343,6 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                     dpi=300, bbox_inches="tight")
         plt.close()
 
-    # By original cell type annotation
     if annot_col in adata.obs.columns:
         sc.pl.umap(adata, color=[annot_col], size=2, wspace=0.25, frameon=False,
                    title=f"Original annotation ({annot_col})")
@@ -227,7 +350,6 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                     dpi=300, bbox_inches="tight")
         plt.close()
 
-    # By region if available
     has_regions = (
         "region_annotation" in adata.obs.columns
         and adata.obs["region_annotation"].nunique() > 1
@@ -241,14 +363,11 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                     dpi=300, bbox_inches="tight")
         plt.close()
 
-    # ── Split UMAPs ──────────────────────────────────────────────────────
+    # Split UMAPs (use middle resolution)
     log.info("    [%s] Split UMAPs …", branch_name)
-
-    # Use the middle resolution for split UMAPs
     mid_idx = len(leiden_keys) // 2
     split_leiden_key = leiden_keys[mid_idx]
 
-    # Split by sample
     if sample_col and adata.obs[sample_col].nunique() > 1:
         try:
             adata.obs[sample_col] = adata.obs[sample_col].astype("category")
@@ -260,7 +379,6 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
         except Exception as e:
             log.warning("    [%s] Split UMAP by sample failed: %s", branch_name, e)
 
-    # Split by region
     if has_regions:
         try:
             split_umap(adata, color=split_leiden_key, split_by="region_annotation",
@@ -270,6 +388,35 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
             plt.close()
         except Exception as e:
             log.warning("    [%s] Split UMAP by region failed: %s", branch_name, e)
+
+    # ── Cluster markers (per resolution) ─────────────────────────────────
+    log.info("    [%s] Cluster markers …", branch_name)
+    for res, key in zip(resolutions, leiden_keys):
+        log.info("      [%s] Markers at res %.1f …", branch_name, res)
+        generate_cluster_markers(adata, key, res, markers_dir, de_n_genes)
+
+    # ── Barplots (per resolution) ────────────────────────────────────────
+    log.info("    [%s] Barplots …", branch_name)
+    for res, key in zip(resolutions, leiden_keys):
+        generate_barplots(adata, key, res, barplots_dir, sample_col, annot_col)
+
+    # ── Cell counts summary ──────────────────────────────────────────────
+    mid_key = leiden_keys[mid_idx]
+    counts_data = []
+    for _, row in adata.obs.iterrows():
+        entry = {"cluster": row[mid_key]}
+        if sample_col:
+            entry["sample"] = row[sample_col]
+        if has_regions:
+            entry["region"] = row["region_annotation"]
+        if annot_col in adata.obs.columns:
+            entry["original_annotation"] = row[annot_col]
+        counts_data.append(entry)
+
+    counts_df = pd.DataFrame(counts_data)
+    summary = counts_df.groupby(list(counts_df.columns)).size().reset_index(name="n_cells")
+    summary.to_csv(os.path.join(branch_dir, "cell_counts_summary.tsv"),
+                   sep="\t", index=False)
 
     return adata
 
@@ -283,6 +430,7 @@ RES_MAX        = float(snakemake.params.resolution_max)
 RES_STEP       = float(snakemake.params.resolution_step)
 N_NEIGHBORS    = int(snakemake.params.n_neighbors)
 N_PCS          = int(snakemake.params.n_pcs)
+DE_N_GENES     = int(snakemake.params.de_n_genes)
 sub_dir        = str(snakemake.output.sub_dir)
 
 try:
@@ -323,8 +471,6 @@ try:
     adata.obs["original_annotation"] = adata.obs[annot_col].copy()
     log.info("  Subset: %d cells, %d genes", adata.n_obs, adata.n_vars)
 
-    # Recalculate QC metrics on the subset so pct_counts_in_top_N_genes
-    # reflects this subcompartment's expression profile
     recalculate_qc_metrics(adata)
 
     # ── PCA ──────────────────────────────────────────────────────────────
@@ -341,7 +487,7 @@ try:
 
     adata_noharmony = run_clustering_branch(
         adata_noharmony, "NoHarmony", noharmony_dir, resolutions,
-        N_NEIGHBORS, subcompartment, annot_col,
+        N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES,
     )
 
     log.info("  Saving NoHarmony adata …")
@@ -365,15 +511,14 @@ try:
         sc.external.pp.harmony_integrate(adata_harmony, key=sample_col)
         adata_harmony.obsm["X_pca"] = adata_harmony.obsm["X_pca_harmony"]
     else:
-        log.warning("  Only 1 sample or no sample column — Harmony skipped, "
-                     "using uncorrected PCA.")
+        log.warning("  Only 1 sample or no sample column — Harmony skipped.")
 
     sc.pp.neighbors(adata_harmony, n_neighbors=N_NEIGHBORS, n_pcs=N_PCS)
     sc.tl.umap(adata_harmony)
 
     adata_harmony = run_clustering_branch(
         adata_harmony, "Harmony", harmony_dir, resolutions,
-        N_NEIGHBORS, subcompartment, annot_col,
+        N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES,
     )
 
     log.info("  Saving Harmony adata …")
