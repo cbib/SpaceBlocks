@@ -347,8 +347,8 @@ try:
     sc.pp.normalize_total(adata, target_sum=None)
     sc.pp.log1p(adata)
 
-    # ── 7. PCA → Harmony → UMAP ─────────────────────────────────────────
-    log.info("PCA (all genes) → Harmony → UMAP …")
+    # ── 7. PCA → UMAP ─────────────────────────────────────────
+    log.info("PCA (all genes) → UMAP …")
     sc.pp.pca(adata, use_highly_variable=False)
     adata.obsm["X_pca_original"] = adata.obsm["X_pca"].copy()
     sc.pp.neighbors(adata, n_neighbors=N_NEIGHBORS)

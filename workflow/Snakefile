@@ -147,6 +147,16 @@ rule all:
         get_all_targets,
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
 
+rule run_upstream:
+    """Run spaceranger, preprocessing, leiden analysis, and annotation template.
+       Does not require cluster_annotations to exist."""
+    input:
+        expand(f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}.h5ad", sample=SAMPLE_IDS),
+        expand(f"{OUTDIR_PP}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
+               sample=SAMPLE_IDS),
+        expand(f"{OUTDIR_PP}/{{sample}}/leiden_resolution_{{res}}",
+               sample=SAMPLE_IDS, res=RESOLUTIONS),
+        f"{OUTDIR_PP}/cluster_annotations_template.tsv",
 
 rule run_downstream:
     """Run annotation + DE + neighbourhood + integration."""
