@@ -1,13 +1,9 @@
 rule neighbourhood_analysis:
-    """
-    Spatial neighbourhood analysis, run for both annotation types.
-
-    The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation'.
-    """
+    """Spatial neighbourhood analysis per sample × annot_type."""
     input:
-        adata=f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}_annotated.h5ad",
+        adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
     output:
-        results_dir=directory(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis/{{annot_type}}"),
+        results_dir=directory(f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{annot_type}}"),
     params:
         sample_id=lambda wc: wc.sample,
         annot_type=lambda wc: wc.annot_type,

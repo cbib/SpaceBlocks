@@ -1,15 +1,5 @@
 rule generate_annotation_template:
-    """
-    Generate an empty cluster annotation template TSV.
-
-    Rows: cluster numbers 0–49.
-    Columns: {sample_id}_{resolution} for every sample × resolution
-    combination in the scan range.
-
-    The user fills in cell-type labels, then sets ``cluster_annotations``
-    in config.yaml to this file to trigger pseudobulk_de and
-    neighbourhood_analysis.
-    """
+    """Generate empty cluster annotation template TSV."""
     output:
         template=f"{OUTDIR_PP}/cluster_annotations_template.tsv",
     params:
@@ -22,15 +12,7 @@ rule generate_annotation_template:
     localrule: True
     run:
         import pandas as pd
-        columns = [
-            f"{s}_{r}"
-            for s in params.sample_ids
-            for r in params.resolutions
-        ]
-        df = pd.DataFrame(
-            index=range(params.max_clusters),
-            columns=columns,
-            data="",
-        )
+        columns = [f"{s}_{r}" for s in params.sample_ids for r in params.resolutions]
+        df = pd.DataFrame(index=range(params.max_clusters), columns=columns, data="")
         df.index.name = "cluster"
         df.to_csv(str(output.template), sep="\t")

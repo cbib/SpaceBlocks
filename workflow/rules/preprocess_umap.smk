@@ -8,8 +8,9 @@ rule preprocess_umap:
     input:
         sr_done=f"{OUTDIR_SR}/{{sample}}/.done",
     output:
-        adata=f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}.h5ad",
-        qupath_image=f"{OUTDIR_PP}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
+        adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
+        metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
+        qupath_image=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
     params:
         sample_id=lambda wc: wc.sample,
         sr_outdir=f"{OUTDIR_SR}/{{sample}}",
@@ -22,6 +23,8 @@ rule preprocess_umap:
         resolution_scan_min=ANALYSIS.get("resolution_scan_min", 0.2),
         resolution_scan_max=ANALYSIS.get("resolution_scan_max", 0.8),
         resolution_scan_step=ANALYSIS.get("resolution_scan_step", 0.1),
+        random_seed=RANDOM_SEED,
+        use_precomputed=USE_PRECOMPUTED,
     log:
         out=f"{LOGDIR}/preprocess_umap/{{sample}}.out",
         err=f"{LOGDIR}/preprocess_umap/{{sample}}.err",

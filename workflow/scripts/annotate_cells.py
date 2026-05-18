@@ -244,8 +244,11 @@ threshold           = float(snakemake.params.marker_threshold)
 MIN_MARKERS         = int(snakemake.params.min_markers_expressed)
 MIN_CELLS_PER_TYPE  = int(snakemake.params.min_cells_per_type)
 DE_N_GENES          = int(snakemake.params.de_n_genes)
+USE_PRECOMPUTED     = bool(snakemake.params.use_precomputed)
+EXT_ANNOT_CFG       = snakemake.params.external_annotation
 
 adata_path     = str(snakemake.input.adata)
+metadata_path  = str(snakemake.input.metadata)
 annot_tsv_path = str(snakemake.input.cluster_annotations)
 markers_path   = str(snakemake.input.annotation_markers)
 out_adata_path = str(snakemake.output.adata_annot)
@@ -272,6 +275,16 @@ try:
     library_id = None
     if "spatial" in adata.uns and len(adata.uns["spatial"]) == 1:
         library_id = list(adata.uns["spatial"].keys())[0]
+
+    # Reload precomputed clusters from metadata TSV if configured
+    if USE_PRECOMPUTED and os.path.isfile(metadata_path):
+        log.info("Reloading clusters from metadata: %s", metadata_path)
+        saved = pd.read_csv(metadata_path, sep="\t", index_col=0, comment="#")
+        leiden_cols = [c for c in saved.columns if c.startswith("leiden_")]
+        for col in leiden_cols:
+            if col not in adata.obs.columns:
+                adata.obs[col] = saved[col].reindex(adata.obs_names).astype(str).astype("category")
+                log.info("  Loaded %s from metadata", col)
 
     # ── 1. TSV-based annotation ──────────────────────────────────────────
     annot_df = pd.read_csv(annot_tsv_path, sep="\t", index_col=0)
@@ -357,7 +370,23 @@ try:
     changed = (adata.obs["cell_type_tsv"].astype(str) != adata.obs["cell_type_refined"].astype(str)).sum()
     log.info("  %d cells (%.1f%%) changed by refinement", changed, 100 * changed / adata.n_obs)
 
-    # ── 3. Plots ─────────────────────────────────────────────────────────
+    # ── 3. External annotation (from metadata TSV column) ────────────────
+    ext_enabled = False
+    if isinstance(EXT_ANNOT_CFG, dict) and EXT_ANNOT_CFG.get("enabled", False):
+        ext_col = EXT_ANNOT_CFG.get("column", "")
+        if ext_col and os.path.isfile(metadata_path):
+            log.info("Loading external annotation from metadata column '%s' …", ext_col)
+            saved = pd.read_csv(metadata_path, sep="\t", index_col=0, comment="#")
+            if ext_col in saved.columns:
+                adata.obs["cell_type_external"] = (
+                    saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
+                ext_enabled = True
+                log.info("  External annotation: %d types",
+                         adata.obs["cell_type_external"].nunique())
+            else:
+                log.warning("  External column '%s' not in metadata. Skipping.", ext_col)
+
+    # ── 4. Plots ─────────────────────────────────────────────────────────
     log.info("Generating annotation plots …")
 
     generate_annotation_plots(adata, "cell_type_tsv", "tsv", plots_dir,
@@ -370,20 +399,24 @@ try:
         generate_annotation_plots(adata, "cell_type_ingest", "ingest", plots_dir,
                                   sample_id, DE_N_GENES, library_id)
 
-    # Side-by-side comparison
-    n_panels = 3 if has_ingest else 2
-    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6))
-    sc.pl.umap(adata, color="cell_type_tsv", size=2, frameon=False,
-               title="TSV", ax=axes[0], show=False)
-    sc.pl.umap(adata, color="cell_type_refined", size=2, frameon=False,
-               title="Refined", ax=axes[1], show=False)
-    if has_ingest:
-        sc.pl.umap(adata, color="cell_type_ingest", size=2, frameon=False,
-                   title="Ingest", ax=axes[2], show=False)
-    plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
-    plt.close()
+    if ext_enabled:
+        generate_annotation_plots(adata, "cell_type_external", "external", plots_dir,
+                                  sample_id, DE_N_GENES, library_id)
+
+    # Side-by-side comparison (dynamic number of panels)
+    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_refined",
+                                       "cell_type_ingest", "cell_type_external"]
+                          if c in adata.obs.columns]
+    n_panels = len(annot_cols_present)
+    if n_panels >= 2:
+        fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6))
+        for ax, col in zip(axes, annot_cols_present):
+            sc.pl.umap(adata, color=col, size=2, frameon=False,
+                       title=col.replace("cell_type_", ""), ax=ax, show=False)
+        plt.tight_layout()
+        plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close()
 
     # Score distributions
     score_cols = [c for c in adata.obs.columns if c.startswith("score_")]
@@ -404,7 +437,7 @@ try:
                     dpi=300, bbox_inches="tight")
         plt.close()
 
-    # ── 4. Save ──────────────────────────────────────────────────────────
+    # ── 5. Save ──────────────────────────────────────────────────────────
     log.info("Saving annotated adata → %s", out_adata_path)
     Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)
     adata.write(out_adata_path)

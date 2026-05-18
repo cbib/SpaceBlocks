@@ -22,6 +22,20 @@ post_processing_outdir: "/scratch/CBiB/soterino/smk_visiumhd_results"
 
 logdir: "/scratch/CBiB/soterino/smk_logs"
 
+
+# Global random seed for reproducibility (PCA, neighbors, UMAP, Leiden)
+random_seed: 42
+ 
+# If true, preprocess_umap and annotate_cells reload leiden cluster
+# assignments from the metadata TSV instead of recomputing.
+# Set to true after the first successful run to freeze cluster labels.
+use_precomputed_clusters: false
+ 
+# External annotation from metadata TSV column
+external_annotation:
+  enabled: false
+  column: "manual_celltype"
+
 analysis:
   min_counts: 1
   min_cells: 3

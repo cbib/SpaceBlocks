@@ -5,16 +5,13 @@ Visium HD end-to-end Snakemake pipeline
          ↓
     preprocess_umap → leiden_analysis (per sample × resolution)
          ↓
-    ingest_ref (optional, if reference h5ad configured)
+    ingest_ref (optional)
          ↓
-    annotate_cells (TSV + marker refinement)
-         ↓                    ↓
-    pseudobulk_de         neighbourhood_analysis
-    (on concatenated,     (per sample × annot_type)
-     per annot_type
-     × analysis_level)
+    annotate_cells (TSV + marker refinement + external)
          ↓
-    integrate_samples (concat, Harmony, geosketch)
+    pseudobulk_aggregate → pseudobulk_de (R)
+    neighbourhood_analysis
+    integrate_samples → subcluster
 """
 
 import os
@@ -32,6 +29,8 @@ LOGDIR     = config["logdir"]
 OUTDIR_SR  = config["spaceranger_processing_outdir"]
 OUTDIR_PP  = config["post_processing_outdir"]
 GEOJ_DIR   = config["geojson_path"]
+SAMPLES_DIR = f"{OUTDIR_PP}/Samples"
+RANDOM_SEED = config.get("random_seed", 42)
 
 samples_df = (
     pd.read_csv(config["samples"])
@@ -57,6 +56,12 @@ RESOLUTIONS = [
 ]
 
 ANNOT_TYPES = ["tsv_annotation"] # "refined_annotation"
+
+# Add external annotation type if configured
+ext_annot = config.get("external_annotation", {})
+if ext_annot.get("enabled", False):
+    ANNOT_TYPES.append("external_annotation")
+
 ANALYSIS_LEVELS = ["by_region", "by_celltype_region"] # Future: append "by_niche_region" once niche identification is added
 
 
@@ -72,6 +77,8 @@ def _cluster_annotations_available():
 
 HAS_CLUSTER_ANNOT = _cluster_annotations_available()
 HAS_INGEST_REF = bool(config.get("ingest_ref", ""))
+USE_PRECOMPUTED = config.get("use_precomputed_clusters", False)
+
 
 def get_resource(rule_name, key):
     section = config.get("resources", {})
@@ -92,31 +99,24 @@ def fastq_dirs_comma_separated(wc):
 def get_all_targets(wildcards):
     targets = []
     for sample in SAMPLE_IDS:
-        # Core
-        targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}.h5ad")
-        targets.append(f"{OUTDIR_PP}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
-        # Per-resolution Leiden plots
+        targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}.h5ad")
+        targets.append(f"{SAMPLES_DIR}/{sample}/metadata_{sample}.tsv")
+        targets.append(f"{SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
         for res in RESOLUTIONS:
-            targets.append(f"{OUTDIR_PP}/{sample}/leiden_resolution_{res}")
-    # Conditional on cluster annotations
+            targets.append(f"{SAMPLES_DIR}/{sample}/leiden_resolution_{res}")
     if HAS_CLUSTER_ANNOT:
-        # Ingest (optional)
         if HAS_INGEST_REF:
             for sample in SAMPLE_IDS:
-                targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}_ingested.h5ad")
-        # Annotated objects
+                targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}_ingested.h5ad")
         for sample in SAMPLE_IDS:
-            targets.append(f"{OUTDIR_PP}/{sample}/adata_{sample}_annotated.h5ad")
-        # Neighbourhood (per sample × annot_type)
+            targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}_annotated.h5ad")
         for sample in SAMPLE_IDS:
             for at in ANNOT_TYPES:
-                targets.append(f"{OUTDIR_PP}/{sample}/neighbourhood_analysis/{at}")
-        # Pseudobulk DE (on concatenated, per annot_type × analysis_level)
+                targets.append(f"{SAMPLES_DIR}/{sample}/neighbourhood_analysis/{at}")
         for at in ANNOT_TYPES:
             for level in ANALYSIS_LEVELS:
                 targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/aggregated")
                 targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/de_results")
-        # Integration
         targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
@@ -148,29 +148,30 @@ rule all:
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
 
 rule run_upstream:
-    """Run spaceranger, preprocessing, leiden analysis, and annotation template.
-       Does not require cluster_annotations to exist."""
+    """Spaceranger, preprocessing, leiden, annotation template only."""
     input:
-        expand(f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}.h5ad", sample=SAMPLE_IDS),
-        expand(f"{OUTDIR_PP}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
+        expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad", sample=SAMPLE_IDS),
+        expand(f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv", sample=SAMPLE_IDS),
+        expand(f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
                sample=SAMPLE_IDS),
-        expand(f"{OUTDIR_PP}/{{sample}}/leiden_resolution_{{res}}",
+        expand(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{res}}",
                sample=SAMPLE_IDS, res=RESOLUTIONS),
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
 
 rule run_downstream:
-    """Run annotation + DE + neighbourhood + integration."""
+    """Annotation + DE + neighbourhood + integration."""
     input:
-        expand(f"{OUTDIR_PP}/{{sample}}/adata_{{sample}}_annotated.h5ad", sample=SAMPLE_IDS),
+        expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad", sample=SAMPLE_IDS),
         expand(f"{OUTDIR_PP}/pseudobulk/{{at}}/{{level}}/de_results",
-                at=ANNOT_TYPES, level=ANALYSIS_LEVELS),
-        expand(f"{OUTDIR_PP}/{{sample}}/neighbourhood_analysis/{{at}}",
+               at=ANNOT_TYPES, level=ANALYSIS_LEVELS),
+        expand(f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{at}}",
                sample=SAMPLE_IDS, at=ANNOT_TYPES),
         f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
         f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
         f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",
 
 rule subcluster_all:
+    """Run all subcompartment analyses."""
     input:
         expand(f"{OUTDIR_PP}/Subcompartments/{{sc}}",
-                sc=list(config.get("subcompartments", {}).keys())),
+               sc=list(config.get("subcompartments", {}).keys())),

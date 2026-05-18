@@ -47,6 +47,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("subcluster")
 
+RANDOM_SEED = int(snakemake.params.random_seed)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -225,7 +226,7 @@ def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
 
 
 def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
-                          n_neighbors, subcompartment, annot_col, de_n_genes):
+                          n_neighbors, subcompartment, annot_col, de_n_genes, RANDOM_SEED):
     """
     Run Leiden at multiple resolutions, produce all analysis outputs.
     """
@@ -248,7 +249,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
     leiden_keys = []
     for res in resolutions:
         key = f"leiden_{str(res).replace('.', '_')}"
-        sc.tl.leiden(adata, resolution=res, key_added=key)
+        sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
         leiden_keys.append(key)
         log.info("    [%s] res=%.1f → %d clusters", branch_name, res, adata.obs[key].nunique())
 
@@ -475,19 +476,19 @@ try:
 
     # ── PCA ──────────────────────────────────────────────────────────────
     log.info("  PCA …")
-    sc.pp.pca(adata, use_highly_variable=False)
+    sc.pp.pca(adata, use_highly_variable=False, random_state=RANDOM_SEED)
 
     # ══════════════════════════════════════════════════════════════════════
     # Branch 1: NoHarmony
     # ══════════════════════════════════════════════════════════════════════
     log.info("  === NoHarmony branch ===")
     adata_noharmony = adata.copy()
-    sc.pp.neighbors(adata_noharmony, n_neighbors=N_NEIGHBORS, n_pcs=N_PCS)
-    sc.tl.umap(adata_noharmony)
+    sc.pp.neighbors(adata_noharmony, n_neighbors=N_NEIGHBORS, n_pcs=N_PCS, random_state=RANDOM_SEED)
+    sc.tl.umap(adata_noharmony, random_state=RANDOM_SEED)
 
     adata_noharmony = run_clustering_branch(
         adata_noharmony, "NoHarmony", noharmony_dir, resolutions,
-        N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES,
+        N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
     )
 
     log.info("  Saving NoHarmony adata …")
@@ -508,17 +509,17 @@ try:
 
     if sample_col and adata_harmony.obs[sample_col].nunique() > 1:
         adata_harmony.obsm["X_pca_original"] = adata_harmony.obsm["X_pca"].copy()
-        sc.external.pp.harmony_integrate(adata_harmony, key=sample_col)
+        sc.external.pp.harmony_integrate(adata_harmony, key=sample_col, random_state=RANDOM_SEED)
         adata_harmony.obsm["X_pca"] = adata_harmony.obsm["X_pca_harmony"]
     else:
         log.warning("  Only 1 sample or no sample column — Harmony skipped.")
 
-    sc.pp.neighbors(adata_harmony, n_neighbors=N_NEIGHBORS, n_pcs=N_PCS)
-    sc.tl.umap(adata_harmony)
+    sc.pp.neighbors(adata_harmony, n_neighbors=N_NEIGHBORS, n_pcs=N_PCS, random_state=RANDOM_SEED)
+    sc.tl.umap(adata_harmony, random_state=RANDOM_SEED)
 
     adata_harmony = run_clustering_branch(
         adata_harmony, "Harmony", harmony_dir, resolutions,
-        N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES,
+        N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
     )
 
     log.info("  Saving Harmony adata …")

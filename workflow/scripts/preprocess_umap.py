@@ -16,6 +16,7 @@ import sys
 import traceback
 from pathlib import Path
 from glob import glob
+from datetime import datetime
 
 import geopandas as gpd
 import matplotlib
@@ -58,8 +59,11 @@ N_PCS          = int(snakemake.params.n_pcs)
 RES_SCAN_MIN   = float(snakemake.params.resolution_scan_min)
 RES_SCAN_MAX   = float(snakemake.params.resolution_scan_max)
 RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
+RANDOM_SEED    = int(snakemake.params.random_seed)
+USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
 
 out_adata      = str(snakemake.output.adata)
+out_metadata   = str(snakemake.output.metadata)
 out_qupath_img = str(snakemake.output.qupath_image)
 output_dir     = str(Path(out_adata).parent)
 
@@ -76,6 +80,11 @@ def find_sr_file(sr_outdir, *patterns):
     raise FileNotFoundError(
         f"Could not find any of [{tried}] under {sr_outdir}"
     )
+
+
+def _resolution_range(rmin, rmax, step):
+    n = round((rmax - rmin) / step)
+    return [round(rmin + i * step, 10) for i in range(n + 1)]
 
 
 def _normalise_cell_id(raw_id):
@@ -348,24 +357,51 @@ try:
     sc.pp.log1p(adata)
 
     # ── 7. PCA → UMAP ─────────────────────────────────────────
-    log.info("PCA (all genes) → UMAP …")
-    sc.pp.pca(adata, use_highly_variable=False)
+    log.info("PCA (all genes) → UMAP (seed=%d) …", RANDOM_SEED)
+    sc.pp.pca(adata, use_highly_variable=False, random_state=RANDOM_SEED)
     adata.obsm["X_pca_original"] = adata.obsm["X_pca"].copy()
-    sc.pp.neighbors(adata, n_neighbors=N_NEIGHBORS)
-    sc.tl.umap(adata)
+    sc.pp.neighbors(adata, n_neighbors=N_NEIGHBORS, random_state=RANDOM_SEED)
+    sc.tl.umap(adata, random_state=RANDOM_SEED)
 
     # ── 8. Leiden at all resolutions ─────────────────────────────────────
-    resolutions = np.arange(RES_SCAN_MIN, RES_SCAN_MAX, RES_SCAN_STEP).round(1)
-    log.info("Computing Leiden for %d resolutions: %s", len(resolutions), list(resolutions))
-    for res in resolutions:
-        key = f"leiden_{str(res).replace('.', '_')}"
-        sc.tl.leiden(adata, resolution=res, key_added=key)
-        log.info("  res=%.1f → %d clusters", res, adata.obs[key].nunique())
+    resolutions = _resolution_range(RES_SCAN_MIN, RES_SCAN_MAX, RES_SCAN_STEP)
+    leiden_keys = [f"leiden_{str(r).replace('.', '_')}" for r in resolutions]
+
+    if USE_PRECOMPUTED and os.path.isfile(out_metadata):
+        log.info("Reloading precomputed clusters from %s …", out_metadata)
+        saved_meta = pd.read_csv(out_metadata, sep="\t", index_col=0, comment="#")
+        for key in leiden_keys:
+            if key in saved_meta.columns:
+                adata.obs[key] = saved_meta[key].reindex(adata.obs_names).astype(str).astype("category")
+                log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
+            else:
+                log.warning("  %s not in saved metadata, computing …", key)
+                res = float(key.replace("leiden_", "").replace("_", "."))
+                sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
+    else:
+        log.info("Computing Leiden for %d resolutions: %s", len(resolutions), list(resolutions))
+        for res in resolutions:
+            key = f"leiden_{str(res).replace('.', '_')}"
+            sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
+            log.info("  res=%.1f → %d clusters", res, adata.obs[key].nunique())
 
     # ── 9. Save ──────────────────────────────────────────────────────────
     log.info("Saving adata → %s", out_adata)
     Path(out_adata).parent.mkdir(parents=True, exist_ok=True)
     adata.write(out_adata)
+
+    # Save metadata TSV with cluster assignments for reproducibility
+    log.info("Saving metadata TSV → %s", out_metadata)
+    meta_cols = ["sample", "region_annotation"] + [k for k in leiden_keys if k in adata.obs.columns]
+    meta_df = adata.obs[meta_cols].copy()
+    Path(out_metadata).parent.mkdir(parents=True, exist_ok=True)
+    with open(out_metadata, "w") as f:
+        f.write(f"# Generated: {datetime.now().isoformat()}\n")
+        f.write(f"# Sample: {sample_id}\n")
+        f.write(f"# Scanpy: {sc.__version__}\n")
+        f.write(f"# Random seed: {RANDOM_SEED}\n")
+        f.write(f"# n_cells: {adata.n_obs}\n")
+        meta_df.to_csv(f, sep="\t")
 
     log.info("Copying hires image → %s", out_qupath_img)
     Path(out_qupath_img).parent.mkdir(parents=True, exist_ok=True)
