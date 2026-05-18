@@ -1,5 +1,16 @@
 rule ingest_ref:
-    """Transfer cell-type labels from reference via sc.tl.ingest."""
+    """
+    Transfer cell-type labels from a reference scRNA-seq h5ad to each
+    Visium HD sample using scanpy.tl.ingest.
+
+    The reference must contain:
+    - A cell-type annotation column (configurable via ref_label_key)
+    - X as normalised expression (same normalisation as the query)
+    - PCA in obsm['X_pca']
+
+    Produces an ingested h5ad with obs['cell_type_ingest'] and plots.
+    Only runs if config['ingest_ref'] points to a valid h5ad file.
+    """
     input:
         adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
         ingest_ref=config.get("ingest_ref", ""),

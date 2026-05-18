@@ -24,7 +24,7 @@ logdir: "/scratch/CBiB/soterino/smk_logs"
 
 
 # Global random seed for reproducibility (PCA, neighbors, UMAP, Leiden)
-random_seed: 42
+random_seed: 0
  
 # If true, preprocess_umap and annotate_cells reload leiden cluster
 # assignments from the metadata TSV instead of recomputing.

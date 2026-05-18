@@ -1,5 +1,15 @@
 rule generate_annotation_template:
-    """Generate empty cluster annotation template TSV."""
+    """
+    Generate an empty cluster annotation template TSV.
+
+    Rows: cluster numbers 0–49.
+    Columns: {sample_id}_{resolution} for every sample × resolution
+    combination in the scan range.
+
+    The user fills in cell-type labels, then sets ``cluster_annotations``
+    in config.yaml to this file to trigger pseudobulk_de and
+    neighbourhood_analysis.
+    """
     output:
         template=f"{OUTDIR_PP}/cluster_annotations_template.tsv",
     params:

@@ -1,5 +1,12 @@
 rule integrate_samples:
-    """Concatenate all annotated samples, Harmony, geosketch."""
+    """
+    Integrate all annotated samples into a multi-sample object.
+
+    Produces three h5ad files in integrated_samples/:
+    - concatenated.h5ad:  simple concatenation (no batch correction)
+    - harmony_integrated.h5ad:  Harmony-corrected PCA + UMAP
+    - sketched.h5ad:  geosketched 25% subset with projected clusters
+    """
     input:
         annotated=expand(
             f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",

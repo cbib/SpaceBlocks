@@ -1,5 +1,9 @@
 rule neighbourhood_analysis:
-    """Spatial neighbourhood analysis per sample × annot_type."""
+    """
+    Spatial neighbourhood analysis, run for both annotation types.
+
+    The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation'.
+    """
     input:
         adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
     output:
