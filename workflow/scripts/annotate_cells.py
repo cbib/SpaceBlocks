@@ -293,7 +293,7 @@ try:
             leiden_cols = [c for c in saved.columns if c.startswith("leiden_")]
             for col in leiden_cols:
                 if col not in adata.obs.columns:
-                    adata.obs[col] = saved[col].reindex(adata.obs_names).astype(str).astype("category")
+                    adata.obs[col] = pd.Categorical(saved[col].reindex(adata.obs_names).astype(int))
                     log.info("  Loaded %s from metadata", col)
 
     # ── 1. TSV-based annotation ──────────────────────────────────────────

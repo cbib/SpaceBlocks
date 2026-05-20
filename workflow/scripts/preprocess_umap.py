@@ -385,7 +385,7 @@ try:
             saved_meta = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
             for key in leiden_keys:
                 if key in saved_meta.columns:
-                    adata.obs[key] = saved_meta[key].reindex(adata.obs_names).astype(str).astype("category")
+                    adata.obs[key] = pd.Categorical(saved_meta[key].reindex(adata.obs_names).astype(int))
                     log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
                 else:
                     log.warning("  %s not in saved metadata, computing …", key)
