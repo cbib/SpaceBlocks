@@ -24,6 +24,7 @@ rule subcluster:
         n_pcs=ANALYSIS.get("n_pcs", 30),
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         random_seed=RANDOM_SEED,
+        annotation_colors=config.get("annotation_colors", {}),
     log:
         out=f"{LOGDIR}/subcluster/{{subcompartment}}.out",
         err=f"{LOGDIR}/subcluster/{{subcompartment}}.err",

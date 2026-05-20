@@ -49,6 +49,7 @@ RES_SCAN_MAX   = float(snakemake.params.resolution_scan_max)
 RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
 markers_path   = str(snakemake.input.cell_markers)
 res_dir        = str(snakemake.output.res_dir)
+ANNOTATION_COLORS = snakemake.params.annotation_colors
 
 
 def read_tsv_to_dict(tsv_path):
@@ -104,6 +105,17 @@ try:
     # Set as the working "leiden" column for plotting convenience
     adata.obs["leiden"] = adata.obs[leiden_key]
     log.info("Using %s: %d clusters", leiden_key, adata.obs["leiden"].nunique())
+
+    # Apply custom palette if configured
+    def _set_palette(adata, obs_key, colors_cfg):
+        if not isinstance(colors_cfg, dict):
+            return
+        cd = colors_cfg.get(obs_key, {})
+        if cd and obs_key in adata.obs.columns:
+            cats = adata.obs[obs_key].cat.categories
+            adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
+
+    _set_palette(adata, "leiden", ANNOTATION_COLORS)
 
     has_annotations = (
         "region_annotation" in adata.obs.columns

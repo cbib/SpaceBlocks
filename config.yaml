@@ -85,6 +85,41 @@ analysis:
     "Tumor area" : "#46337EFF"
     "Invasive area" : "#440154FF"
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  Color palette or leiden_analysis.py, ingest_ref.py, subcluster.py:
+# ═══════════════════════════════════════════════════════════════════════════
+# Any obs column can be specified — leiden, cell_type_refined, etc.
+# Categories not listed get #cccccc (light grey)
+annotation_colors:
+  cell_type_tsv:
+    # red, brown and black for keratinocytes
+    "Keratinocytes": "#d62728"
+    "Keratinocytes_Basal": "#8c564b"
+    "Keratinocytes_Suprabasal": "#a0522d"
+    "Keratinocytes_Mal": "#000000"
+    # blue for immune
+    "Tcells": "#1f77b4"
+    "Plasma_cells": "#9467bd"
+    "Mono_Macro": "#08519c"
+    "Macro_Tcells": "#756bb1"
+    "Macro_Plasma": "#9e9ac8"
+    # green for stroma
+    "Fibroblasts": "#2ca02c"
+    "Fibroblasts_Macro": "#bcbd22"
+    "Fibroblasts_Endothelial": "#17becf"
+    "Fibroblasts_Keratinocytes": "#ffbb78"
+    "Fibroblasts_Plasma": "#fdae6b"
+    "Endothelial": "#98df8a"
+    "Adipocytes": "#dbdb8d"
+    "Gland_cells": "#ff7f0e"
+    # grey for muscle
+    "Smooth_muscle": "#d9d9d9"
+    "Skeletal_muscle": "#b9b9c9"
+  # cell_type_ingest:
+  #   "T_cells": "#d62728"
+  #   "B_cells": "#9467bd"
+
+
 # Subcompartment subclustering — leave empty or omit to skip
 # Keys become subcompartment names, strings are matched against the
 # annotation column (case-sensitive, exact match)

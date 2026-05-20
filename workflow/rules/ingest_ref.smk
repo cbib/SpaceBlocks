@@ -21,6 +21,7 @@ rule ingest_ref:
         sample_id=lambda wc: wc.sample,
         ref_label_key=config.get("ingest_ref_label_key", "cell_type"),
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
+        annotation_colors=config.get("annotation_colors", {}),
     log:
         out=f"{LOGDIR}/ingest_ref/{{sample}}.out",
         err=f"{LOGDIR}/ingest_ref/{{sample}}.err",

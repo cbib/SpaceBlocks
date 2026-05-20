@@ -226,7 +226,8 @@ def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
 
 
 def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
-                          n_neighbors, subcompartment, annot_col, de_n_genes, RANDOM_SEED):
+                          n_neighbors, subcompartment, annot_col, de_n_genes, RANDOM_SEED,
+                          annotation_colors=None):
     """
     Run Leiden at multiple resolutions, produce all analysis outputs.
     """
@@ -330,6 +331,19 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
     # ── UMAPs ────────────────────────────────────────────────────────────
     log.info("    [%s] UMAPs …", branch_name)
 
+    # Apply custom palettes if configured
+    if isinstance(annotation_colors, dict):
+        for key in leiden_keys:
+            cd = annotation_colors.get(key, {})
+            if cd and key in adata.obs.columns:
+                cats = adata.obs[key].cat.categories
+                adata.uns[f"{key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
+        if annot_col in adata.obs.columns:
+            cd = annotation_colors.get(annot_col, {})
+            if cd:
+                cats = adata.obs[annot_col].cat.categories
+                adata.uns[f"{annot_col}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
+
     for res, key in zip(resolutions, leiden_keys):
         sc.pl.umap(adata, color=[key], size=2, wspace=0.25, frameon=False,
                    title=f"Leiden {res}")
@@ -432,6 +446,7 @@ RES_STEP       = float(snakemake.params.resolution_step)
 N_NEIGHBORS    = int(snakemake.params.n_neighbors)
 N_PCS          = int(snakemake.params.n_pcs)
 DE_N_GENES     = int(snakemake.params.de_n_genes)
+ANNOTATION_COLORS = snakemake.params.annotation_colors
 sub_dir        = str(snakemake.output.sub_dir)
 
 try:
@@ -489,6 +504,7 @@ try:
     adata_noharmony = run_clustering_branch(
         adata_noharmony, "NoHarmony", noharmony_dir, resolutions,
         N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
+        annotation_colors=ANNOTATION_COLORS,
     )
 
     log.info("  Saving NoHarmony adata …")
@@ -520,6 +536,7 @@ try:
     adata_harmony = run_clustering_branch(
         adata_harmony, "Harmony", harmony_dir, resolutions,
         N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
+        annotation_colors=ANNOTATION_COLORS,
     )
 
     log.info("  Saving Harmony adata …")

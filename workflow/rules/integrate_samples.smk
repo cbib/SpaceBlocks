@@ -21,6 +21,7 @@ rule integrate_samples:
         n_neighbors=ANALYSIS.get("n_neighbors", 10),
         sketch_fraction=ANALYSIS.get("sketch_fraction", 0.25),
         random_seed=RANDOM_SEED,
+        annotation_colors=config.get("annotation_colors", {}),
     log:
         out=f"{LOGDIR}/integrate_samples/integrate.out",
         err=f"{LOGDIR}/integrate_samples/integrate.err",

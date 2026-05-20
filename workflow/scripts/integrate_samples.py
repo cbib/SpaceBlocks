@@ -52,6 +52,7 @@ annotated_paths = [str(p) for p in snakemake.input.annotated]
 sample_ids      = list(snakemake.params.sample_ids)
 N_NEIGHBORS     = int(snakemake.params.n_neighbors)
 SKETCH_FRAC     = float(snakemake.params.sketch_fraction)
+ANNOTATION_COLORS = snakemake.params.annotation_colors
 
 out_concat     = str(snakemake.output.concatenated)
 out_harmony    = str(snakemake.output.harmony)
@@ -100,6 +101,16 @@ try:
     log.info("Saving concatenated → %s", out_concat)
     adata.write(out_concat)
 
+    # Apply custom palettes if configured
+    if isinstance(ANNOTATION_COLORS, dict):
+        for obs_key in ["sample_batch", "cell_type_tsv", "cell_type_refined",
+                        "cell_type_ingest", "cell_type_external", "leiden_uncorrected"]:
+            cd = ANNOTATION_COLORS.get(obs_key, {})
+            if cd and obs_key in adata.obs.columns:
+                cats = adata.obs[obs_key].cat.categories if hasattr(adata.obs[obs_key], "cat") else []
+                if len(cats) > 0:
+                    adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
+
     # Plot uncorrected
     sc.pl.umap(adata, color=["sample_batch"], size=2, frameon=False,
                title="Uncorrected – by sample")
@@ -128,6 +139,11 @@ try:
 
     log.info("Saving Harmony integrated → %s", out_harmony)
     adata_harmony.write(out_harmony)
+
+    # Copy palettes to harmony object
+    for key in list(adata.uns.keys()):
+        if key.endswith("_colors") and key not in adata_harmony.uns:
+            adata_harmony.uns[key] = adata.uns[key]
 
     # Plots
     sc.pl.umap(adata_harmony, color=["sample_batch"], size=2, frameon=False,

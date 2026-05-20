@@ -46,6 +46,7 @@ log = logging.getLogger("ingest_ref")
 sample_id      = snakemake.params.sample_id
 ref_label_key  = snakemake.params.ref_label_key
 DE_N_GENES     = int(snakemake.params.de_n_genes)
+ANNOTATION_COLORS = snakemake.params.annotation_colors
 
 adata_path     = str(snakemake.input.adata)
 ref_path       = str(snakemake.input.ingest_ref)
@@ -125,6 +126,13 @@ try:
 
     # ── Plots ────────────────────────────────────────────────────────────
     log.info("Generating ingest plots …")
+
+    # Apply custom palette if configured
+    if isinstance(ANNOTATION_COLORS, dict):
+        cd = ANNOTATION_COLORS.get("cell_type_ingest", {})
+        if cd:
+            cats = adata.obs["cell_type_ingest"].cat.categories
+            adata.uns["cell_type_ingest_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
     library_id = None
     if "spatial" in adata.uns and len(adata.uns["spatial"]) == 1:
