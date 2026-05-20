@@ -8,8 +8,7 @@ dependencies:
   - r-rcolorbrewer
   - r-ggrepel
   - bioconductor-deseq2>=1.40
-  - bioconductor-enhancedvolcano
-  - bioconductor-degreport
+  - bioconductor-degpatterns
   - bioconductor-summarizedexperiment
   - bioconductor-complexheatmap
   - r-circlize

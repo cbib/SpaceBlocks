@@ -120,12 +120,16 @@ annotation_colors:
   #   "B_cells": "#9467bd"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  Subcompartment analysis
+# ═══════════════════════════════════════════════════════════════════════════
+
 # Subcompartment subclustering — leave empty or omit to skip
 # Keys become subcompartment names, strings are matched against the
 # annotation column (case-sensitive, exact match)
 subcompartments:
   Fibroblasts:
-    strings: ["Fibroblasts", "Fibroblasts_Tcells", "CD74_Fibroblasts_Macro", "TMSB4X_CD74_Macro_Fibroblasts", "TMSB4X_Fibroblasts_Macro", "Fibroblasts_Endothelial", "Fibroblasts_Keratinocytes", "Fibroblasts_Plasma"]
+    strings: ["Fibroblasts", "Fibroblasts_Macro", "Fibroblasts_Endothelial", "Fibroblasts_Keratinocytes", "Fibroblasts_Plasma"]
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
@@ -135,15 +139,19 @@ subcompartments:
     resolution_max: 1.2
     resolution_step: 0.2
   MonoMacro_Tcells:
-    strings: ["Complement_Mono", "Tcells","Fibroblasts_Tcells", "CD74_Macro_Tcells", "TMSB4X_CD74_Macro_Tcells", "TMSB4X_Fibroblasts_Macro", "CD74_Fibroblasts_Macro", "TMSB4X_CD74_Macro", "TMSB4X_CD74_Macro_Tcells", "Fibroblasts_Macro", "Mono_Macro", "Endothelial_Macro"]
+    strings: ["Mono_Macro", "Macro_Tcells","Macro_Plasma", "Tcells", "Fibroblasts_Macro"]
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
   Plasma_Bcells:
-    strings: ["TMSB4X_CD74_Bcells", "Plasma_cells", "Fibroblasts_Plasma", "Fibroblasts_Plasma_cells"]
+    strings: ["Plasma_cells", "Macro_Plasma", "Fibroblasts_Plasma"]
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Resources
+# ═══════════════════════════════════════════════════════════════════════════
 
 resources:
   spaceranger_count:

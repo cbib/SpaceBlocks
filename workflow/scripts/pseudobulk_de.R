@@ -1,5 +1,5 @@
 ################################################################################
-## pseudobulk_de.R – DESeq2 Wald + LRT, EnhancedVolcano, ComplexHeatmap,
+## pseudobulk_de.R – DESeq2 Wald + LRT, ComplexHeatmap, DEGpatterns,
 ##                   DEGpatterns
 ################################################################################
 
@@ -24,11 +24,11 @@ message("Loading libraries …")
 
 suppressPackageStartupMessages({
   library(DESeq2)
-  library(EnhancedVolcano)
   library(ComplexHeatmap)
   library(circlize)
   library(RColorBrewer)
   library(tidyverse)
+  library(ggrepel)
   library(DEGreport)
 })
 
@@ -303,18 +303,45 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
         n_significant = n_sig, n_up = n_up, n_down = n_down
       )
 
-      # EnhancedVolcano
+      # Custom volcano plot (grey=NS, red=up, blue=down, top genes labelled)
       tryCatch({
-        p <- EnhancedVolcano(
-          res_df, lab = res_df$gene,
-          x = "log2FoldChange", y = "padj",
-          pCutoff = padj_thr, FCcutoff = lfc_thr,
-          title = contrast_name,
-          subtitle = paste0(prefix, " — Wald test"),
-          legendPosition = "right"
-        )
+        volc_df <- res_df %>%
+          filter(!is.na(padj) & !is.na(log2FoldChange)) %>%
+          mutate(
+            sig_group = case_when(
+              padj >= padj_thr ~ "NS",
+              log2FoldChange > lfc_thr ~ "Up",
+              log2FoldChange < -lfc_thr ~ "Down",
+              TRUE ~ "NS"
+            ),
+            neg_log10p = -log10(pmax(padj, 1e-300))
+          )
+
+        # Top genes to label
+        top_up <- volc_df %>% filter(sig_group == "Up") %>%
+          arrange(desc(log2FoldChange)) %>% head(10)
+        top_down <- volc_df %>% filter(sig_group == "Down") %>%
+          arrange(log2FoldChange) %>% head(10)
+        label_genes <- bind_rows(top_up, top_down)
+
+        p <- ggplot(volc_df, aes(x = log2FoldChange, y = neg_log10p, color = sig_group)) +
+          geom_point(size = 0.8, alpha = 0.6) +
+          scale_color_manual(values = c("NS" = "grey70", "Up" = "#e41a1c", "Down" = "#377eb8"),
+                             name = "") +
+          geom_hline(yintercept = -log10(padj_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
+          geom_vline(xintercept = c(-lfc_thr, lfc_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
+          ggrepel::geom_text_repel(
+            data = label_genes, aes(label = gene),
+            size = 2.5, max.overlaps = 20, color = "black",
+            segment.size = 0.2, segment.color = "grey50"
+          ) +
+          labs(title = contrast_name, subtitle = paste0(prefix, " — Wald test"),
+               x = "log2 Fold Change", y = "-log10(padj)") +
+          theme_bw() +
+          theme(legend.position = "right")
+
         ggsave(file.path(pairwise_dir, paste0("volcano_", contrast_name, ".png")),
-               plot = p, width = 10, height = 8, dpi = 300)
+               plot = p, width = 9, height = 7, dpi = 300)
       }, error = function(e) {
         message("      Volcano failed: ", conditionMessage(e))
       })
@@ -438,6 +465,171 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
       }
     }, error = function(e) {
       message("    DEGpatterns failed: ", conditionMessage(e))
+    })
+  }
+
+  # ── One-vs-rest comparisons + unique marker identification ──────────
+  message("    One-vs-rest comparisons …")
+  ovr_dir <- file.path(out_base, "one_vs_rest")
+  dir.create(ovr_dir, recursive = TRUE, showWarnings = FALSE)
+
+  ovr_results <- list()  # store results for cross-comparison
+
+  for (focal in conditions) {
+    focal_safe <- gsub("[^A-Za-z0-9_]", "_", focal)
+    message("      ", focal, " vs rest")
+
+    tryCatch({
+      # Create binary factor: focal vs rest
+      meta_ovr <- meta
+      meta_ovr[["ovr_group"]] <- ifelse(meta_ovr[[condition_col]] == focal, focal, "rest")
+      meta_ovr[["ovr_group"]] <- factor(meta_ovr[["ovr_group"]], levels = c("rest", focal))
+
+      dds_ovr <- DESeqDataSetFromMatrix(
+        countData = counts_t, colData = meta_ovr, design = ~ ovr_group
+      )
+      dds_ovr <- DESeq(dds_ovr, test = "Wald")
+      res_ovr <- results(dds_ovr, contrast = c("ovr_group", focal, "rest"))
+
+      res_ovr_df <- as.data.frame(res_ovr) %>%
+        rownames_to_column("gene") %>%
+        arrange(desc(log2FoldChange))
+
+      write.table(res_ovr_df, file.path(ovr_dir, paste0(focal_safe, "_vs_rest.tsv")),
+                  sep = "\t", quote = FALSE, row.names = FALSE)
+
+      n_sig <- sum(res_ovr_df$padj < padj_thr, na.rm = TRUE)
+      n_up  <- sum(res_ovr_df$padj < padj_thr & res_ovr_df$log2FoldChange > 0, na.rm = TRUE)
+      message("      ", n_sig, " sig (", n_up, " up)")
+
+      # Store for cross-comparison
+      ovr_results[[focal]] <- res_ovr_df
+
+      # Volcano plot (same style as pairwise)
+      tryCatch({
+        volc_df <- res_ovr_df %>%
+          filter(!is.na(padj) & !is.na(log2FoldChange)) %>%
+          mutate(
+            sig_group = case_when(
+              padj >= padj_thr ~ "NS",
+              log2FoldChange > lfc_thr ~ "Up",
+              log2FoldChange < -lfc_thr ~ "Down",
+              TRUE ~ "NS"
+            ),
+            neg_log10p = -log10(pmax(padj, 1e-300))
+          )
+        top_up <- volc_df %>% filter(sig_group == "Up") %>% arrange(desc(log2FoldChange)) %>% head(10)
+        top_down <- volc_df %>% filter(sig_group == "Down") %>% arrange(log2FoldChange) %>% head(10)
+        label_genes <- bind_rows(top_up, top_down)
+
+        p <- ggplot(volc_df, aes(x = log2FoldChange, y = neg_log10p, color = sig_group)) +
+          geom_point(size = 0.8, alpha = 0.6) +
+          scale_color_manual(values = c("NS" = "grey70", "Up" = "#e41a1c", "Down" = "#377eb8"), name = "") +
+          geom_hline(yintercept = -log10(padj_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
+          geom_vline(xintercept = c(-lfc_thr, lfc_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
+          ggrepel::geom_text_repel(data = label_genes, aes(label = gene), size = 2.5,
+                                    max.overlaps = 20, color = "black",
+                                    segment.size = 0.2, segment.color = "grey50") +
+          labs(title = paste0(focal, " vs rest"), x = "log2 Fold Change", y = "-log10(padj)") +
+          theme_bw() + theme(legend.position = "right")
+
+        ggsave(file.path(ovr_dir, paste0("volcano_", focal_safe, "_vs_rest.png")),
+               plot = p, width = 9, height = 7, dpi = 300)
+      }, error = function(e) {
+        message("      OVR volcano failed: ", conditionMessage(e))
+      })
+
+      # Top DE gene heatmap
+      tryCatch({
+        sig_genes_ovr <- res_ovr_df %>% filter(padj < padj_thr)
+        top_up_genes   <- sig_genes_ovr %>% filter(log2FoldChange > 0) %>% head(de_n_genes) %>% pull(gene)
+        top_down_genes <- sig_genes_ovr %>% filter(log2FoldChange < 0) %>% head(de_n_genes) %>% pull(gene)
+        top_genes_ovr <- c(top_up_genes, top_down_genes)
+        top_genes_ovr <- top_genes_ovr[top_genes_ovr %in% rownames(assay(vsd))]
+
+        if (length(top_genes_ovr) >= 2) {
+          draw_complex_heatmaps(
+            t(scale(t(assay(vsd)[top_genes_ovr, , drop = FALSE]))),
+            meta, condition_col, top_genes_ovr,
+            paste0(focal_safe, "_vs_rest"), ovr_dir, conditions, region_colors
+          )
+        }
+      }, error = function(e) {
+        message("      OVR heatmap failed: ", conditionMessage(e))
+      })
+
+    }, error = function(e) {
+      message("      OVR test failed for '", focal, "': ", conditionMessage(e))
+    })
+  }
+
+  # ── Unique marker identification ───────────────────────────────────
+  # A gene is a unique marker for level X if it is:
+  # - significantly UP in X vs rest (padj < thr, log2FC > lfc_thr)
+  # - NOT significantly UP in any other level vs rest
+  if (length(ovr_results) >= 2) {
+    message("    Identifying unique markers …")
+    tryCatch({
+      # For each level, get the set of significantly upregulated genes
+      up_gene_sets <- lapply(ovr_results, function(df) {
+        df %>% filter(padj < padj_thr & log2FoldChange > lfc_thr) %>% pull(gene)
+      })
+
+      unique_markers <- list()
+      for (lvl in names(up_gene_sets)) {
+        others <- setdiff(names(up_gene_sets), lvl)
+        other_genes <- unique(unlist(up_gene_sets[others]))
+        unique_to_lvl <- setdiff(up_gene_sets[[lvl]], other_genes)
+
+        if (length(unique_to_lvl) > 0) {
+          # Get the DE stats for these genes
+          lvl_df <- ovr_results[[lvl]] %>%
+            filter(gene %in% unique_to_lvl) %>%
+            arrange(desc(log2FoldChange))
+          unique_markers[[lvl]] <- lvl_df
+          message("      ", lvl, ": ", nrow(lvl_df), " unique markers")
+        } else {
+          message("      ", lvl, ": 0 unique markers")
+        }
+      }
+
+      # Save as combined TSV
+      if (length(unique_markers) > 0) {
+        all_markers <- bind_rows(unique_markers, .id = "level") %>%
+          arrange(level, desc(log2FoldChange))
+        write.table(all_markers, file.path(ovr_dir, "unique_markers.tsv"),
+                    sep = "\t", quote = FALSE, row.names = FALSE)
+
+        # Also save as column-format (one column per level, padded)
+        max_len <- max(sapply(unique_markers, nrow))
+        marker_cols <- lapply(unique_markers, function(df) {
+          c(df$gene, rep("", max_len - nrow(df)))
+        })
+        marker_df <- as.data.frame(marker_cols)
+        colnames(marker_df) <- gsub("[^A-Za-z0-9_]", "_", colnames(marker_df))
+        write.table(marker_df, file.path(ovr_dir, "unique_markers_by_level.tsv"),
+                    sep = "\t", quote = FALSE, row.names = FALSE)
+      }
+
+      # Summary barplot: number of unique markers per level
+      if (length(unique_markers) > 0) {
+        counts_bar <- tibble(
+          level = factor(names(unique_markers), levels = conditions),
+          n_markers = sapply(unique_markers, nrow)
+        )
+        p <- ggplot(counts_bar, aes(x = level, y = n_markers, fill = level)) +
+          geom_col(show.legend = FALSE) +
+          geom_text(aes(label = n_markers), vjust = -0.3, size = 3) +
+          labs(title = "Unique upregulated markers per level",
+               x = "", y = "Number of unique markers") +
+          theme_bw() +
+          theme(axis.text.x = element_text(angle = 45, hjust = 1))
+        ggsave(file.path(ovr_dir, "unique_markers_barplot.png"),
+               plot = p, width = max(6, length(unique_markers) * 1.2), height = 5, dpi = 300)
+      }
+
+    }, error = function(e) {
+      message("    Unique marker identification failed: ", conditionMessage(e))
     })
   }
 
