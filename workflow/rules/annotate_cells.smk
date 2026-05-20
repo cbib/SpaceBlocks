@@ -25,6 +25,7 @@ rule annotate_cells:
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         use_precomputed=USE_PRECOMPUTED,
         external_annotation=config.get("external_annotation", {}),
+        precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
     log:
         out=f"{LOGDIR}/annotate_cells/{{sample}}.out",
         err=f"{LOGDIR}/annotate_cells/{{sample}}.err",

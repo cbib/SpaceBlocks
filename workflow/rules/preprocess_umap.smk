@@ -4,6 +4,8 @@ rule preprocess_umap:
 
     Discovers files from the Space Ranger output directory rather than
     depending on hardcoded paths, since the tree varies across versions.
+    Saves metadata TSV with cluster assignments for reproducibility, or uses
+    precomputed metadata if specified in config.
     """
     input:
         sr_done=f"{OUTDIR_SR}/{{sample}}/.done",
@@ -25,6 +27,7 @@ rule preprocess_umap:
         resolution_scan_step=ANALYSIS.get("resolution_scan_step", 0.1),
         random_seed=RANDOM_SEED,
         use_precomputed=USE_PRECOMPUTED,
+        precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
     log:
         out=f"{LOGDIR}/preprocess_umap/{{sample}}.out",
         err=f"{LOGDIR}/preprocess_umap/{{sample}}.err",

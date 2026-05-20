@@ -61,6 +61,7 @@ RES_SCAN_MAX   = float(snakemake.params.resolution_scan_max)
 RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
 RANDOM_SEED    = int(snakemake.params.random_seed)
 USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
+PRECOMPUTED_DIR = str(snakemake.params.precomputed_metadata_dir)
 
 out_adata      = str(snakemake.output.adata)
 out_metadata   = str(snakemake.output.metadata)
@@ -367,17 +368,35 @@ try:
     resolutions = _resolution_range(RES_SCAN_MIN, RES_SCAN_MAX, RES_SCAN_STEP)
     leiden_keys = [f"leiden_{str(r).replace('.', '_')}" for r in resolutions]
 
-    if USE_PRECOMPUTED and os.path.isfile(out_metadata):
-        log.info("Reloading precomputed clusters from %s …", out_metadata)
-        saved_meta = pd.read_csv(out_metadata, sep="\t", index_col=0, comment="#")
-        for key in leiden_keys:
-            if key in saved_meta.columns:
-                adata.obs[key] = saved_meta[key].reindex(adata.obs_names).astype(str).astype("category")
-                log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
-            else:
-                log.warning("  %s not in saved metadata, computing …", key)
-                res = float(key.replace("leiden_", "").replace("_", "."))
+    if USE_PRECOMPUTED:
+        # Resolve metadata source: external dir first, then pipeline output
+        _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
+        if _ext_meta and os.path.isfile(_ext_meta):
+            _meta_source = _ext_meta
+            log.info("Reloading precomputed clusters from EXTERNAL: %s", _meta_source)
+        elif os.path.isfile(out_metadata):
+            _meta_source = out_metadata
+            log.info("Reloading precomputed clusters from output: %s", _meta_source)
+        else:
+            _meta_source = None
+            log.warning("use_precomputed_clusters is true but no metadata file found. Computing fresh.")
+
+        if _meta_source:
+            saved_meta = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
+            for key in leiden_keys:
+                if key in saved_meta.columns:
+                    adata.obs[key] = saved_meta[key].reindex(adata.obs_names).astype(str).astype("category")
+                    log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
+                else:
+                    log.warning("  %s not in saved metadata, computing …", key)
+                    res = float(key.replace("leiden_", "").replace("_", "."))
+                    sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
+        else:
+            log.info("Computing Leiden for %d resolutions: %s", len(resolutions), list(resolutions))
+            for res in resolutions:
+                key = f"leiden_{str(res).replace('.', '_')}"
                 sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
+                log.info("  res=%.1f → %d clusters", res, adata.obs[key].nunique())
     else:
         log.info("Computing Leiden for %d resolutions: %s", len(resolutions), list(resolutions))
         for res in resolutions:

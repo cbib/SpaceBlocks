@@ -246,6 +246,7 @@ MIN_CELLS_PER_TYPE  = int(snakemake.params.min_cells_per_type)
 DE_N_GENES          = int(snakemake.params.de_n_genes)
 USE_PRECOMPUTED     = bool(snakemake.params.use_precomputed)
 EXT_ANNOT_CFG       = snakemake.params.external_annotation
+PRECOMPUTED_DIR     = str(snakemake.params.precomputed_metadata_dir)
 
 adata_path     = str(snakemake.input.adata)
 metadata_path  = str(snakemake.input.metadata)
@@ -277,14 +278,23 @@ try:
         library_id = list(adata.uns["spatial"].keys())[0]
 
     # Reload precomputed clusters from metadata TSV if configured
-    if USE_PRECOMPUTED and os.path.isfile(metadata_path):
-        log.info("Reloading clusters from metadata: %s", metadata_path)
-        saved = pd.read_csv(metadata_path, sep="\t", index_col=0, comment="#")
-        leiden_cols = [c for c in saved.columns if c.startswith("leiden_")]
-        for col in leiden_cols:
-            if col not in adata.obs.columns:
-                adata.obs[col] = saved[col].reindex(adata.obs_names).astype(str).astype("category")
-                log.info("  Loaded %s from metadata", col)
+    if USE_PRECOMPUTED:
+        _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
+        if _ext_meta and os.path.isfile(_ext_meta):
+            _meta_source = _ext_meta
+        elif os.path.isfile(metadata_path):
+            _meta_source = metadata_path
+        else:
+            _meta_source = None
+
+        if _meta_source:
+            log.info("Reloading clusters from metadata: %s", _meta_source)
+            saved = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
+            leiden_cols = [c for c in saved.columns if c.startswith("leiden_")]
+            for col in leiden_cols:
+                if col not in adata.obs.columns:
+                    adata.obs[col] = saved[col].reindex(adata.obs_names).astype(str).astype("category")
+                    log.info("  Loaded %s from metadata", col)
 
     # ── 1. TSV-based annotation ──────────────────────────────────────────
     annot_df = pd.read_csv(annot_tsv_path, sep="\t", index_col=0)
@@ -374,17 +384,27 @@ try:
     ext_enabled = False
     if isinstance(EXT_ANNOT_CFG, dict) and EXT_ANNOT_CFG.get("enabled", False):
         ext_col = EXT_ANNOT_CFG.get("column", "")
-        if ext_col and os.path.isfile(metadata_path):
-            log.info("Loading external annotation from metadata column '%s' …", ext_col)
-            saved = pd.read_csv(metadata_path, sep="\t", index_col=0, comment="#")
-            if ext_col in saved.columns:
-                adata.obs["cell_type_external"] = (
-                    saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
-                ext_enabled = True
-                log.info("  External annotation: %d types",
-                         adata.obs["cell_type_external"].nunique())
+        if ext_col:
+            # Resolve metadata source for external annotation
+            _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
+            if _ext_meta and os.path.isfile(_ext_meta):
+                _ext_source = _ext_meta
+            elif os.path.isfile(metadata_path):
+                _ext_source = metadata_path
             else:
-                log.warning("  External column '%s' not in metadata. Skipping.", ext_col)
+                _ext_source = None
+
+            if _ext_source:
+                log.info("Loading external annotation from '%s' in %s …", ext_col, _ext_source)
+                saved = pd.read_csv(_ext_source, sep="\t", index_col=0, comment="#")
+                if ext_col in saved.columns:
+                    adata.obs["cell_type_external"] = (
+                        saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
+                    ext_enabled = True
+                    log.info("  External annotation: %d types",
+                             adata.obs["cell_type_external"].nunique())
+                else:
+                    log.warning("  External column '%s' not in metadata. Skipping.", ext_col)
 
     # ── 4. Plots ─────────────────────────────────────────────────────────
     log.info("Generating annotation plots …")

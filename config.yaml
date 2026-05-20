@@ -29,8 +29,10 @@ random_seed: 0
 # If true, preprocess_umap and annotate_cells reload leiden cluster
 # assignments from the metadata TSV instead of recomputing.
 # Set to true after the first successful run to freeze cluster labels.
-use_precomputed_clusters: false
- 
+use_precomputed_clusters: true
+# directory with precomputed metadata. empty = use pipeline output; set path for external backup
+precomputed_metadata_dir: "/scratch/CBiB/soterino/metadata_visiumhd/"   
+
 # External annotation from metadata TSV column
 external_annotation:
   enabled: false
