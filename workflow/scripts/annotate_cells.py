@@ -247,6 +247,8 @@ DE_N_GENES          = int(snakemake.params.de_n_genes)
 USE_PRECOMPUTED     = bool(snakemake.params.use_precomputed)
 EXT_ANNOT_CFG       = snakemake.params.external_annotation
 PRECOMPUTED_DIR     = str(snakemake.params.precomputed_metadata_dir)
+ANNOTATION_COLORS   = snakemake.params.annotation_colors
+REGION_COLORS       = snakemake.params.region_colors
 
 adata_path     = str(snakemake.input.adata)
 metadata_path  = str(snakemake.input.metadata)
@@ -409,6 +411,22 @@ try:
     # ── 4. Plots ─────────────────────────────────────────────────────────
     log.info("Generating annotation plots …")
 
+    # Apply custom palettes if configured
+    if isinstance(ANNOTATION_COLORS, dict):
+        for obs_key in ["cell_type_tsv", "cell_type_refined",
+                        "cell_type_ingest", "cell_type_external"]:
+            cd = ANNOTATION_COLORS.get(obs_key, {})
+            if cd and obs_key in adata.obs.columns:
+                cats = adata.obs[obs_key].cat.categories
+                adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
+
+    if REGION_COLORS and "region_annotation" in adata.obs.columns:
+        adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
+        cats = adata.obs["region_annotation"].cat.categories
+        adata.uns["region_annotation_colors"] = [
+            REGION_COLORS.get(str(c), "#cccccc") for c in cats
+        ]
+
     generate_annotation_plots(adata, "cell_type_tsv", "tsv", plots_dir,
                               sample_id, DE_N_GENES, library_id)
     generate_annotation_plots(adata, "cell_type_refined", "refined", plots_dir,
@@ -437,6 +455,55 @@ try:
         plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
                     dpi=300, bbox_inches="tight")
         plt.close()
+
+    # Side-by-side SPATIAL comparison (only if >1 annotation method)
+    if n_panels >= 2:
+        try:
+            fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6))
+            for ax, col in zip(axes, annot_cols_present):
+                sc.pl.spatial(adata, color=col, spot_size=20, frameon=False,
+                              title=col.replace("cell_type_", ""),
+                              library_id=library_id, ax=ax, show=False)
+            plt.tight_layout()
+            plt.savefig(os.path.join(plots_dir, f"spatial_comparison_{sample_id}.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close()
+        except Exception as e:
+            log.warning("Spatial comparison plot failed: %s", e)
+
+    # Per-sample composition barplots (by region)
+    has_regions = ("region_annotation" in adata.obs.columns
+                   and adata.obs["region_annotation"].nunique() > 1
+                   and not all(adata.obs["region_annotation"] == "Unlabeled"))
+    if has_regions:
+        for annot_col in annot_cols_present:
+            try:
+                ct = pd.crosstab(adata.obs["region_annotation"], adata.obs[annot_col])
+                ct_norm = ct.div(ct.sum(axis=1), axis=0) * 100
+                label = annot_col.replace("cell_type_", "")
+
+                # Apply custom colors if available
+                colors = None
+                if isinstance(ANNOTATION_COLORS, dict):
+                    cd = ANNOTATION_COLORS.get(annot_col, {})
+                    if cd:
+                        colors = [cd.get(str(c), "#cccccc") for c in ct.columns]
+
+                for data, suffix, ylabel in [(ct, "absolute", "Number of cells"),
+                                              (ct_norm, "relative", "Percentage (%)")]:
+                    ax = data.plot(kind="bar", stacked=True,
+                                   figsize=(max(8, len(ct) * 1.2), 6),
+                                   color=colors)
+                    ax.set_ylabel(ylabel)
+                    ax.set_xlabel("Region")
+                    ax.legend(title=label, bbox_to_anchor=(1.05, 1), loc="upper left")
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(plots_dir,
+                                f"barplot_{label}_{suffix}_{sample_id}.png"),
+                                dpi=300, bbox_inches="tight")
+                    plt.close()
+            except Exception as e:
+                log.warning("Barplot for %s failed: %s", annot_col, e)
 
     # Score distributions
     score_cols = [c for c in adata.obs.columns if c.startswith("score_")]

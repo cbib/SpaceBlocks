@@ -53,6 +53,7 @@ sample_ids      = list(snakemake.params.sample_ids)
 N_NEIGHBORS     = int(snakemake.params.n_neighbors)
 SKETCH_FRAC     = float(snakemake.params.sketch_fraction)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
+REGION_COLORS     = snakemake.params.region_colors
 
 out_concat     = str(snakemake.output.concatenated)
 out_harmony    = str(snakemake.output.harmony)
@@ -165,6 +166,82 @@ try:
         plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype_refined.png"),
                     dpi=300, bbox_inches="tight")
         plt.close()
+
+    # ── Composition barplots (absolute + relative, by sample and by region) ──
+    log.info("Composition barplots …")
+    annot_cols = [c for c in ["cell_type_tsv", "cell_type_refined",
+                              "cell_type_ingest", "cell_type_external"]
+                  if c in adata.obs.columns]
+
+    has_regions = ("region_annotation" in adata.obs.columns
+                   and adata.obs["region_annotation"].nunique() > 1
+                   and not all(adata.obs["region_annotation"] == "Unlabeled"))
+
+    # Apply region palette
+    if REGION_COLORS and has_regions:
+        adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
+        cats = adata.obs["region_annotation"].cat.categories
+        adata.uns["region_annotation_colors"] = [
+            REGION_COLORS.get(str(c), "#cccccc") for c in cats
+        ]
+
+    for annot_col in annot_cols:
+        label = annot_col.replace("cell_type_", "")
+
+        # By sample
+        try:
+            ct = pd.crosstab(adata.obs["sample_batch"], adata.obs[annot_col])
+            ct_norm = ct.div(ct.sum(axis=1), axis=0) * 100
+
+            col_colors = None
+            if isinstance(ANNOTATION_COLORS, dict):
+                cd = ANNOTATION_COLORS.get(annot_col, {})
+                if cd:
+                    col_colors = [cd.get(str(c), "#cccccc") for c in ct.columns]
+
+            for data, suffix, ylabel in [(ct, "absolute", "Number of cells"),
+                                          (ct_norm, "relative", "Percentage (%)")]:
+                ax = data.plot(kind="bar", stacked=True,
+                               figsize=(max(8, len(ct) * 1.2), 6),
+                               color=col_colors)
+                ax.set_ylabel(ylabel)
+                ax.set_xlabel("Sample")
+                ax.legend(title=label, bbox_to_anchor=(1.05, 1), loc="upper left")
+                plt.tight_layout()
+                plt.savefig(os.path.join(output_dir,
+                            f"barplot_{label}_by_sample_{suffix}.png"),
+                            dpi=300, bbox_inches="tight")
+                plt.close()
+        except Exception as e:
+            log.warning("Barplot by sample for %s failed: %s", annot_col, e)
+
+        # By region (if available)
+        if has_regions:
+            try:
+                ct = pd.crosstab(adata.obs["region_annotation"], adata.obs[annot_col])
+                ct_norm = ct.div(ct.sum(axis=1), axis=0) * 100
+
+                col_colors = None
+                if isinstance(ANNOTATION_COLORS, dict):
+                    cd = ANNOTATION_COLORS.get(annot_col, {})
+                    if cd:
+                        col_colors = [cd.get(str(c), "#cccccc") for c in ct.columns]
+
+                for data, suffix, ylabel in [(ct, "absolute", "Number of cells"),
+                                              (ct_norm, "relative", "Percentage (%)")]:
+                    ax = data.plot(kind="bar", stacked=True,
+                                   figsize=(max(8, len(ct) * 1.2), 6),
+                                   color=col_colors)
+                    ax.set_ylabel(ylabel)
+                    ax.set_xlabel("Region")
+                    ax.legend(title=label, bbox_to_anchor=(1.05, 1), loc="upper left")
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(output_dir,
+                                f"barplot_{label}_by_region_{suffix}.png"),
+                                dpi=300, bbox_inches="tight")
+                    plt.close()
+            except Exception as e:
+                log.warning("Barplot by region for %s failed: %s", annot_col, e)
 
     # ── 4. Geosketch ─────────────────────────────────────────────────────
     if not HAS_GEOSKETCH:
