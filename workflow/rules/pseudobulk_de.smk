@@ -19,7 +19,7 @@ rule pseudobulk_de:
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         padj_threshold=ANALYSIS.get("padj_threshold", 0.05),
         lfc_threshold=ANALYSIS.get("lfc_threshold", 0.5),
-        region_levels=ANALYSIS.get("region_levels", []),
+        region_levels=REGION_LEVELS,
         # Pass colors as two parallel lists for safe Python→R conversion
         region_color_names=list(ANALYSIS.get("region_colors", {}).keys()),
         region_color_values=list(ANALYSIS.get("region_colors", {}).values()),
