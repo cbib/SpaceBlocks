@@ -254,12 +254,15 @@ try:
         plt.close()
 
     for cluster in adata.obs["leiden"].cat.categories:
-        adata.obs["_highlight"] = adata.obs["leiden"].apply(
-            lambda x, c=cluster: c if x == c else "Other"
+        adata.obs["_highlight"] = pd.Categorical(
+            adata.obs["leiden"].apply(
+                lambda x, c=cluster: str(c) if x == c else "Other"
+            ),
+            categories=["Other", str(cluster)],
         )
         sc.pl.umap(
             adata, color="_highlight", size=2, wspace=0.25, frameon=False,
-            palette={"Other": "gray", cluster: "red"},
+            palette={"Other": "gray", str(cluster): "red"},
             title=f"Cluster {cluster}",
         )
         plt.savefig(os.path.join(spatial_dir, f"UMAP_highlight_{cluster}_{sample_id}.png"),
