@@ -62,6 +62,7 @@ RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
 RANDOM_SEED    = int(snakemake.params.random_seed)
 USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
 PRECOMPUTED_DIR = str(snakemake.params.precomputed_metadata_dir)
+REGION_COLORS   = snakemake.params.region_colors
 
 out_adata      = str(snakemake.output.adata)
 out_metadata   = str(snakemake.output.metadata)
@@ -341,6 +342,14 @@ try:
         region_labels = region_labels.reindex(adata.obs_names, fill_value="Unlabeled")
         region_labels = region_labels.replace("Necrosis", "Bubble")
         adata.obs["region_annotation"] = region_labels
+
+        # Apply custom region palette if configured
+        if REGION_COLORS:
+            adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
+            cats = adata.obs["region_annotation"].cat.categories
+            adata.uns["region_annotation_colors"] = [
+                REGION_COLORS.get(str(c), "#cccccc") for c in cats
+            ]
 
         sc.pl.spatial(adata, color="region_annotation", spot_size=20,
                       title="Annotated Regions", library_id=sample_id)

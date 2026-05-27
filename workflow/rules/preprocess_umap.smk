@@ -1,3 +1,14 @@
+def _preprocess_inputs(wc):
+    inputs = {"sr_done": f"{OUTDIR_SR}/{wc.sample}/.done"}
+    if USE_PRECOMPUTED:
+        precomp_dir = config.get("precomputed_metadata_dir", "")
+        if precomp_dir:
+            meta_file = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
+            if os.path.isfile(meta_file):
+                inputs["precomputed_meta"] = meta_file
+    return inputs
+
+
 rule preprocess_umap:
     """
     Load Space Ranger outputs, QC, normalise, PCA, Harmony, UMAP, all Leiden.
@@ -8,7 +19,7 @@ rule preprocess_umap:
     precomputed metadata if specified in config.
     """
     input:
-        sr_done=f"{OUTDIR_SR}/{{sample}}/.done",
+        unpack(_preprocess_inputs),
     output:
         adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
         metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
@@ -28,6 +39,7 @@ rule preprocess_umap:
         random_seed=RANDOM_SEED,
         use_precomputed=USE_PRECOMPUTED,
         precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
+        region_colors=ANALYSIS.get("region_colors", {}),
     log:
         out=f"{LOGDIR}/preprocess_umap/{{sample}}.out",
         err=f"{LOGDIR}/preprocess_umap/{{sample}}.err",

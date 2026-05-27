@@ -19,6 +19,7 @@ rule leiden_analysis:
         resolution_scan_max=ANALYSIS.get("resolution_scan_max", 0.8),
         resolution_scan_step=ANALYSIS.get("resolution_scan_step", 0.1),
         annotation_colors=config.get("annotation_colors", {}),
+        region_colors=ANALYSIS.get("region_colors", {}),
     log:
         out=f"{LOGDIR}/leiden_analysis/{{sample}}_res{{resolution}}.out",
         err=f"{LOGDIR}/leiden_analysis/{{sample}}_res{{resolution}}.err",

@@ -50,6 +50,7 @@ RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
 markers_path   = str(snakemake.input.cell_markers)
 res_dir        = str(snakemake.output.res_dir)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
+REGION_COLORS     = snakemake.params.region_colors
 
 
 def read_tsv_to_dict(tsv_path):
@@ -116,6 +117,14 @@ try:
             adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
     _set_palette(adata, "leiden", ANNOTATION_COLORS)
+
+    # Apply custom region palette if configured
+    if REGION_COLORS and "region_annotation" in adata.obs.columns:
+        adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
+        cats = adata.obs["region_annotation"].cat.categories
+        adata.uns["region_annotation_colors"] = [
+            REGION_COLORS.get(str(c), "#cccccc") for c in cats
+        ]
 
     has_annotations = (
         "region_annotation" in adata.obs.columns
