@@ -25,6 +25,8 @@ configfile: "config.yaml"
 validate(config, schema="schemas/config.schema.yaml")
 
 ANALYSIS   = config.get("analysis", {})
+_region_colors = ANALYSIS.get("region_colors", {})
+REGION_LEVELS  = ANALYSIS.get("region_levels", list(_region_colors.keys()))
 LOGDIR     = config["logdir"]
 OUTDIR_SR  = config["spaceranger_processing_outdir"]
 OUTDIR_PP  = config["post_processing_outdir"]
@@ -120,6 +122,7 @@ def get_all_targets(wildcards):
         targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
+        targets.append(f"{OUTDIR_PP}/integrated_samples/samples_report.pdf")
     subcomps = config.get("subcompartments", {})
     if subcomps:
         for sc_name in subcomps:
@@ -139,6 +142,7 @@ include: "rules/neighbourhood_analysis.smk"
 include: "rules/integrate_samples.smk"
 include: "rules/subcluster.smk"
 include: "rules/generate_annotation_template.smk"
+include: "rules/sample_report.smk"
 
 
 # ── Targets ──────────────────────────────────────────────────────────────────
@@ -148,7 +152,7 @@ rule all:
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
 
 rule run_upstream:
-    """Spaceranger, preprocessing, leiden, annotation template only."""
+    """Spaceranger, preprocessing, leiden, annotation template, ingest (if configured)."""
     input:
         expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad", sample=SAMPLE_IDS),
         expand(f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv", sample=SAMPLE_IDS),
@@ -157,6 +161,8 @@ rule run_upstream:
         expand(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{res}}",
                sample=SAMPLE_IDS, res=RESOLUTIONS),
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
+        *(expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_ingested.h5ad",
+                 sample=SAMPLE_IDS) if HAS_INGEST_REF else []),
 
 rule run_downstream:
     """Annotation + DE + neighbourhood + integration."""
@@ -169,6 +175,7 @@ rule run_downstream:
         f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
         f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
         f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",
+        f"{OUTDIR_PP}/integrated_samples/samples_report.pdf",
 
 rule subcluster_all:
     """Run all subcompartment analyses."""
