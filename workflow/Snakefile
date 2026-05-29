@@ -81,6 +81,10 @@ HAS_CLUSTER_ANNOT = _cluster_annotations_available()
 HAS_INGEST_REF = bool(config.get("ingest_ref", ""))
 USE_PRECOMPUTED = config.get("use_precomputed_clusters", False)
 
+GENE_EXPLORATION = config.get("gene_exploration", {})
+_gene_queries_path = GENE_EXPLORATION.get("queries", "")
+HAS_GENE_EXPLORATION = bool(_gene_queries_path) and os.path.isfile(_gene_queries_path)
+
 
 def get_resource(rule_name, key):
     section = config.get("resources", {})
@@ -123,6 +127,9 @@ def get_all_targets(wildcards):
         targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/samples_report.pdf")
+        if HAS_GENE_EXPLORATION:
+            targets.append(f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv")
+            targets.append(f"{OUTDIR_PP}/gene_exploration/spatial/.done")
     subcomps = config.get("subcompartments", {})
     if subcomps:
         for sc_name in subcomps:
@@ -143,6 +150,7 @@ include: "rules/integrate_samples.smk"
 include: "rules/subcluster.smk"
 include: "rules/generate_annotation_template.smk"
 include: "rules/sample_report.smk"
+include: "rules/explore_genes.smk"
 
 
 # ── Targets ──────────────────────────────────────────────────────────────────
@@ -182,3 +190,9 @@ rule subcluster_all:
     input:
         expand(f"{OUTDIR_PP}/Subcompartments/{{sc}}",
                sc=list(config.get("subcompartments", {}).keys())),
+
+rule explore_genes:
+    """Generate gene/signature exploration PDFs (integrated + spatial)."""
+    input:
+        f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
+        f"{OUTDIR_PP}/gene_exploration/spatial/.done",

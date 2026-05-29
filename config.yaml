@@ -121,6 +121,18 @@ annotation_colors:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Gene / signature exploration
+# ═══════════════════════════════════════════════════════════════════════════
+# Set queries to a TSV file (same column format as annotation_markers.tsv)
+# to enable the gene exploration rules.  Leave empty or omit to skip.
+gene_exploration:
+  queries: "config/gene_queries.tsv"
+  annot_key: "cell_type_tsv"              # obs column shown alongside expression
+  aucell_max_rank_fraction: 0.05          # top 5% of genes for AUCell recovery
+  # niche_column: "niche"                 # uncomment when niche identification is added
+  dpi: 300
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Subcompartment analysis
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -197,6 +209,14 @@ resources:
   sample_report:
     mem_mb: 32768
     runtime: 60
+    threads: 4
+  explore_genes_integrated:
+    mem_mb: 65536
+    runtime: 240
+    threads: 4
+  explore_genes_spatial:
+    mem_mb: 32768
+    runtime: 360
     threads: 4
   default:
     mem_mb: 8192
