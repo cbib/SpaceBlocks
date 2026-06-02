@@ -30,6 +30,9 @@ import pandas as pd
 import scanpy as sc
 from PIL import Image
 
+# Large cell type × region dotplots can exceed PIL's default pixel limit
+Image.MAX_IMAGE_PIXELS = None
+
 sc.settings.set_figure_params(vector_friendly=True)
 
 
@@ -104,7 +107,6 @@ def apply_region_palette(adata, region_colors):
 
 
 def make_score_adata(adata, score_col):
-    """Minimal AnnData with an obs score as a pseudo-gene for sc.pl.dotplot."""
     return sc.AnnData(
         X=np.asarray(adata.obs[score_col].values, dtype=np.float32).reshape(-1, 1),
         obs=adata.obs,
