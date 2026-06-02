@@ -1,12 +1,11 @@
 """
 explore_genes_integrated.py – Gene/signature exploration (integrated)
 =====================================================================
-Phase 1 of gene exploration.  Loads the Harmony-integrated h5ad once,
-computes AUCell scores for all signatures, writes expression_ranges.tsv,
-and produces one integrated PDF per entry.
-
-Individual genes  → raw normalised expression for dotplot/violin/UMAP.
-Signatures        → AUCell score for violin/UMAP; dotplot of member genes.
+Phase 1: loads the Harmony-integrated h5ad once, computes AUCell scores
+for all signatures, writes expression_ranges.tsv, and produces PNGs
+organised as:
+    gene_exploration/{entry}/{entry}_genes.tsv
+    gene_exploration/{entry}/Integrated/*.png
 """
 
 import csv
@@ -20,11 +19,12 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import matplotlib.gridspec as gridspec
 import numpy as np
 import pandas as pd
 import scanpy as sc
+
+# Rasterise scatter data layers (text/axes stay vector)
+sc.settings.set_figure_params(vector_friendly=True)
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -97,11 +97,130 @@ def apply_region_palette(adata, region_colors):
         ]
 
 
+def make_score_adata(adata, score_col):
+    """Minimal AnnData with an obs score as a pseudo-gene for sc.pl.dotplot."""
+    return sc.AnnData(
+        X=np.asarray(adata.obs[score_col].values, dtype=np.float32).reshape(-1, 1),
+        obs=adata.obs,
+        var=pd.DataFrame(index=[score_col]),
+    )
+
+
+def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
+                      prefix, dpi):
+    """Generate three dotplot PNGs: by cell type, by region, cell type × region."""
+    n_genes = len(var_names)
+    fig_w = max(8, n_genes * 1.2 + 4)
+
+    # (1) By cell type
+    try:
+        n_ct = adata.obs[annot_key].nunique()
+        sc.pl.dotplot(adata, var_names=var_names, groupby=annot_key,
+                      standard_scale="var",
+                      figsize=(fig_w, max(4, n_ct * 0.4)),
+                      title=f"{prefix} – by cell type",
+                      show=False)
+        plt.savefig(os.path.join(out_dir, f"{prefix}_dotplot_celltype.png"),
+                    dpi=dpi, bbox_inches="tight")
+        plt.close("all")
+    except Exception as e:
+        log.warning("  Dotplot celltype failed: %s", e)
+        plt.close("all")
+
+    # (2) By region
+    if has_regions:
+        try:
+            n_reg = adata.obs["region_annotation"].nunique()
+            sc.pl.dotplot(adata, var_names=var_names,
+                          groupby="region_annotation",
+                          standard_scale="var",
+                          figsize=(fig_w, max(4, n_reg * 0.5)),
+                          title=f"{prefix} – by region",
+                          show=False)
+            plt.savefig(os.path.join(out_dir, f"{prefix}_dotplot_region.png"),
+                        dpi=dpi, bbox_inches="tight")
+            plt.close("all")
+        except Exception as e:
+            log.warning("  Dotplot region failed: %s", e)
+            plt.close("all")
+
+    # (3) By cell type × region
+    if has_regions:
+        try:
+            combined = (adata.obs[annot_key].astype(str) + " | "
+                        + adata.obs["region_annotation"].astype(str))
+            adata.obs["_ct_region"] = pd.Categorical(combined)
+            n_groups = adata.obs["_ct_region"].nunique()
+            fig_h = max(6, n_groups * 0.35)
+            sc.pl.dotplot(adata, var_names=var_names, groupby="_ct_region",
+                          standard_scale="var",
+                          figsize=(fig_w, fig_h),
+                          title=f"{prefix} – by cell type × region",
+                          show=False)
+            plt.savefig(os.path.join(out_dir,
+                        f"{prefix}_dotplot_celltype_region.png"),
+                        dpi=dpi, bbox_inches="tight")
+            plt.close("all")
+        except Exception as e:
+            log.warning("  Dotplot celltype×region failed: %s", e)
+            plt.close("all")
+        finally:
+            if "_ct_region" in adata.obs.columns:
+                del adata.obs["_ct_region"]
+
+
+def generate_umaps(adata, color_col, annot_key, has_regions, out_dir,
+                   prefix, vmin, vmax, dpi, title="expression"):
+    """Generate individual UMAP PNGs: expression/score, cell type, region."""
+    # Expression / score
+    try:
+        fig, ax = plt.subplots(figsize=(8, 7))
+        sc.pl.umap(adata, color=color_col, size=2, frameon=False,
+                    vmin=vmin, vmax=vmax, cmap="viridis",
+                    title=title, ax=ax, show=False)
+        fig.savefig(os.path.join(out_dir,
+                    f"{prefix}_UMAP_{title.replace(' ', '_')}.png"),
+                    dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+    except Exception as e:
+        log.warning("  UMAP %s failed: %s", title, e)
+        plt.close("all")
+
+    # Cell type
+    try:
+        fig, ax = plt.subplots(figsize=(8, 7))
+        sc.pl.umap(adata, color=annot_key, size=2, frameon=False,
+                    title="Cell types", legend_loc="on data",
+                    legend_fontsize=6, legend_fontoutline=2,
+                    ax=ax, show=False)
+        fig.savefig(os.path.join(out_dir, f"{prefix}_UMAP_celltype.png"),
+                    dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+    except Exception as e:
+        log.warning("  UMAP celltype failed: %s", e)
+        plt.close("all")
+
+    # Region
+    if has_regions:
+        try:
+            fig, ax = plt.subplots(figsize=(8, 7))
+            sc.pl.umap(adata, color="region_annotation", size=2, frameon=False,
+                        title="Regions", legend_loc="on data",
+                        legend_fontsize=6, legend_fontoutline=2,
+                        ax=ax, show=False)
+            fig.savefig(os.path.join(out_dir, f"{prefix}_UMAP_region.png"),
+                        dpi=dpi, bbox_inches="tight")
+            plt.close(fig)
+        except Exception as e:
+            log.warning("  UMAP region failed: %s", e)
+            plt.close("all")
+
+
 # ── Parameters ───────────────────────────────────────────────────────────────
 integrated_path   = str(snakemake.input.integrated)
 queries_path      = str(snakemake.input.queries)
 out_ranges        = str(snakemake.output.ranges)
-out_dir           = str(snakemake.output.outdir)
+base_dir          = str(snakemake.params.outdir)
 
 ANNOT_KEY         = str(snakemake.params.annot_key)
 AUCELL_FRACTION   = float(snakemake.params.aucell_fraction)
@@ -115,17 +234,15 @@ try:
     log.info("Gene exploration – integrated plots")
     log.info("=" * 70)
 
-    os.makedirs(out_dir, exist_ok=True)
-
     # ── 1. Parse queries ─────────────────────────────────────────────────
     entries_dict = read_tsv_to_dict(queries_path)
     individual_genes, signatures = classify_entries(entries_dict)
     all_entries = {**individual_genes, **signatures}
-    log.info("Parsed %d entries: %d individual genes, %d signatures",
+    log.info("Parsed %d entries: %d genes, %d signatures",
              len(all_entries), len(individual_genes), len(signatures))
 
     if not all_entries:
-        log.warning("No entries in query file — writing empty ranges and exiting.")
+        log.warning("No entries — writing empty ranges and exiting.")
         pd.DataFrame(columns=["entry", "vmin", "vmax", "type"]).to_csv(
             out_ranges, sep="\t", index=False)
         sys.exit(0)
@@ -147,32 +264,29 @@ try:
         if present:
             valid_entries[name] = present
         else:
-            log.warning("  %s: ALL genes missing — skipping entirely.", name)
+            log.warning("  %s: ALL genes missing — skipping.", name)
     individual_genes = {k: v for k, v in individual_genes.items() if k in valid_entries}
     signatures = {k: v for k, v in signatures.items() if k in valid_entries}
-    log.info("  %d valid entries after gene check", len(valid_entries))
+    log.info("  %d valid entries", len(valid_entries))
 
-    # ── 4. Compute AUCell for signatures ─────────────────────────────────
+    # ── 4. AUCell for signatures ─────────────────────────────────────────
     aucell_scores = {}
     if signatures:
-        log.info("Computing AUCell scores for %d signatures …", len(signatures))
+        log.info("Computing AUCell for %d signatures …", len(signatures))
         import decoupler as dc
 
         # Build net DataFrame: source, target, weight
         net_rows = []
-        for sig_name, gene_list in signatures.items():
+        for sig_name in signatures:
             for gene in valid_entries[sig_name]:
                 net_rows.append({"source": sig_name, "target": gene, "weight": 1.0})
         net_df = pd.DataFrame(net_rows)
-
         n_up = max(1, int(adata.n_vars * AUCELL_FRACTION))
-        log.info("  AUCell n_up = %d (%.1f%% of %d genes)",
+        log.info("  n_up = %d (%.1f%% of %d genes)",
                  n_up, AUCELL_FRACTION * 100, adata.n_vars)
 
-        dc.run_aucell(
-            adata, net=net_df, source="source", target="target",
-            n_up=n_up, use_raw=False, verbose=True,
-        )
+        dc.run_aucell(adata, net=net_df, source="source", target="target",
+                      n_up=n_up, use_raw=False, verbose=True)
 
         # Extract scores from obsm
         if "aucell_estimate" in adata.obsm:
@@ -181,12 +295,8 @@ try:
                 if sig_name in est.columns:
                     aucell_scores[sig_name] = est[sig_name].values
                     adata.obs[f"AUCell_{sig_name}"] = est[sig_name].values
-                    log.info("  %s: AUCell range [%.4f, %.4f]",
-                             sig_name,
-                             aucell_scores[sig_name].min(),
-                             aucell_scores[sig_name].max())
 
-    # ── 5. Expression ranges (p1, p99) ───────────────────────────────────
+    # ── 5. Expression ranges ─────────────────────────────────────────────
     log.info("Computing expression ranges …")
     ranges_rows = []
     for gene_name in individual_genes:
@@ -212,271 +322,100 @@ try:
     # ── 6. Apply palettes ────────────────────────────────────────────────
     apply_annotation_palette(adata, ANNOT_KEY, ANNOTATION_COLORS)
     apply_region_palette(adata, REGION_COLORS)
+    if ANNOT_KEY in adata.obs.columns:
+        adata.obs[ANNOT_KEY] = adata.obs[ANNOT_KEY].astype("category")
 
     has_regions = ("region_annotation" in adata.obs.columns
                    and adata.obs["region_annotation"].nunique() > 1
                    and not all(adata.obs["region_annotation"] == "Unlabeled"))
-
     has_niche = bool(NICHE_COLUMN) and NICHE_COLUMN in adata.obs.columns
 
-    # Ensure annot_key is categorical
-    if ANNOT_KEY in adata.obs.columns:
-        adata.obs[ANNOT_KEY] = adata.obs[ANNOT_KEY].astype("category")
+    # ── 7. Generate PNGs ─────────────────────────────────────────────────
 
-    # ── 7. Generate PDFs ─────────────────────────────────────────────────
-
-    # ---- Individual genes ----
     for gene_name in individual_genes:
         log.info("Plotting gene: %s", gene_name)
-        gene_range = ranges_df[ranges_df["entry"] == gene_name].iloc[0]
-        vmin, vmax = gene_range["vmin"], gene_range["vmax"]
+        entry_dir = os.path.join(base_dir, gene_name)
+        int_dir = os.path.join(entry_dir, "Integrated")
+        os.makedirs(int_dir, exist_ok=True)
 
-        try:
-            pdf_path = os.path.join(out_dir, f"{gene_name}_integrated.pdf")
-            with PdfPages(pdf_path) as pdf:
+        # Provenance TSV
+        pd.DataFrame({gene_name: [gene_name]}).to_csv(
+            os.path.join(entry_dir, f"{gene_name}_genes.tsv"),
+            sep="\t", index=False)
 
-                # ── Page 1: Dotplot + Violin by cell type ────────────
-                fig = plt.figure(figsize=(18, 8))
-                fig.suptitle(f"{gene_name} – Cell type overview", fontsize=16,
-                             fontweight="bold", y=0.98)
-                gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.4)
+        row = ranges_df[ranges_df["entry"] == gene_name].iloc[0]
+        vmin, vmax = row["vmin"], row["vmax"]
 
-                ax1 = fig.add_subplot(gs[0, 0])
-                try:
-                    sc.pl.dotplot(adata, var_names=[gene_name], groupby=ANNOT_KEY,
-                                  standard_scale="var", swap_axes=True,
-                                  ax=ax1, show=False)
-                except Exception as e:
-                    log.warning("  Dotplot failed: %s", e)
-                    ax1.text(0.5, 0.5, f"Dotplot failed:\n{e}",
-                             ha="center", va="center", transform=ax1.transAxes)
+        generate_dotplots(adata, [gene_name], ANNOT_KEY, has_regions,
+                          int_dir, gene_name, DPI)
+        generate_umaps(adata, gene_name, ANNOT_KEY, has_regions,
+                       int_dir, gene_name, vmin, vmax, DPI, "expression")
 
-                ax2 = fig.add_subplot(gs[0, 1])
-                try:
-                    sc.pl.violin(adata, keys=gene_name, groupby=ANNOT_KEY,
-                                 rotation=90, ax=ax2, show=False)
-                except Exception as e:
-                    log.warning("  Violin failed: %s", e)
-                    ax2.text(0.5, 0.5, f"Violin failed:\n{e}",
-                             ha="center", va="center", transform=ax2.transAxes)
+        if has_niche:
+            try:
+                n_niche = adata.obs[NICHE_COLUMN].nunique()
+                sc.pl.dotplot(adata, var_names=[gene_name],
+                              groupby=NICHE_COLUMN, standard_scale="var",
+                              figsize=(8, max(4, n_niche * 0.5)),
+                              title=f"{gene_name} – by niche", show=False)
+                plt.savefig(os.path.join(int_dir,
+                            f"{gene_name}_dotplot_niche.png"),
+                            dpi=DPI, bbox_inches="tight")
+                plt.close("all")
+            except Exception as e:
+                log.warning("  Niche dotplot failed: %s", e)
+                plt.close("all")
 
-                pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                plt.close(fig)
-
-                # ── Page 2: UMAP expression + cell type + region ─────
-                n_cols = 2 + (1 if has_regions else 0)
-                fig, axes = plt.subplots(1, n_cols, figsize=(8 * n_cols, 7))
-                if n_cols == 1:
-                    axes = [axes]
-                fig.suptitle(f"{gene_name} – UMAP", fontsize=16,
-                             fontweight="bold", y=0.98)
-
-                try:
-                    sc.pl.umap(adata, color=gene_name, size=2, frameon=False,
-                               vmin=vmin, vmax=vmax, cmap="viridis",
-                               title=f"{gene_name} expression",
-                               ax=axes[0], show=False)
-                except Exception as e:
-                    log.warning("  UMAP expression failed: %s", e)
-
-                try:
-                    sc.pl.umap(adata, color=ANNOT_KEY, size=2, frameon=False,
-                               title="Cell types", ax=axes[1], show=False)
-                except Exception as e:
-                    log.warning("  UMAP cell type failed: %s", e)
-
-                if has_regions:
-                    try:
-                        sc.pl.umap(adata, color="region_annotation", size=2,
-                                   frameon=False, title="Regions",
-                                   ax=axes[2], show=False)
-                    except Exception as e:
-                        log.warning("  UMAP region failed: %s", e)
-
-                pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                plt.close(fig)
-
-                # ── Page 3: Regional view ────────────────────────────
-                if has_regions:
-                    fig = plt.figure(figsize=(18, 8))
-                    fig.suptitle(f"{gene_name} – Regional view", fontsize=16,
-                                 fontweight="bold", y=0.98)
-                    gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.4)
-
-                    ax_v = fig.add_subplot(gs[0, 0])
-                    try:
-                        sc.pl.violin(adata, keys=gene_name,
-                                     groupby="region_annotation",
-                                     rotation=45, ax=ax_v, show=False)
-                        ax_v.set_title(f"{gene_name} by region")
-                    except Exception as e:
-                        log.warning("  Region violin failed: %s", e)
-
-                    ax_d = fig.add_subplot(gs[0, 1])
-                    try:
-                        sc.pl.dotplot(adata, var_names=[gene_name],
-                                      groupby="region_annotation",
-                                      standard_scale="var", swap_axes=True,
-                                      ax=ax_d, show=False)
-                    except Exception as e:
-                        log.warning("  Region dotplot failed: %s", e)
-
-                    pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                    plt.close(fig)
-
-                # ── Page 4: Niche view (conditional) ─────────────────
-                if has_niche:
-                    fig, ax = plt.subplots(figsize=(12, 6))
-                    fig.suptitle(f"{gene_name} – Niche view", fontsize=16,
-                                 fontweight="bold")
-                    try:
-                        sc.pl.violin(adata, keys=gene_name,
-                                     groupby=NICHE_COLUMN,
-                                     rotation=45, ax=ax, show=False)
-                    except Exception as e:
-                        log.warning("  Niche violin failed: %s", e)
-
-                    pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                    plt.close(fig)
-
-            log.info("  Saved → %s", pdf_path)
-
-        except Exception as e:
-            log.warning("FAILED gene %s: %s\n%s", gene_name, e,
-                        traceback.format_exc())
-
-    # ---- Signatures ----
-    for sig_name, sig_genes in signatures.items():
-        log.info("Plotting signature: %s (%d genes)", sig_name, len(sig_genes))
+    for sig_name in signatures:
+        log.info("Plotting signature: %s", sig_name)
         score_col = f"AUCell_{sig_name}"
         if score_col not in adata.obs.columns:
             log.warning("  AUCell score not found — skipping.")
             continue
 
-        sig_range = ranges_df[ranges_df["entry"] == sig_name].iloc[0]
-        vmin, vmax = sig_range["vmin"], sig_range["vmax"]
+        entry_dir = os.path.join(base_dir, sig_name)
+        int_dir = os.path.join(entry_dir, "Integrated")
+        os.makedirs(int_dir, exist_ok=True)
+
         present_genes = valid_entries[sig_name]
+        pd.DataFrame({sig_name: present_genes}).to_csv(
+            os.path.join(entry_dir, f"{sig_name}_genes.tsv"),
+            sep="\t", index=False)
 
-        try:
-            pdf_path = os.path.join(out_dir, f"{sig_name}_integrated.pdf")
-            with PdfPages(pdf_path) as pdf:
+        row = ranges_df[ranges_df["entry"] == sig_name].iloc[0]
+        vmin, vmax = row["vmin"], row["vmax"]
 
-                # ── Page 1: Dotplot of member genes + AUCell violin ──
-                fig = plt.figure(figsize=(18, 8))
-                fig.suptitle(f"{sig_name} – Cell type overview", fontsize=16,
-                             fontweight="bold", y=0.98)
-                gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.4)
+        # Member-gene dotplots
+        generate_dotplots(adata, present_genes, ANNOT_KEY, has_regions,
+                          int_dir, f"{sig_name}_genes", DPI)
 
-                ax1 = fig.add_subplot(gs[0, 0])
-                try:
-                    sc.pl.dotplot(adata, var_names=present_genes,
-                                  groupby=ANNOT_KEY,
-                                  standard_scale="var", swap_axes=True,
-                                  title=f"{sig_name} genes",
-                                  ax=ax1, show=False)
-                except Exception as e:
-                    log.warning("  Dotplot failed: %s", e)
-                    ax1.text(0.5, 0.5, f"Dotplot failed:\n{e}",
-                             ha="center", va="center", transform=ax1.transAxes)
+        # AUCell score dotplots
+        score_ad = make_score_adata(adata, score_col)
+        generate_dotplots(score_ad, [score_col], ANNOT_KEY, has_regions,
+                          int_dir, f"{sig_name}_aucell", DPI)
+        del score_ad
 
-                ax2 = fig.add_subplot(gs[0, 1])
-                try:
-                    sc.pl.violin(adata, keys=score_col, groupby=ANNOT_KEY,
-                                 rotation=90, ax=ax2, show=False)
-                    ax2.set_title(f"AUCell score by cell type")
-                    ax2.set_ylabel("AUCell score")
-                except Exception as e:
-                    log.warning("  AUCell violin failed: %s", e)
-                    ax2.text(0.5, 0.5, f"Violin failed:\n{e}",
-                             ha="center", va="center", transform=ax2.transAxes)
+        # UMAPs
+        generate_umaps(adata, score_col, ANNOT_KEY, has_regions,
+                       int_dir, sig_name, vmin, vmax, DPI, "AUCell")
 
-                pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                plt.close(fig)
-
-                # ── Page 2: UMAP AUCell score + cell type + region ───
-                n_cols = 2 + (1 if has_regions else 0)
-                fig, axes = plt.subplots(1, n_cols, figsize=(8 * n_cols, 7))
-                if n_cols == 1:
-                    axes = [axes]
-                fig.suptitle(f"{sig_name} – UMAP", fontsize=16,
-                             fontweight="bold", y=0.98)
-
-                try:
-                    sc.pl.umap(adata, color=score_col, size=2, frameon=False,
-                               vmin=vmin, vmax=vmax, cmap="viridis",
-                               title=f"{sig_name} AUCell",
-                               ax=axes[0], show=False)
-                except Exception as e:
-                    log.warning("  UMAP AUCell failed: %s", e)
-
-                try:
-                    sc.pl.umap(adata, color=ANNOT_KEY, size=2, frameon=False,
-                               title="Cell types", ax=axes[1], show=False)
-                except Exception as e:
-                    log.warning("  UMAP cell type failed: %s", e)
-
-                if has_regions:
-                    try:
-                        sc.pl.umap(adata, color="region_annotation", size=2,
-                                   frameon=False, title="Regions",
-                                   ax=axes[2], show=False)
-                    except Exception as e:
-                        log.warning("  UMAP region failed: %s", e)
-
-                pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                plt.close(fig)
-
-                # ── Page 3: Regional view ────────────────────────────
-                if has_regions:
-                    fig = plt.figure(figsize=(18, 8))
-                    fig.suptitle(f"{sig_name} – Regional view", fontsize=16,
-                                 fontweight="bold", y=0.98)
-                    gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.4)
-
-                    ax_v = fig.add_subplot(gs[0, 0])
-                    try:
-                        sc.pl.violin(adata, keys=score_col,
-                                     groupby="region_annotation",
-                                     rotation=45, ax=ax_v, show=False)
-                        ax_v.set_title(f"AUCell score by region")
-                        ax_v.set_ylabel("AUCell score")
-                    except Exception as e:
-                        log.warning("  Region violin failed: %s", e)
-
-                    ax_d = fig.add_subplot(gs[0, 1])
-                    try:
-                        sc.pl.dotplot(adata, var_names=present_genes,
-                                      groupby="region_annotation",
-                                      standard_scale="var", swap_axes=True,
-                                      title=f"{sig_name} genes by region",
-                                      ax=ax_d, show=False)
-                    except Exception as e:
-                        log.warning("  Region dotplot failed: %s", e)
-
-                    pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                    plt.close(fig)
-
-                # ── Page 4: Niche view (conditional) ─────────────────
-                if has_niche:
-                    fig, ax = plt.subplots(figsize=(12, 6))
-                    fig.suptitle(f"{sig_name} – Niche view", fontsize=16,
-                                 fontweight="bold")
-                    try:
-                        sc.pl.violin(adata, keys=score_col,
-                                     groupby=NICHE_COLUMN,
-                                     rotation=45, ax=ax, show=False)
-                        ax.set_ylabel("AUCell score")
-                    except Exception as e:
-                        log.warning("  Niche violin failed: %s", e)
-
-                    pdf.savefig(fig, dpi=DPI, bbox_inches="tight")
-                    plt.close(fig)
-
-            log.info("  Saved → %s", pdf_path)
-
-        except Exception as e:
-            log.warning("FAILED signature %s: %s\n%s", sig_name, e,
-                        traceback.format_exc())
+        if has_niche:
+            try:
+                score_ad = make_score_adata(adata, score_col)
+                n_niche = adata.obs[NICHE_COLUMN].nunique()
+                sc.pl.dotplot(score_ad, var_names=[score_col],
+                              groupby=NICHE_COLUMN, standard_scale="var",
+                              figsize=(8, max(4, n_niche * 0.5)),
+                              title=f"{sig_name} AUCell – by niche",
+                              show=False)
+                plt.savefig(os.path.join(int_dir,
+                            f"{sig_name}_aucell_dotplot_niche.png"),
+                            dpi=DPI, bbox_inches="tight")
+                plt.close("all")
+                del score_ad
+            except Exception as e:
+                log.warning("  Niche dotplot failed: %s", e)
+                plt.close("all")
 
     del adata
     gc.collect()

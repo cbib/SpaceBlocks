@@ -129,7 +129,9 @@ def get_all_targets(wildcards):
         targets.append(f"{OUTDIR_PP}/integrated_samples/samples_report.pdf")
         if HAS_GENE_EXPLORATION:
             targets.append(f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv")
-            targets.append(f"{OUTDIR_PP}/gene_exploration/spatial/.done")
+            targets.extend(expand(
+                f"{OUTDIR_PP}/gene_exploration/.sentinels/{{sample}}.done",
+                sample=SAMPLE_IDS))
     subcomps = config.get("subcompartments", {})
     if subcomps:
         for sc_name in subcomps:
@@ -192,7 +194,8 @@ rule subcluster_all:
                sc=list(config.get("subcompartments", {}).keys())),
 
 rule explore_genes:
-    """Generate gene/signature exploration PDFs (integrated + spatial)."""
+    """Generate gene/signature exploration PNGs (integrated + per sample)."""
     input:
         f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
-        f"{OUTDIR_PP}/gene_exploration/spatial/.done",
+        expand(f"{OUTDIR_PP}/gene_exploration/.sentinels/{{sample}}.done",
+               sample=SAMPLE_IDS),
