@@ -105,6 +105,13 @@ try:
 
     # Set as the working "leiden" column for plotting convenience
     adata.obs["leiden"] = adata.obs[leiden_key]
+    # Ensure string categories with numeric ordering preserved (precomputed
+    # clusters may be int, which breaks sc.pl.rank_genes_groups_dotplot)
+    raw_cats = adata.obs["leiden"].cat.categories
+    sorted_str_cats = [str(c) for c in sorted(raw_cats, key=lambda x: int(x))]
+    adata.obs["leiden"] = (adata.obs["leiden"].astype(str)
+                           .astype(pd.CategoricalDtype(categories=sorted_str_cats,
+                                                        ordered=False)))
     log.info("Using %s: %d clusters", leiden_key, adata.obs["leiden"].nunique())
 
     # Apply custom palette if configured
