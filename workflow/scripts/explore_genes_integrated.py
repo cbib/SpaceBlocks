@@ -98,16 +98,71 @@ def apply_region_palette(adata, region_colors):
 
 
 def make_score_adata(adata, score_col):
-    """Minimal AnnData with an obs score as a pseudo-gene for sc.pl.dotplot."""
+    """Minimal AnnData with an obs score as a pseudo-gene for sc.pl.dotplot.
+    Drops score_col from obs to avoid 'found in both obs and var' conflict."""
     return sc.AnnData(
         X=np.asarray(adata.obs[score_col].values, dtype=np.float32).reshape(-1, 1),
-        obs=adata.obs,
+        obs=adata.obs.drop(columns=[score_col], errors="ignore"),
         var=pd.DataFrame(index=[score_col]),
     )
 
 
+def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
+    """Add cell type and region colour bars to the left of a ct×region dotplot.
+    Call immediately after sc.pl.dotplot(..., groupby="_ct_region", show=False)."""
+    try:
+        ct_cd = annotation_colors.get(annot_key, {}) if isinstance(annotation_colors, dict) else {}
+        reg_cd = region_colors if isinstance(region_colors, dict) else {}
+        if not ct_cd and not reg_cd:
+            return
+
+        fig = plt.gcf()
+        fig.canvas.draw()
+
+        # Find the main axes (the one whose ytick labels contain " | ")
+        main_ax = None
+        for ax in fig.axes:
+            labels = [t.get_text() for t in ax.get_yticklabels()]
+            if labels and any(" | " in l for l in labels):
+                main_ax = ax
+                break
+        if main_ax is None:
+            return
+
+        yticks = main_ax.get_yticks()
+        ylabels = [t.get_text() for t in main_ax.get_yticklabels()]
+        if not ylabels:
+            return
+
+        ct_cols, reg_cols = [], []
+        for label in ylabels:
+            parts = label.split(" | ", 1)
+            ct_cols.append(ct_cd.get(parts[0].strip(), "#cccccc"))
+            reg_cols.append(reg_cd.get(parts[1].strip(), "#cccccc") if len(parts) > 1 else "#cccccc")
+
+        pos = main_ax.get_position()
+        bar_w = 0.012
+        gap = 0.004
+
+        for offset, colors, title in [(2, ct_cols, "Cell type"),
+                                       (1, reg_cols, "Region")]:
+            ann_ax = fig.add_axes([pos.x0 - offset * (bar_w + gap), pos.y0,
+                                    bar_w, pos.y1 - pos.y0])
+            for yt, col in zip(yticks[:len(colors)], colors):
+                ann_ax.barh(yt, 1, height=0.8, color=col, edgecolor="none")
+            ann_ax.set_ylim(main_ax.get_ylim())
+            ann_ax.set_xlim(0, 1)
+            ann_ax.set_xticks([])
+            ann_ax.set_yticks([])
+            ann_ax.set_ylabel(title, fontsize=7, rotation=0, labelpad=12, va="center")
+            for spine in ann_ax.spines.values():
+                spine.set_visible(False)
+    except Exception as e:
+        log.warning("  Row annotation failed: %s", e)
+
+
 def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
-                      prefix, dpi):
+                      prefix, dpi, annotation_colors=None, region_colors=None):
     """Generate three dotplot PNGs: by cell type, by region, cell type × region."""
     n_genes = len(var_names)
     fig_w = max(8, n_genes * 1.2 + 4)
@@ -144,7 +199,7 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
             log.warning("  Dotplot region failed: %s", e)
             plt.close("all")
 
-    # (3) By cell type × region
+    # (3) By cell type × region (with row annotations)
     if has_regions:
         try:
             combined = (adata.obs[annot_key].astype(str) + " | "
@@ -157,6 +212,10 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
                           figsize=(fig_w, fig_h),
                           title=f"{prefix} – by cell type × region",
                           show=False)
+            if annotation_colors or region_colors:
+                annotate_ct_region_dotplot(annot_key,
+                                          annotation_colors or {},
+                                          region_colors or {})
             plt.savefig(os.path.join(out_dir,
                         f"{prefix}_dotplot_celltype_region.png"),
                         dpi=dpi, bbox_inches="tight")
@@ -169,51 +228,34 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
                 del adata.obs["_ct_region"]
 
 
-def generate_umaps(adata, color_col, annot_key, has_regions, out_dir,
-                   prefix, vmin, vmax, dpi, title="expression"):
-    """Generate individual UMAP PNGs: expression/score, cell type, region."""
-    # Expression / score
+def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
+                             vmin, vmax, dpi, title="expression"):
+    """Single composite PNG with 2–3 UMAPs side by side."""
+    n_panels = 2 + (1 if has_regions else 0)
+    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7))
+
     try:
-        fig, ax = plt.subplots(figsize=(8, 7))
         sc.pl.umap(adata, color=color_col, size=2, frameon=False,
                     vmin=vmin, vmax=vmax, cmap="viridis",
-                    title=title, ax=ax, show=False)
-        fig.savefig(os.path.join(out_dir,
-                    f"{prefix}_UMAP_{title.replace(' ', '_')}.png"),
-                    dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
+                    title=title, ax=axes[0], show=False)
     except Exception as e:
         log.warning("  UMAP %s failed: %s", title, e)
-        plt.close("all")
 
-    # Cell type
     try:
-        fig, ax = plt.subplots(figsize=(8, 7))
         sc.pl.umap(adata, color=annot_key, size=2, frameon=False,
-                    title="Cell types", legend_loc="on data",
-                    legend_fontsize=6, legend_fontoutline=2,
-                    ax=ax, show=False)
-        fig.savefig(os.path.join(out_dir, f"{prefix}_UMAP_celltype.png"),
-                    dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
+                    title="Cell types", ax=axes[1], show=False)
     except Exception as e:
         log.warning("  UMAP celltype failed: %s", e)
-        plt.close("all")
 
-    # Region
     if has_regions:
         try:
-            fig, ax = plt.subplots(figsize=(8, 7))
             sc.pl.umap(adata, color="region_annotation", size=2, frameon=False,
-                        title="Regions", legend_loc="on data",
-                        legend_fontsize=6, legend_fontoutline=2,
-                        ax=ax, show=False)
-            fig.savefig(os.path.join(out_dir, f"{prefix}_UMAP_region.png"),
-                        dpi=dpi, bbox_inches="tight")
-            plt.close(fig)
+                        title="Regions", ax=axes[2], show=False)
         except Exception as e:
             log.warning("  UMAP region failed: %s", e)
-            plt.close("all")
+
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
 
 
 # ── Parameters ───────────────────────────────────────────────────────────────
@@ -299,7 +341,14 @@ try:
     # ── 5. Expression ranges ─────────────────────────────────────────────
     log.info("Computing expression ranges …")
     ranges_rows = []
-    for gene_name in individual_genes:
+
+    # Collect ALL unique genes (standalone + signature members)
+    all_unique_genes = set(individual_genes.keys())
+    for sig_name in signatures:
+        for gene in valid_entries[sig_name]:
+            all_unique_genes.add(gene)
+
+    for gene_name in sorted(all_unique_genes):
         expr = adata[:, gene_name].X
         if hasattr(expr, "toarray"):
             expr = expr.toarray()
@@ -317,7 +366,7 @@ try:
 
     ranges_df = pd.DataFrame(ranges_rows)
     ranges_df.to_csv(out_ranges, sep="\t", index=False)
-    log.info("  Expression ranges written → %s", out_ranges)
+    log.info("  Written → %s", out_ranges)
 
     # ── 6. Apply palettes ────────────────────────────────────────────────
     apply_annotation_palette(adata, ANNOT_KEY, ANNOTATION_COLORS)
@@ -347,9 +396,10 @@ try:
         vmin, vmax = row["vmin"], row["vmax"]
 
         generate_dotplots(adata, [gene_name], ANNOT_KEY, has_regions,
-                          int_dir, gene_name, DPI)
-        generate_umaps(adata, gene_name, ANNOT_KEY, has_regions,
-                       int_dir, gene_name, vmin, vmax, DPI, "expression")
+                          int_dir, gene_name, DPI, ANNOTATION_COLORS, REGION_COLORS)
+        generate_umap_composite(adata, gene_name, ANNOT_KEY, has_regions,
+                                os.path.join(int_dir, f"{gene_name}_UMAPs.png"),
+                                vmin, vmax, DPI, "expression")
 
         if has_niche:
             try:
@@ -387,17 +437,20 @@ try:
 
         # Member-gene dotplots
         generate_dotplots(adata, present_genes, ANNOT_KEY, has_regions,
-                          int_dir, f"{sig_name}_genes", DPI)
+                          int_dir, f"{sig_name}_genes", DPI,
+                          ANNOTATION_COLORS, REGION_COLORS)
 
         # AUCell score dotplots
         score_ad = make_score_adata(adata, score_col)
         generate_dotplots(score_ad, [score_col], ANNOT_KEY, has_regions,
-                          int_dir, f"{sig_name}_aucell", DPI)
+                          int_dir, f"{sig_name}_aucell", DPI,
+                          ANNOTATION_COLORS, REGION_COLORS)
         del score_ad
 
         # UMAPs
-        generate_umaps(adata, score_col, ANNOT_KEY, has_regions,
-                       int_dir, sig_name, vmin, vmax, DPI, "AUCell")
+        generate_umap_composite(adata, score_col, ANNOT_KEY, has_regions,
+                                os.path.join(int_dir, f"{sig_name}_UMAPs.png"),
+                                vmin, vmax, DPI, "AUCell")
 
         if has_niche:
             try:

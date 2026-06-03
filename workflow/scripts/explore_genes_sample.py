@@ -107,9 +107,11 @@ def apply_region_palette(adata, region_colors):
 
 
 def make_score_adata(adata, score_col):
+    """Minimal AnnData with an obs score as a pseudo-gene for sc.pl.dotplot.
+    Drops score_col from obs to avoid 'found in both obs and var' conflict."""
     return sc.AnnData(
         X=np.asarray(adata.obs[score_col].values, dtype=np.float32).reshape(-1, 1),
-        obs=adata.obs,
+        obs=adata.obs.drop(columns=[score_col], errors="ignore"),
         var=pd.DataFrame(index=[score_col]),
     )
 
@@ -163,8 +165,6 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
     try:
         sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
                       title="Cell types", library_id=library_id,
-                      legend_loc="on data", legend_fontsize=5,
-                      legend_fontoutline=2,
                       ax=axes[1], show=False)
     except Exception as e:
         log.warning("    Spatial celltype failed: %s", e)
@@ -185,8 +185,62 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
     plt.close(fig)
 
 
+def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
+    """Add cell type and region colour bars to the left of a ct×region dotplot.
+    Call immediately after sc.pl.dotplot(..., groupby="_ct_region", show=False)."""
+    try:
+        ct_cd = annotation_colors.get(annot_key, {}) if isinstance(annotation_colors, dict) else {}
+        reg_cd = region_colors if isinstance(region_colors, dict) else {}
+        if not ct_cd and not reg_cd:
+            return
+
+        fig = plt.gcf()
+        fig.canvas.draw()
+
+        main_ax = None
+        for ax in fig.axes:
+            labels = [t.get_text() for t in ax.get_yticklabels()]
+            if labels and any(" | " in l for l in labels):
+                main_ax = ax
+                break
+        if main_ax is None:
+            return
+
+        yticks = main_ax.get_yticks()
+        ylabels = [t.get_text() for t in main_ax.get_yticklabels()]
+        if not ylabels:
+            return
+
+        ct_cols, reg_cols = [], []
+        for label in ylabels:
+            parts = label.split(" | ", 1)
+            ct_cols.append(ct_cd.get(parts[0].strip(), "#cccccc"))
+            reg_cols.append(reg_cd.get(parts[1].strip(), "#cccccc") if len(parts) > 1 else "#cccccc")
+
+        pos = main_ax.get_position()
+        bar_w = 0.012
+        gap = 0.004
+
+        for offset, colors, title in [(2, ct_cols, "Cell type"),
+                                       (1, reg_cols, "Region")]:
+            ann_ax = fig.add_axes([pos.x0 - offset * (bar_w + gap), pos.y0,
+                                    bar_w, pos.y1 - pos.y0])
+            for yt, col in zip(yticks[:len(colors)], colors):
+                ann_ax.barh(yt, 1, height=0.8, color=col, edgecolor="none")
+            ann_ax.set_ylim(main_ax.get_ylim())
+            ann_ax.set_xlim(0, 1)
+            ann_ax.set_xticks([])
+            ann_ax.set_yticks([])
+            ann_ax.set_ylabel(title, fontsize=7, rotation=0, labelpad=12, va="center")
+            for spine in ann_ax.spines.values():
+                spine.set_visible(False)
+    except Exception as e:
+        log.warning("  Row annotation failed: %s", e)
+
+
 def generate_dotplot_composite(adata, var_names, annot_key, has_regions,
-                               out_path, prefix, dpi):
+                               out_path, prefix, dpi,
+                               annotation_colors=None, region_colors=None):
     """Composite PNG of three dotplots stacked vertically via PIL."""
     n_genes = len(var_names)
     fig_w = max(8, n_genes * 1.2 + 4)
@@ -240,6 +294,10 @@ def generate_dotplot_composite(adata, var_names, annot_key, has_regions,
                           figsize=(fig_w, fig_h),
                           title=f"{prefix} – by cell type × region",
                           show=False)
+            if annotation_colors or region_colors:
+                annotate_ct_region_dotplot(annot_key,
+                                          annotation_colors or {},
+                                          region_colors or {})
             plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
             plt.close("all")
             tmp_files.append(tmp)
@@ -365,7 +423,7 @@ try:
         generate_dotplot_composite(
             adata, [gene_name], ANNOT_KEY, has_regions,
             os.path.join(dotplot_dir, f"{sample_id}_dotplot.png"),
-            gene_name, DPI)
+            gene_name, DPI, ANNOTATION_COLORS, REGION_COLORS)
 
     for sig_name in signatures:
         score_col = f"AUCell_{sig_name}"
@@ -390,14 +448,14 @@ try:
         generate_dotplot_composite(
             adata, present_genes, ANNOT_KEY, has_regions,
             os.path.join(dotplot_dir, f"{sample_id}_dotplot.png"),
-            f"{sig_name} genes", DPI)
+            f"{sig_name} genes", DPI, ANNOTATION_COLORS, REGION_COLORS)
 
         # Dotplot composite – AUCell score
         score_ad = make_score_adata(adata, score_col)
         generate_dotplot_composite(
             score_ad, [score_col], ANNOT_KEY, has_regions,
             os.path.join(dotplot_dir, f"{sample_id}_aucell_dotplot.png"),
-            f"{sig_name} AUCell", DPI)
+            f"{sig_name} AUCell", DPI, ANNOTATION_COLORS, REGION_COLORS)
         del score_ad
 
     del adata
