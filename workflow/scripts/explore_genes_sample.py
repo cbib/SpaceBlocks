@@ -148,7 +148,8 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
                                sample_id, title="expression"):
     """Three-panel spatial composite: expression/score + cell type + region."""
     n_panels = 2 + (1 if has_regions else 0)
-    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7))
+    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7),
+                              gridspec_kw={"wspace": 0.5})
     fig.suptitle(sample_id, fontsize=16, fontweight="bold", y=1.02)
 
     # (1) Expression / AUCell
@@ -165,6 +166,7 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
     try:
         sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
                       title="Cell types", library_id=library_id,
+                      legend_fontsize=6, na_in_legend=False,
                       ax=axes[1], show=False)
     except Exception as e:
         log.warning("    Spatial celltype failed: %s", e)
@@ -176,6 +178,7 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
             sc.pl.spatial(adata, color="region_annotation", spot_size=20,
                           frameon=False, title="Regions",
                           library_id=library_id,
+                          legend_fontsize=6, na_in_legend=False,
                           ax=axes[2], show=False)
         except Exception as e:
             log.warning("    Spatial region failed: %s", e)
@@ -186,19 +189,23 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
 
 
 def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
-    """Add cell type and region colour bars to the left of a ct×region dotplot.
-    Call immediately after sc.pl.dotplot(..., groupby="_ct_region", show=False)."""
+    """Add cell type and region colour bars BETWEEN the row labels and the
+    dot grid, with colour legends below.  tick_params(pad) creates space
+    between labels and axes edge; bars are placed in that gap."""
     try:
+        from matplotlib.patches import Patch
+
         ct_cd = annotation_colors.get(annot_key, {}) if isinstance(annotation_colors, dict) else {}
         reg_cd = region_colors if isinstance(region_colors, dict) else {}
         if not ct_cd and not reg_cd:
             return
 
         fig = plt.gcf()
-        fig.canvas.draw()
 
+        # Find main axes (ytick labels contain " | ")
         main_ax = None
         for ax in fig.axes:
+            fig.canvas.draw()
             labels = [t.get_text() for t in ax.get_yticklabels()]
             if labels and any(" | " in l for l in labels):
                 main_ax = ax
@@ -206,34 +213,84 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
         if main_ax is None:
             return
 
+        # Widen the gap between labels and axes edge
+        main_ax.tick_params(axis="y", pad=30)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+
         yticks = main_ax.get_yticks()
         ylabels = [t.get_text() for t in main_ax.get_yticklabels()]
         if not ylabels:
             return
 
+        # Parse labels and collect unique categories
         ct_cols, reg_cols = [], []
+        unique_cts, unique_regs = {}, {}
         for label in ylabels:
             parts = label.split(" | ", 1)
-            ct_cols.append(ct_cd.get(parts[0].strip(), "#cccccc"))
-            reg_cols.append(reg_cd.get(parts[1].strip(), "#cccccc") if len(parts) > 1 else "#cccccc")
+            ct = parts[0].strip()
+            region = parts[1].strip() if len(parts) > 1 else ""
+            ct_c = ct_cd.get(ct, "#cccccc")
+            reg_c = reg_cd.get(region, "#cccccc")
+            ct_cols.append(ct_c)
+            reg_cols.append(reg_c)
+            if ct not in unique_cts:
+                unique_cts[ct] = ct_c
+            if region and region not in unique_regs:
+                unique_regs[region] = reg_c
 
         pos = main_ax.get_position()
-        bar_w = 0.012
-        gap = 0.004
+        ylim = main_ax.get_ylim()
 
-        for offset, colors, title in [(2, ct_cols, "Cell type"),
-                                       (1, reg_cols, "Region")]:
-            ann_ax = fig.add_axes([pos.x0 - offset * (bar_w + gap), pos.y0,
-                                    bar_w, pos.y1 - pos.y0])
+        # Find where labels end (rightmost edge in figure coords)
+        max_label_right = 0
+        for label_artist in main_ax.get_yticklabels():
+            bbox = label_artist.get_window_extent(renderer)
+            fig_bbox = bbox.transformed(fig.transFigure.inverted())
+            max_label_right = max(max_label_right, fig_bbox.x1)
+
+        # Fit bars in the gap: [labels] gap [CT][Region] gap [dots]
+        available = pos.x0 - max_label_right
+        bar_w = min(0.020, available * 0.38)
+        gap = min(0.006, available * 0.08)
+
+        ct_x = max_label_right + gap
+        reg_x = ct_x + bar_w + gap
+
+        for x, colors, title in [(ct_x, ct_cols, "Cell type"),
+                                  (reg_x, reg_cols, "Region")]:
+            ann_ax = fig.add_axes([x, pos.y0, bar_w, pos.y1 - pos.y0])
             for yt, col in zip(yticks[:len(colors)], colors):
                 ann_ax.barh(yt, 1, height=0.8, color=col, edgecolor="none")
-            ann_ax.set_ylim(main_ax.get_ylim())
+            ann_ax.set_ylim(ylim)
             ann_ax.set_xlim(0, 1)
             ann_ax.set_xticks([])
             ann_ax.set_yticks([])
-            ann_ax.set_ylabel(title, fontsize=7, rotation=0, labelpad=12, va="center")
+            ann_ax.set_title(title, fontsize=8)
             for spine in ann_ax.spines.values():
                 spine.set_visible(False)
+
+        # Colour legends below the plot
+        legend_y = pos.y0 - 0.02
+        if unique_cts:
+            ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
+            leg1 = fig.legend(
+                handles=ct_patches, title="Cell type",
+                loc="upper left", bbox_to_anchor=(ct_x, legend_y),
+                fontsize=7, title_fontsize=8,
+                frameon=True, edgecolor="lightgray",
+                ncol=max(1, len(unique_cts) // 6 + 1))
+            fig.add_artist(leg1)
+
+        if unique_regs:
+            reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
+            fig.legend(
+                handles=reg_patches, title="Region",
+                loc="upper right", bbox_to_anchor=(pos.x1, legend_y),
+                fontsize=7, title_fontsize=8,
+                frameon=True, edgecolor="lightgray",
+                ncol=max(1, len(unique_regs) // 4 + 1))
+
     except Exception as e:
         log.warning("  Row annotation failed: %s", e)
 

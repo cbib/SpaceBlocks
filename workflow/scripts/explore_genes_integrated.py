@@ -108,9 +108,9 @@ def make_score_adata(adata, score_col):
 
 
 def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
-    """Add cell type and region colour bars + legends to the RIGHT of a
-    ct×region dotplot.  Call after sc.pl.dotplot(..., show=False).
-    Axes placed beyond the figure boundary are captured by bbox_inches='tight'."""
+    """Add cell type and region colour bars BETWEEN the row labels and the
+    dot grid, with colour legends below.  tick_params(pad) creates space
+    between labels and axes edge; bars are placed in that gap."""
     try:
         from matplotlib.patches import Patch
 
@@ -120,17 +120,22 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
             return
 
         fig = plt.gcf()
-        fig.canvas.draw()
 
-        # Find the main axes (ytick labels contain " | ")
+        # Find main axes (ytick labels contain " | ")
         main_ax = None
         for ax in fig.axes:
+            fig.canvas.draw()
             labels = [t.get_text() for t in ax.get_yticklabels()]
             if labels and any(" | " in l for l in labels):
                 main_ax = ax
                 break
         if main_ax is None:
             return
+
+        # Widen the gap between labels and axes edge
+        main_ax.tick_params(axis="y", pad=30)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
 
         yticks = main_ax.get_yticks()
         ylabels = [t.get_text() for t in main_ax.get_yticklabels()]
@@ -153,17 +158,26 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
             if region and region not in unique_regs:
                 unique_regs[region] = reg_c
 
-        # Position bars to the RIGHT of all existing content
-        max_right = max(ax.get_position().x1 for ax in fig.axes)
         pos = main_ax.get_position()
         ylim = main_ax.get_ylim()
-        bar_w = 0.018
-        gap = 0.008
-        start_x = max_right + gap
 
-        for i, (colors, title) in enumerate([(ct_cols, "Cell type"),
-                                              (reg_cols, "Region")]):
-            x = start_x + i * (bar_w + gap)
+        # Find where labels end (rightmost edge in figure coords)
+        max_label_right = 0
+        for label_artist in main_ax.get_yticklabels():
+            bbox = label_artist.get_window_extent(renderer)
+            fig_bbox = bbox.transformed(fig.transFigure.inverted())
+            max_label_right = max(max_label_right, fig_bbox.x1)
+
+        # Fit bars in the gap: [labels] gap [CT][Region] gap [dots]
+        available = pos.x0 - max_label_right
+        bar_w = min(0.020, available * 0.38)
+        gap = min(0.006, available * 0.08)
+
+        ct_x = max_label_right + gap
+        reg_x = ct_x + bar_w + gap
+
+        for x, colors, title in [(ct_x, ct_cols, "Cell type"),
+                                  (reg_x, reg_cols, "Region")]:
             ann_ax = fig.add_axes([x, pos.y0, bar_w, pos.y1 - pos.y0])
             for yt, col in zip(yticks[:len(colors)], colors):
                 ann_ax.barh(yt, 1, height=0.8, color=col, edgecolor="none")
@@ -171,25 +185,31 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
             ann_ax.set_xlim(0, 1)
             ann_ax.set_xticks([])
             ann_ax.set_yticks([])
-            ann_ax.set_title(title, fontsize=7)
+            ann_ax.set_title(title, fontsize=8)
             for spine in ann_ax.spines.values():
                 spine.set_visible(False)
 
-        # Colour legends to the right of the bars
-        legend_x = start_x + 2 * (bar_w + gap) + gap
+        # Colour legends below the plot
+        legend_y = pos.y0 - 0.02
         if unique_cts:
             ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
-            leg1 = fig.legend(handles=ct_patches, title="Cell type",
-                              loc="upper left", bbox_to_anchor=(legend_x, pos.y1),
-                              fontsize=5, title_fontsize=6,
-                              frameon=True, edgecolor="lightgray")
+            leg1 = fig.legend(
+                handles=ct_patches, title="Cell type",
+                loc="upper left", bbox_to_anchor=(ct_x, legend_y),
+                fontsize=7, title_fontsize=8,
+                frameon=True, edgecolor="lightgray",
+                ncol=max(1, len(unique_cts) // 6 + 1))
             fig.add_artist(leg1)
+
         if unique_regs:
             reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
-            fig.legend(handles=reg_patches, title="Region",
-                       loc="lower left", bbox_to_anchor=(legend_x, pos.y0),
-                       fontsize=5, title_fontsize=6,
-                       frameon=True, edgecolor="lightgray")
+            fig.legend(
+                handles=reg_patches, title="Region",
+                loc="upper right", bbox_to_anchor=(pos.x1, legend_y),
+                fontsize=7, title_fontsize=8,
+                frameon=True, edgecolor="lightgray",
+                ncol=max(1, len(unique_regs) // 4 + 1))
+
     except Exception as e:
         log.warning("  Row annotation failed: %s", e)
 
@@ -350,7 +370,6 @@ try:
         log.info("Computing AUCell for %d signatures …", len(signatures))
         import decoupler as dc
 
-        # Build net DataFrame: source, target, weight
         net_rows = []
         for sig_name in signatures:
             for gene in valid_entries[sig_name]:
@@ -363,7 +382,6 @@ try:
         dc.run_aucell(adata, net=net_df, source="source", target="target",
                       n_up=n_up, use_raw=False, verbose=True)
 
-        # Extract scores from obsm
         if "aucell_estimate" in adata.obsm:
             est = adata.obsm["aucell_estimate"]
             for sig_name in signatures:
