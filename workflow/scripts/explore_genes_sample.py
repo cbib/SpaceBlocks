@@ -135,7 +135,7 @@ def composite_vertical(image_paths, output_path, dpi=300, pad=30):
             bg = Image.new("RGB", img.size, (255, 255, 255))
             bg.paste(img, mask=img.split()[3])
             img = bg
-        composite.paste(img, (0, y))
+        composite.paste(img, (max_w - img.width, y))  # right-align
         y += img.height + pad
 
     composite.save(output_path, dpi=(dpi, dpi))
@@ -266,33 +266,79 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
             ann_ax.set_xlim(0, 1)
             ann_ax.set_xticks([])
             ann_ax.set_yticks([])
-            ann_ax.set_title(title, fontsize=8)
+            ann_ax.set_title(title, fontsize=8, rotation=90, ha="left", va="bottom")
             for spine in ann_ax.spines.values():
                 spine.set_visible(False)
 
-        # Colour legends below the plot
-        legend_y = pos.y0 - 0.02
+    except Exception as e:
+        log.warning("  Row annotation failed: %s", e)
+
+
+def create_annotation_legend(annot_key, annotation_colors, region_colors,
+                             out_path, dpi):
+    """Create a standalone legend image for cell type + region colour bars."""
+    try:
+        from matplotlib.patches import Patch
+
+        ct_cd = annotation_colors.get(annot_key, {}) if isinstance(annotation_colors, dict) else {}
+        reg_cd = region_colors if isinstance(region_colors, dict) else {}
+        if not ct_cd and not reg_cd:
+            return
+
+        # Collect unique categories that actually appear in the last dotplot
+        fig_prev = plt.gcf()
+        main_ax = None
+        for ax in fig_prev.axes:
+            labels = [t.get_text() for t in ax.get_yticklabels()]
+            if labels and any(" | " in l for l in labels):
+                main_ax = ax
+                break
+
+        unique_cts, unique_regs = {}, {}
+        if main_ax is not None:
+            for label in [t.get_text() for t in main_ax.get_yticklabels()]:
+                parts = label.split(" | ", 1)
+                ct = parts[0].strip()
+                region = parts[1].strip() if len(parts) > 1 else ""
+                if ct and ct not in unique_cts:
+                    unique_cts[ct] = ct_cd.get(ct, "#cccccc")
+                if region and region not in unique_regs:
+                    unique_regs[region] = reg_cd.get(region, "#cccccc")
+
+        if not unique_cts and not unique_regs:
+            return
+
+        # Build standalone legend figure
+        fig_leg, ax_leg = plt.subplots(figsize=(12, 3))
+        ax_leg.set_axis_off()
+
+        artists = []
         if unique_cts:
             ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
-            leg1 = fig.legend(
+            leg1 = ax_leg.legend(
                 handles=ct_patches, title="Cell type",
-                loc="upper left", bbox_to_anchor=(ct_x, legend_y),
-                fontsize=7, title_fontsize=8,
+                loc="upper left", bbox_to_anchor=(0.0, 1.0),
+                fontsize=12, title_fontsize=13,
                 frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_cts) // 6 + 1))
-            fig.add_artist(leg1)
+                ncol=max(1, len(unique_cts) // 4 + 1))
+            artists.append(leg1)
+            ax_leg.add_artist(leg1)
 
         if unique_regs:
             reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
-            fig.legend(
+            leg2 = ax_leg.legend(
                 handles=reg_patches, title="Region",
-                loc="upper right", bbox_to_anchor=(pos.x1, legend_y),
-                fontsize=7, title_fontsize=8,
+                loc="upper right", bbox_to_anchor=(1.0, 1.0),
+                fontsize=12, title_fontsize=13,
                 frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_regs) // 4 + 1))
+                ncol=max(1, len(unique_regs) // 3 + 1))
+
+        fig_leg.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig_leg)
 
     except Exception as e:
-        log.warning("  Row annotation failed: %s", e)
+        log.warning("  Annotation legend image failed: %s", e)
+        plt.close("all")
 
 
 def generate_dotplot_composite(adata, var_names, annot_key, has_regions,
@@ -356,8 +402,19 @@ def generate_dotplot_composite(adata, var_names, annot_key, has_regions,
                                           annotation_colors or {},
                                           region_colors or {})
             plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
-            plt.close("all")
             tmp_files.append(tmp)
+
+            # Standalone annotation legend (before plt.close so gcf() can
+            # still read the dotplot's ytick labels)
+            if annotation_colors or region_colors:
+                tmp_leg = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
+                create_annotation_legend(annot_key,
+                                         annotation_colors or {},
+                                         region_colors or {},
+                                         tmp_leg, dpi)
+                if os.path.isfile(tmp_leg) and os.path.getsize(tmp_leg) > 0:
+                    tmp_files.append(tmp_leg)
+            plt.close("all")
         except Exception as e:
             log.warning("    Dotplot celltype×region failed: %s", e)
             plt.close("all")

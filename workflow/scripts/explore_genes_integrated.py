@@ -13,6 +13,7 @@ import gc
 import logging
 import os
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -22,6 +23,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scanpy as sc
+from PIL import Image
+
+# Large cell type × region dotplots can exceed PIL's default pixel limit
+Image.MAX_IMAGE_PIXELS = None
 
 # Rasterise scatter data layers (text/axes stay vector)
 sc.settings.set_figure_params(vector_friendly=True)
@@ -185,52 +190,124 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
             ann_ax.set_xlim(0, 1)
             ann_ax.set_xticks([])
             ann_ax.set_yticks([])
-            ann_ax.set_title(title, fontsize=8)
+            ann_ax.set_title(title, fontsize=8, rotation=90, ha="left", va="bottom")
             for spine in ann_ax.spines.values():
                 spine.set_visible(False)
-
-        # Colour legends below the plot
-        legend_y = pos.y0 - 0.02
-        if unique_cts:
-            ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
-            leg1 = fig.legend(
-                handles=ct_patches, title="Cell type",
-                loc="upper left", bbox_to_anchor=(ct_x, legend_y),
-                fontsize=7, title_fontsize=8,
-                frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_cts) // 6 + 1))
-            fig.add_artist(leg1)
-
-        if unique_regs:
-            reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
-            fig.legend(
-                handles=reg_patches, title="Region",
-                loc="upper right", bbox_to_anchor=(pos.x1, legend_y),
-                fontsize=7, title_fontsize=8,
-                frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_regs) // 4 + 1))
 
     except Exception as e:
         log.warning("  Row annotation failed: %s", e)
 
 
+def create_annotation_legend(annot_key, annotation_colors, region_colors,
+                             out_path, dpi):
+    """Create a standalone legend image for cell type + region colour bars."""
+    try:
+        from matplotlib.patches import Patch
+
+        ct_cd = annotation_colors.get(annot_key, {}) if isinstance(annotation_colors, dict) else {}
+        reg_cd = region_colors if isinstance(region_colors, dict) else {}
+        if not ct_cd and not reg_cd:
+            return
+
+        fig_prev = plt.gcf()
+        main_ax = None
+        for ax in fig_prev.axes:
+            labels = [t.get_text() for t in ax.get_yticklabels()]
+            if labels and any(" | " in l for l in labels):
+                main_ax = ax
+                break
+
+        unique_cts, unique_regs = {}, {}
+        if main_ax is not None:
+            for label in [t.get_text() for t in main_ax.get_yticklabels()]:
+                parts = label.split(" | ", 1)
+                ct = parts[0].strip()
+                region = parts[1].strip() if len(parts) > 1 else ""
+                if ct and ct not in unique_cts:
+                    unique_cts[ct] = ct_cd.get(ct, "#cccccc")
+                if region and region not in unique_regs:
+                    unique_regs[region] = reg_cd.get(region, "#cccccc")
+
+        if not unique_cts and not unique_regs:
+            return
+
+        fig_leg, ax_leg = plt.subplots(figsize=(12, 3))
+        ax_leg.set_axis_off()
+
+        if unique_cts:
+            ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
+            leg1 = ax_leg.legend(
+                handles=ct_patches, title="Cell type",
+                loc="upper left", bbox_to_anchor=(0.0, 1.0),
+                fontsize=12, title_fontsize=13,
+                frameon=True, edgecolor="lightgray",
+                ncol=max(1, len(unique_cts) // 4 + 1))
+            ax_leg.add_artist(leg1)
+
+        if unique_regs:
+            reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
+            ax_leg.legend(
+                handles=reg_patches, title="Region",
+                loc="upper right", bbox_to_anchor=(1.0, 1.0),
+                fontsize=12, title_fontsize=13,
+                frameon=True, edgecolor="lightgray",
+                ncol=max(1, len(unique_regs) // 3 + 1))
+
+        fig_leg.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig_leg)
+
+    except Exception as e:
+        log.warning("  Annotation legend image failed: %s", e)
+        plt.close("all")
+
+
+def composite_vertical(image_paths, output_path, dpi=300, pad=30):
+    """Stack images vertically with padding, right-aligned, save as PNG."""
+    imgs = []
+    for p in image_paths:
+        if os.path.isfile(p):
+            imgs.append(Image.open(p))
+    if not imgs:
+        return
+
+    max_w = max(img.width for img in imgs)
+    total_h = sum(img.height for img in imgs) + pad * (len(imgs) - 1)
+    composite = Image.new("RGB", (max_w, total_h), (255, 255, 255))
+
+    y = 0
+    for img in imgs:
+        if img.mode == "RGBA":
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[3])
+            img = bg
+        composite.paste(img, (max_w - img.width, y))  # right-align
+        y += img.height + pad
+
+    composite.save(output_path, dpi=(dpi, dpi))
+    for img in imgs:
+        img.close()
+
+
 def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
                       prefix, dpi, annotation_colors=None, region_colors=None):
-    """Generate three dotplot PNGs: by cell type, by region, cell type × region."""
+    """Generate a composite PNG of dotplots (cell type, region, cell type ×
+    region + annotation bars + legend) stacked vertically and right-aligned."""
     n_genes = len(var_names)
     fig_w = max(8, n_genes * 1.2 + 4)
+    tmp_files = []
 
     # (1) By cell type
     try:
         n_ct = adata.obs[annot_key].nunique()
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
         sc.pl.dotplot(adata, var_names=var_names, groupby=annot_key,
                       standard_scale="var",
                       figsize=(fig_w, max(4, n_ct * 0.4)),
                       title=f"{prefix} – by cell type",
                       show=False)
-        plt.savefig(os.path.join(out_dir, f"{prefix}_dotplot_celltype.png"),
-                    dpi=dpi, bbox_inches="tight")
+        plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
         plt.close("all")
+        tmp_files.append(tmp)
     except Exception as e:
         log.warning("  Dotplot celltype failed: %s", e)
         plt.close("all")
@@ -239,15 +316,16 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
     if has_regions:
         try:
             n_reg = adata.obs["region_annotation"].nunique()
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
             sc.pl.dotplot(adata, var_names=var_names,
                           groupby="region_annotation",
                           standard_scale="var",
                           figsize=(fig_w, max(4, n_reg * 0.5)),
                           title=f"{prefix} – by region",
                           show=False)
-            plt.savefig(os.path.join(out_dir, f"{prefix}_dotplot_region.png"),
-                        dpi=dpi, bbox_inches="tight")
+            plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
             plt.close("all")
+            tmp_files.append(tmp)
         except Exception as e:
             log.warning("  Dotplot region failed: %s", e)
             plt.close("all")
@@ -260,6 +338,7 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
             adata.obs["_ct_region"] = pd.Categorical(combined)
             n_groups = adata.obs["_ct_region"].nunique()
             fig_h = max(6, n_groups * 0.35)
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
             sc.pl.dotplot(adata, var_names=var_names, groupby="_ct_region",
                           standard_scale="var",
                           figsize=(fig_w, fig_h),
@@ -269,9 +348,18 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
                 annotate_ct_region_dotplot(annot_key,
                                           annotation_colors or {},
                                           region_colors or {})
-            plt.savefig(os.path.join(out_dir,
-                        f"{prefix}_dotplot_celltype_region.png"),
-                        dpi=dpi, bbox_inches="tight")
+            plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
+            tmp_files.append(tmp)
+
+            # Standalone annotation legend (before plt.close so gcf() works)
+            if annotation_colors or region_colors:
+                tmp_leg = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
+                create_annotation_legend(annot_key,
+                                         annotation_colors or {},
+                                         region_colors or {},
+                                         tmp_leg, dpi)
+                if os.path.isfile(tmp_leg) and os.path.getsize(tmp_leg) > 0:
+                    tmp_files.append(tmp_leg)
             plt.close("all")
         except Exception as e:
             log.warning("  Dotplot celltype×region failed: %s", e)
@@ -279,6 +367,17 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
         finally:
             if "_ct_region" in adata.obs.columns:
                 del adata.obs["_ct_region"]
+
+    # Composite all dotplots + legend into a single PNG
+    if tmp_files:
+        composite_vertical(tmp_files,
+                           os.path.join(out_dir, f"{prefix}_dotplots.png"),
+                           dpi=dpi)
+    for f in tmp_files:
+        try:
+            os.unlink(f)
+        except OSError:
+            pass
 
 
 def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
