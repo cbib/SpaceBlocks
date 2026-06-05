@@ -276,7 +276,8 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
 
 def create_annotation_legend(annot_key, annotation_colors, region_colors,
                              out_path, dpi):
-    """Create a standalone legend image for cell type + region colour bars."""
+    """Create a standalone legend image for cell type + region colour bars.
+    Legends are stacked vertically so they never overlap."""
     try:
         from matplotlib.patches import Patch
 
@@ -308,30 +309,29 @@ def create_annotation_legend(annot_key, annotation_colors, region_colors,
         if not unique_cts and not unique_regs:
             return
 
-        # Build standalone legend figure
-        fig_leg, ax_leg = plt.subplots(figsize=(12, 3))
-        ax_leg.set_axis_off()
-
-        artists = []
+        # Two axes stacked vertically — one legend per row, no overlap
+        n_rows = (1 if unique_cts else 0) + (1 if unique_regs else 0)
+        fig_leg, axes_leg = plt.subplots(n_rows, 1, figsize=(12, 1.5 * n_rows),
+                                          squeeze=False)
+        row = 0
         if unique_cts:
+            ax = axes_leg[row, 0]
+            ax.set_axis_off()
             ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
-            leg1 = ax_leg.legend(
-                handles=ct_patches, title="Cell type",
-                loc="upper left", bbox_to_anchor=(0.0, 1.0),
-                fontsize=12, title_fontsize=13,
-                frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_cts) // 4 + 1))
-            artists.append(leg1)
-            ax_leg.add_artist(leg1)
+            ax.legend(handles=ct_patches, title="Cell type",
+                      loc="center", fontsize=12, title_fontsize=13,
+                      frameon=True, edgecolor="lightgray",
+                      ncol=max(1, len(unique_cts) // 4 + 1))
+            row += 1
 
         if unique_regs:
+            ax = axes_leg[row, 0]
+            ax.set_axis_off()
             reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
-            leg2 = ax_leg.legend(
-                handles=reg_patches, title="Region",
-                loc="upper right", bbox_to_anchor=(1.0, 1.0),
-                fontsize=12, title_fontsize=13,
-                frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_regs) // 3 + 1))
+            ax.legend(handles=reg_patches, title="Region",
+                      loc="center", fontsize=12, title_fontsize=13,
+                      frameon=True, edgecolor="lightgray",
+                      ncol=max(1, len(unique_regs) // 3 + 1))
 
         fig_leg.savefig(out_path, dpi=dpi, bbox_inches="tight")
         plt.close(fig_leg)

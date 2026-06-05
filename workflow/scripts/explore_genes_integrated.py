@@ -200,7 +200,8 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
 
 def create_annotation_legend(annot_key, annotation_colors, region_colors,
                              out_path, dpi):
-    """Create a standalone legend image for cell type + region colour bars."""
+    """Create a standalone legend image for cell type + region colour bars.
+    Legends are stacked vertically so they never overlap."""
     try:
         from matplotlib.patches import Patch
 
@@ -231,27 +232,29 @@ def create_annotation_legend(annot_key, annotation_colors, region_colors,
         if not unique_cts and not unique_regs:
             return
 
-        fig_leg, ax_leg = plt.subplots(figsize=(12, 3))
-        ax_leg.set_axis_off()
-
+        # Two axes stacked vertically — one legend per row, no overlap
+        n_rows = (1 if unique_cts else 0) + (1 if unique_regs else 0)
+        fig_leg, axes_leg = plt.subplots(n_rows, 1, figsize=(12, 1.5 * n_rows),
+                                          squeeze=False)
+        row = 0
         if unique_cts:
+            ax = axes_leg[row, 0]
+            ax.set_axis_off()
             ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
-            leg1 = ax_leg.legend(
-                handles=ct_patches, title="Cell type",
-                loc="upper left", bbox_to_anchor=(0.0, 1.0),
-                fontsize=12, title_fontsize=13,
-                frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_cts) // 4 + 1))
-            ax_leg.add_artist(leg1)
+            ax.legend(handles=ct_patches, title="Cell type",
+                      loc="center", fontsize=12, title_fontsize=13,
+                      frameon=True, edgecolor="lightgray",
+                      ncol=max(1, len(unique_cts) // 4 + 1))
+            row += 1
 
         if unique_regs:
+            ax = axes_leg[row, 0]
+            ax.set_axis_off()
             reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
-            ax_leg.legend(
-                handles=reg_patches, title="Region",
-                loc="upper right", bbox_to_anchor=(1.0, 1.0),
-                fontsize=12, title_fontsize=13,
-                frameon=True, edgecolor="lightgray",
-                ncol=max(1, len(unique_regs) // 3 + 1))
+            ax.legend(handles=reg_patches, title="Region",
+                      loc="center", fontsize=12, title_fontsize=13,
+                      frameon=True, edgecolor="lightgray",
+                      ncol=max(1, len(unique_regs) // 3 + 1))
 
         fig_leg.savefig(out_path, dpi=dpi, bbox_inches="tight")
         plt.close(fig_leg)
@@ -384,7 +387,8 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
                              vmin, vmax, dpi, title="expression"):
     """Single composite PNG with 2–3 UMAPs side by side."""
     n_panels = 2 + (1 if has_regions else 0)
-    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7))
+    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7),
+                              gridspec_kw={"wspace": 0.5})
 
     try:
         sc.pl.umap(adata, color=color_col, size=2, frameon=False,
@@ -395,14 +399,18 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
 
     try:
         sc.pl.umap(adata, color=annot_key, size=2, frameon=False,
-                    title="Cell types", ax=axes[1], show=False)
+                    title="Cell types", legend_fontsize=6,
+                    na_in_legend=False,
+                    ax=axes[1], show=False)
     except Exception as e:
         log.warning("  UMAP celltype failed: %s", e)
 
     if has_regions:
         try:
             sc.pl.umap(adata, color="region_annotation", size=2, frameon=False,
-                        title="Regions", ax=axes[2], show=False)
+                        title="Regions", legend_fontsize=6,
+                        na_in_legend=False,
+                        ax=axes[2], show=False)
         except Exception as e:
             log.warning("  UMAP region failed: %s", e)
 
