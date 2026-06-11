@@ -76,10 +76,13 @@ def _save_pseudobulk(pdata, matrices_dir, metadata_dir, prefix):
     log.info("  Saved: %s (%d samples × %d genes)", prefix, pdata.n_obs, pdata.n_vars)
 
 
-def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
+def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir,
+                        region_colors=None, annotation_colors=None):
     """
     3-panel QC: dc.plot_psbulk_samples + 2 PCAs (by condition, by sample).
-    Legends placed outside the plot area.
+    Legends placed outside the plot area. Config palettes (region_colors for
+    the condition PCA, annotation_colors['sample_batch'] for the sample PCA)
+    are used when available, with colormap fallbacks otherwise.
     """
     fig, axes = plt.subplots(1, 3, figsize=(22, 5))
     fig.suptitle(f"Pseudobulk QC — {prefix}", fontsize=14, fontweight="bold")
@@ -125,8 +128,10 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
 
         # Panel 2: PCA by condition
         unique_conds = sorted(set(conditions))
-        cmap = plt.cm.get_cmap("Set1", max(len(unique_conds), 1))
-        cond_colors = {c: cmap(i) for i, c in enumerate(unique_conds)}
+        rc = region_colors if isinstance(region_colors, dict) else {}
+        _cmap = plt.cm.get_cmap("Set1", max(len(unique_conds), 1))
+        cond_colors = {c: rc.get(str(c), _cmap(i))
+                       for i, c in enumerate(unique_conds)}
 
         for cond in unique_conds:
             mask = conditions == cond
@@ -141,8 +146,11 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir):
         # Panel 3: PCA by sample
         if samples is not None:
             unique_samples = sorted(set(samples))
+            sc_cd = (annotation_colors.get("sample_batch", {})
+                     if isinstance(annotation_colors, dict) else {})
             cmap_s = plt.cm.get_cmap("tab20", max(len(unique_samples), 1))
-            sample_colors = {s: cmap_s(i) for i, s in enumerate(unique_samples)}
+            sample_colors = {s: sc_cd.get(str(s), cmap_s(i))
+                             for i, s in enumerate(unique_samples)}
             for s in unique_samples:
                 mask = samples == s
                 axes[2].scatter(pcs[mask, 0], pcs[mask, 1], c=[sample_colors[s]],
@@ -174,6 +182,8 @@ annot_type     = snakemake.params.annot_type
 analysis_level = snakemake.params.analysis_level
 MIN_CELLS      = int(snakemake.params.min_cells_per_pseudobulk)
 MIN_COUNTS     = int(snakemake.params.min_counts_per_pseudobulk)
+ANNOTATION_COLORS = snakemake.params.annotation_colors
+REGION_COLORS     = snakemake.params.region_colors
 agg_dir        = str(snakemake.output.agg_dir)
 
 try:
@@ -239,7 +249,8 @@ try:
             min_cells=MIN_CELLS, min_counts=MIN_COUNTS,
         )
         _save_pseudobulk(pdata, matrices_dir, metadata_dir, "pooled")
-        _plot_pseudobulk_qc(pdata, region_col, sample_col, "pooled", plots_dir)
+        _plot_pseudobulk_qc(pdata, region_col, sample_col, "pooled", plots_dir,
+                            REGION_COLORS, ANNOTATION_COLORS)
         manifest_rows.append({
             "prefix": "pooled", "grouping": "all_cells",
             "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,
@@ -273,7 +284,8 @@ try:
                 continue
 
             _save_pseudobulk(pdata, matrices_dir, metadata_dir, safe_ct)
-            _plot_pseudobulk_qc(pdata, region_col, sample_col, safe_ct, plots_dir)
+            _plot_pseudobulk_qc(pdata, region_col, sample_col, safe_ct, plots_dir,
+                                REGION_COLORS, ANNOTATION_COLORS)
             manifest_rows.append({
                 "prefix": safe_ct, "grouping": ct,
                 "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,
