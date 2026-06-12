@@ -22,6 +22,17 @@ import numpy as np
 import scanpy as sc
 import scanpy.external as sce
 
+# Shared composition-barplot helpers (black edge, legend==stack order, config colours)
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from composition_barplots import (
+    composition_pair, find_niche_column,
+    composition_by_sample_grouped, composition_by_region_faceted,
+)
+
 try:
     import geosketch as sketch
     HAS_GEOSKETCH = True
@@ -54,6 +65,7 @@ N_NEIGHBORS     = int(snakemake.params.n_neighbors)
 SKETCH_FRAC     = float(snakemake.params.sketch_fraction)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 
 out_concat     = str(snakemake.output.concatenated)
 out_harmony    = str(snakemake.output.harmony)
@@ -167,81 +179,56 @@ try:
                     dpi=300, bbox_inches="tight")
         plt.close()
 
-    # ── Composition barplots (absolute + relative, by sample and by region) ──
+    # ── Composition barplots (sample / region / niche) ───────────────────
     log.info("Composition barplots …")
+    bar_dir = os.path.join(output_dir, "barplots")
+    os.makedirs(bar_dir, exist_ok=True)
     annot_cols = [c for c in ["cell_type_tsv", "cell_type_refined",
                               "cell_type_ingest", "cell_type_external"]
                   if c in adata.obs.columns]
-
     has_regions = ("region_annotation" in adata.obs.columns
                    and adata.obs["region_annotation"].nunique() > 1
                    and not all(adata.obs["region_annotation"] == "Unlabeled"))
-
-    # Apply region palette
-    if REGION_COLORS and has_regions:
-        adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
-        cats = adata.obs["region_annotation"].cat.categories
-        adata.uns["region_annotation_colors"] = [
-            REGION_COLORS.get(str(c), "#cccccc") for c in cats
-        ]
+    niche_col = find_niche_column(adata, NICHE_COLUMN)
 
     for annot_col in annot_cols:
+        cmap = (ANNOTATION_COLORS.get(annot_col, {})
+                if isinstance(ANNOTATION_COLORS, dict) else {})
         label = annot_col.replace("cell_type_", "")
-
-        # By sample
-        try:
-            ct = pd.crosstab(adata.obs["sample_batch"], adata.obs[annot_col])
-            ct_norm = ct.div(ct.sum(axis=1), axis=0) * 100
-
-            col_colors = None
-            if isinstance(ANNOTATION_COLORS, dict):
-                cd = ANNOTATION_COLORS.get(annot_col, {})
-                if cd:
-                    col_colors = [cd.get(str(c), "#cccccc") for c in ct.columns]
-
-            for data, suffix, ylabel in [(ct, "absolute", "Number of cells"),
-                                          (ct_norm, "relative", "Percentage (%)")]:
-                ax = data.plot(kind="bar", stacked=True,
-                               figsize=(max(8, len(ct) * 1.2), 6),
-                               color=col_colors)
-                ax.set_ylabel(ylabel)
-                ax.set_xlabel("Sample")
-                ax.legend(title=label, bbox_to_anchor=(1.05, 1), loc="upper left")
-                plt.tight_layout()
-                plt.savefig(os.path.join(output_dir,
-                            f"barplot_{label}_by_sample_{suffix}.png"),
-                            dpi=300, bbox_inches="tight")
-                plt.close()
-        except Exception as e:
-            log.warning("Barplot by sample for %s failed: %s", annot_col, e)
-
-        # By region (if available)
+        composition_pair(adata, "sample_batch", annot_col, cmap, bar_dir,
+                         f"barplot_{label}_by_sample", group_label="Sample",
+                         cat_label=label)
         if has_regions:
-            try:
-                ct = pd.crosstab(adata.obs["region_annotation"], adata.obs[annot_col])
-                ct_norm = ct.div(ct.sum(axis=1), axis=0) * 100
+            composition_pair(adata, "region_annotation", annot_col, cmap,
+                             bar_dir, f"barplot_{label}_by_region",
+                             group_label="Region", cat_label=label)
+        if niche_col:
+            composition_pair(adata, niche_col, annot_col, cmap, bar_dir,
+                             f"barplot_{label}_by_niche", group_label="Niche",
+                             cat_label=label)
 
-                col_colors = None
-                if isinstance(ANNOTATION_COLORS, dict):
-                    cd = ANNOTATION_COLORS.get(annot_col, {})
-                    if cd:
-                        col_colors = [cd.get(str(c), "#cccccc") for c in ct.columns]
-
-                for data, suffix, ylabel in [(ct, "absolute", "Number of cells"),
-                                              (ct_norm, "relative", "Percentage (%)")]:
-                    ax = data.plot(kind="bar", stacked=True,
-                                   figsize=(max(8, len(ct) * 1.2), 6),
-                                   color=col_colors)
-                    ax.set_ylabel(ylabel)
-                    ax.set_xlabel("Region")
-                    ax.legend(title=label, bbox_to_anchor=(1.05, 1), loc="upper left")
-                    plt.tight_layout()
-                    plt.savefig(os.path.join(output_dir,
-                                f"barplot_{label}_by_region_{suffix}.png"),
-                                dpi=300, bbox_inches="tight")
-                    plt.close()
-            except Exception as e:
-                log.warning("Barplot by region for %s failed: %s", annot_col, e)
+    # Sample × region cell-type composition — two layouts, absolute + relative:
+    #   • grouped by sample (samples side by side, regions within each group)
+    #   • faceted by region (one panel per region, samples within each panel)
+    if has_regions and annot_cols:
+        primary = annot_cols[0]
+        pcmap = (ANNOTATION_COLORS.get(primary, {})
+                 if isinstance(ANNOTATION_COLORS, dict) else {})
+        plabel = primary.replace("cell_type_", "")
+        region_order = (list(REGION_COLORS.keys())
+                        if isinstance(REGION_COLORS, dict) and REGION_COLORS else None)
+        for norm, suffix, yl in [(False, "absolute", "Number of cells"),
+                                 (True, "relative", "Percentage (%)")]:
+            composition_by_sample_grouped(
+                adata, "sample_batch", "region_annotation", primary, pcmap,
+                os.path.join(bar_dir, f"barplot_{plabel}_grouped_by_sample_{suffix}.png"),
+                normalize=norm, region_order=region_order,
+                cat_label=plabel, ylabel=yl)
+            composition_by_region_faceted(
+                adata, "sample_batch", "region_annotation", primary, pcmap,
+                os.path.join(bar_dir, f"barplot_{plabel}_faceted_by_region_{suffix}.png"),
+                normalize=norm, region_order=region_order,
+                cat_label=plabel, ylabel=yl)
 
     # ── 4. Geosketch ─────────────────────────────────────────────────────
     if not HAS_GEOSKETCH:

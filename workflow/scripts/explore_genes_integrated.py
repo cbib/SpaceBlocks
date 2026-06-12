@@ -507,6 +507,9 @@ try:
             all_unique_genes.add(gene)
 
     for gene_name in sorted(all_unique_genes):
+        if gene_name not in adata.var_names:
+            log.warning("  gene '%s' not in integrated object — skipping range", gene_name)
+            continue
         expr = adata[:, gene_name].X
         if hasattr(expr, "toarray"):
             expr = expr.toarray()

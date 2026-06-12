@@ -34,6 +34,14 @@ import pandas as pd
 import scanpy as sc
 from scipy import sparse
 
+# Shared composition-barplot helpers (black edge, legend==stack order, config colours)
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from composition_barplots import composition_pair, find_niche_column
+
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stderr)]
@@ -188,7 +196,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
         )
         try:
             sc.pl.spatial(adata, color="_hl", spot_size=20, frameon=False,
-                          palette={"Other": "#d3d3d3", ct: "#e41a1c"},
+                          palette={"Other": "#d3d3d3", ct: "#000000"},
                           title=ct, library_id=library_id)
             safe = ct.replace("/", "_").replace(" ", "_")
             plt.savefig(os.path.join(ct_dir, f"{safe}_{sample_id}.png"),
@@ -249,6 +257,7 @@ EXT_ANNOT_CFG       = snakemake.params.external_annotation
 PRECOMPUTED_DIR     = str(snakemake.params.precomputed_metadata_dir)
 ANNOTATION_COLORS   = snakemake.params.annotation_colors
 REGION_COLORS       = snakemake.params.region_colors
+NICHE_COLUMN        = getattr(snakemake.params, "niche_column", "")
 
 adata_path     = str(snakemake.input.adata)
 metadata_path  = str(snakemake.input.metadata)
@@ -447,11 +456,12 @@ try:
                           if c in adata.obs.columns]
     n_panels = len(annot_cols_present)
     if n_panels >= 2:
-        fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6))
+        fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
+                                 gridspec_kw={"wspace": 0.5})
         for ax, col in zip(axes, annot_cols_present):
             sc.pl.umap(adata, color=col, size=2, frameon=False,
-                       title=col.replace("cell_type_", ""), ax=ax, show=False)
-        plt.tight_layout()
+                       title=col.replace("cell_type_", ""), ax=ax, show=False,
+                       legend_fontsize=6, na_in_legend=False)
         plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
                     dpi=300, bbox_inches="tight")
         plt.close()
@@ -459,51 +469,52 @@ try:
     # Side-by-side SPATIAL comparison (only if >1 annotation method)
     if n_panels >= 2:
         try:
-            fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6))
+            fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
+                                     gridspec_kw={"wspace": 0.5})
             for ax, col in zip(axes, annot_cols_present):
                 sc.pl.spatial(adata, color=col, spot_size=20, frameon=False,
                               title=col.replace("cell_type_", ""),
-                              library_id=library_id, ax=ax, show=False)
-            plt.tight_layout()
+                              library_id=library_id, ax=ax, show=False,
+                              legend_fontsize=6, na_in_legend=False)
             plt.savefig(os.path.join(plots_dir, f"spatial_comparison_{sample_id}.png"),
                         dpi=300, bbox_inches="tight")
             plt.close()
         except Exception as e:
             log.warning("Spatial comparison plot failed: %s", e)
 
-    # Per-sample composition barplots (by region)
+    # ── Per-sample composition barplots (sample / region / niche) ────────
+    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_refined",
+                                      "cell_type_ingest", "cell_type_external"]
+                          if c in adata.obs.columns]
+
+    # sample column (one bar per sample; here a single sample)
+    sample_col = next((c for c in ["sample", "sample_batch"]
+                       if c in adata.obs.columns), None)
+    if sample_col is None:
+        adata.obs["sample"] = sample_id
+        sample_col = "sample"
+
     has_regions = ("region_annotation" in adata.obs.columns
                    and adata.obs["region_annotation"].nunique() > 1
                    and not all(adata.obs["region_annotation"] == "Unlabeled"))
-    if has_regions:
-        for annot_col in annot_cols_present:
-            try:
-                ct = pd.crosstab(adata.obs["region_annotation"], adata.obs[annot_col])
-                ct_norm = ct.div(ct.sum(axis=1), axis=0) * 100
-                label = annot_col.replace("cell_type_", "")
+    niche_col = find_niche_column(adata, NICHE_COLUMN)   # NICHE_COLUMN may be ""
 
-                # Apply custom colors if available
-                colors = None
-                if isinstance(ANNOTATION_COLORS, dict):
-                    cd = ANNOTATION_COLORS.get(annot_col, {})
-                    if cd:
-                        colors = [cd.get(str(c), "#cccccc") for c in ct.columns]
-
-                for data, suffix, ylabel in [(ct, "absolute", "Number of cells"),
-                                              (ct_norm, "relative", "Percentage (%)")]:
-                    ax = data.plot(kind="bar", stacked=True,
-                                   figsize=(max(8, len(ct) * 1.2), 6),
-                                   color=colors)
-                    ax.set_ylabel(ylabel)
-                    ax.set_xlabel("Region")
-                    ax.legend(title=label, bbox_to_anchor=(1.05, 1), loc="upper left")
-                    plt.tight_layout()
-                    plt.savefig(os.path.join(plots_dir,
-                                f"barplot_{label}_{suffix}_{sample_id}.png"),
-                                dpi=300, bbox_inches="tight")
-                    plt.close()
-            except Exception as e:
-                log.warning("Barplot for %s failed: %s", annot_col, e)
+    bar_dir = os.path.join(plots_dir, "composition")
+    for annot_col in annot_cols_present:
+        cmap = (ANNOTATION_COLORS.get(annot_col, {})
+                if isinstance(ANNOTATION_COLORS, dict) else {})
+        label = annot_col.replace("cell_type_", "")
+        composition_pair(adata, sample_col, annot_col, cmap, bar_dir,
+                         f"{label}_by_sample", group_label="Sample",
+                         cat_label=label)
+        if has_regions:
+            composition_pair(adata, "region_annotation", annot_col, cmap,
+                             bar_dir, f"{label}_by_region",
+                             group_label="Region", cat_label=label)
+        if niche_col:
+            composition_pair(adata, niche_col, annot_col, cmap, bar_dir,
+                             f"{label}_by_niche", group_label="Niche",
+                             cat_label=label)
 
     # Score distributions
     score_cols = [c for c in adata.obs.columns if c.startswith("score_")]
@@ -526,6 +537,7 @@ try:
 
     # ── 5. Save ──────────────────────────────────────────────────────────
     log.info("Saving annotated adata → %s", out_adata_path)
+    adata.uns["annotation_leiden_key"] = leiden_key   # the TSV-annotation res
     Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)
     adata.write(out_adata_path)
 

@@ -28,6 +28,14 @@ import scanpy.external as sce
 from sklearn.metrics import silhouette_samples, silhouette_score
 from sklearn.preprocessing import StandardScaler
 
+# Shared composition-barplot helper (black edge, legend==stack order, config colours)
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from composition_barplots import save_stacked_composition
+
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stderr)]
@@ -89,19 +97,14 @@ def recalculate_qc_metrics(adata):
     )
 
 
-def _make_barplot(crosstab_df, title, ylabel, out_path, normalize=False):
-    """Create a stacked barplot from a crosstab DataFrame."""
-    if normalize:
-        crosstab_df = crosstab_df.div(crosstab_df.sum(axis=1), axis=0)
-    ax = crosstab_df.plot(kind="bar", stacked=True, figsize=(max(8, len(crosstab_df) * 0.8), 5))
-    ax.set_title(title)
-    ax.set_ylabel(ylabel)
-    ax.legend(title=crosstab_df.columns.name, bbox_to_anchor=(1.02, 1), loc="upper left",
-              fontsize=7, frameon=False)
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close()
+def _make_barplot(crosstab_df, title, ylabel, out_path, normalize=False,
+                  color_map=None):
+    """Stacked barplot (black edge, legend order == stack order, config colours)."""
+    save_stacked_composition(
+        crosstab_df, out_path, color_map, normalize=normalize,
+        ylabel=ylabel, title=title, legend_title=crosstab_df.columns.name,
+        figsize=(max(8, len(crosstab_df) * 0.8), 5),
+    )
 
 
 def generate_barplots(adata, leiden_key, res, barplots_dir, sample_col, annot_col):
@@ -135,9 +138,11 @@ def generate_barplots(adata, leiden_key, res, barplots_dir, sample_col, annot_co
     if has_regions:
         ct = pd.crosstab(adata.obs[cluster_col], adata.obs["region_annotation"])
         _make_barplot(ct, f"Cluster × Region (res {res})", "Cells",
-                      os.path.join(res_dir, "cluster_by_region_absolute.png"))
+                      os.path.join(res_dir, "cluster_by_region_absolute.png"),
+                      color_map=REGION_COLORS)
         _make_barplot(ct, f"Cluster × Region (res {res}) — relative", "Fraction",
-                      os.path.join(res_dir, "cluster_by_region_relative.png"), normalize=True)
+                      os.path.join(res_dir, "cluster_by_region_relative.png"),
+                      normalize=True, color_map=REGION_COLORS)
 
         # Transposed: Region × Cluster
         ct_t = pd.crosstab(adata.obs["region_annotation"], adata.obs[cluster_col])
@@ -157,10 +162,14 @@ def generate_barplots(adata, leiden_key, res, barplots_dir, sample_col, annot_co
     # 4. Cluster × Original annotation
     if annot_col in adata.obs.columns and adata.obs[annot_col].nunique() > 1:
         ct = pd.crosstab(adata.obs[cluster_col], adata.obs[annot_col])
+        _annot_cmap = (ANNOTATION_COLORS.get(annot_col, {})
+                       if isinstance(ANNOTATION_COLORS, dict) else {})
         _make_barplot(ct, f"Cluster × Annotation (res {res})", "Cells",
-                      os.path.join(res_dir, "cluster_by_annotation_absolute.png"))
+                      os.path.join(res_dir, "cluster_by_annotation_absolute.png"),
+                      color_map=_annot_cmap)
         _make_barplot(ct, f"Cluster × Annotation (res {res}) — relative", "Fraction",
-                      os.path.join(res_dir, "cluster_by_annotation_relative.png"), normalize=True)
+                      os.path.join(res_dir, "cluster_by_annotation_relative.png"),
+                      normalize=True, color_map=_annot_cmap)
 
 
 def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
@@ -276,7 +285,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
             plt.axhline(y=sil_avg, color="red", linestyle="--", label="Average")
             plt.ylabel("Silhouette Score")
             plt.xlabel("Cluster and Cell Index")
-            plt.title(f"Silhouette — {branch_name} (res {res})")
+            plt.title(f"Silhouette — {branch_name} (res {res}) – avg {sil_avg:.3f}")
             plt.ylim(-1, 1)
             plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1))
             plt.grid(axis="y")
@@ -447,6 +456,7 @@ N_NEIGHBORS    = int(snakemake.params.n_neighbors)
 N_PCS          = int(snakemake.params.n_pcs)
 DE_N_GENES     = int(snakemake.params.de_n_genes)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
+REGION_COLORS  = snakemake.params.region_colors
 sub_dir        = str(snakemake.output.sub_dir)
 
 try:

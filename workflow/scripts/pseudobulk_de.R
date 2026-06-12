@@ -99,6 +99,26 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
                          levels = if (length(region_lvls) > 0) region_lvls else unique(meta_ordered[[condition_col]]),
                          ordered = TRUE)
 
+  # Drop genes that became all-NaN after scaling (zero variance) — they
+  # collapse the layout and break row clustering.
+  finite_rows <- apply(mat_ordered, 1, function(z) all(is.finite(z)))
+  if (any(!finite_rows)) {
+    message("      Dropping ", sum(!finite_rows),
+            " zero-variance gene(s) from heatmap")
+    mat_ordered <- mat_ordered[finite_rows, , drop = FALSE]
+  }
+  if (nrow(mat_ordered) < 2) {
+    message("      <2 finite genes left — skipping heatmap")
+    return(invisible(NULL))
+  }
+
+  # Pin the heatmap BODY so each gene row has a fixed physical height.
+  n_row <- nrow(mat_ordered); n_col <- ncol(mat_ordered)
+  row_mm   <- 5
+  body_mm  <- max(n_row * row_mm, 40)
+  body_h   <- unit(body_mm, "mm")
+  dev_h_px <- round((body_mm / 25.4 + 2.6) * 150)   # +2.6in for title/anno/legend
+
   # Color mapping for annotation
   avail_cols <- region_cols[names(region_cols) %in% levels(split_factor)]
   if (length(avail_cols) > 0) {
@@ -123,6 +143,7 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       name = "Z-score",
       col = col_fun,
       top_annotation = col_anno,
+      height = body_h,
       cluster_columns = TRUE,
       cluster_rows = TRUE,
       show_row_names = TRUE,
@@ -133,8 +154,8 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       heatmap_legend_param = list(title = "Z-score")
     )
     png(file.path(out_dir, paste0("heatmap_unsplit_", contrast_name, ".png")),
-        width = max(800, ncol(mat_ordered) * 50),
-        height = max(500, nrow(mat_ordered) * 25), res = 150)
+        width = max(800, n_col * 50),
+        height = dev_h_px, res = 150)
     draw(ht_unsplit, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Unsplit heatmap failed: ", conditionMessage(e)))
@@ -147,6 +168,7 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       col = col_fun,
       top_annotation = col_anno,
       column_split = split_factor,
+      height = body_h,
       cluster_columns = FALSE,
       cluster_column_slices = TRUE,
       cluster_rows = TRUE,
@@ -158,8 +180,8 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       heatmap_legend_param = list(title = "Z-score")
     )
     png(file.path(out_dir, paste0("heatmap_split_", contrast_name, ".png")),
-        width = max(900, ncol(mat_ordered) * 55),
-        height = max(500, nrow(mat_ordered) * 25), res = 150)
+        width = max(900, n_col * 55),
+        height = dev_h_px, res = 150)
     draw(ht_split, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Split heatmap failed: ", conditionMessage(e)))
@@ -400,12 +422,21 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
         )
 
         if (!is.null(clusters$df)) {
-          cluster_df <- clusters$df %>% arrange(cluster, genes)
+          # ── Remap cluster ids to a contiguous 1..N (degPatterns skips ids)
+          norm <- clusters$normalized
+          old_levels <- sort(unique(norm$cluster))
+          remap <- setNames(seq_along(old_levels), as.character(old_levels))
+          # keep cluster as INTEGER — degPlotCluster joins on it internally and a
+          # factor here triggers "Can't join <factor> with <integer>".
+          norm$cluster <- as.integer(remap[as.character(norm$cluster)])
 
-          # Base plot from degPlotCluster
+          cluster_df <- clusters$df
+          cluster_df$cluster <- as.integer(remap[as.character(cluster_df$cluster)])
+          cluster_df <- cluster_df %>% arrange(cluster, genes)
+
+          # Base plot from degPlotCluster (now facetted by 1..N)
           p <- degPlotCluster(
-            clusters$normalized, time = condition_col,
-            color = condition_col, points = TRUE
+            norm, time = condition_col, color = condition_col, points = TRUE
           )
 
           # Apply custom colors if available
@@ -415,44 +446,32 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
               ggplot2::scale_color_manual(values = region_colors)
           }
 
-          # Add loess trend line and rotate x-axis labels
+          # Loess trend + rotated x labels
           p <- p +
             ggplot2::geom_smooth(
-              mapping = ggplot2::aes(
-                x = .data[[condition_col]],
-                y = value,
-                group = 1
-              ),
-              method = "loess",
-              color = "black",
-              se = FALSE,
-              linewidth = 1.2
+              mapping = ggplot2::aes(x = .data[[condition_col]], y = value, group = 1),
+              method = "loess", color = "black", se = FALSE, linewidth = 1.2
             ) +
             ggplot2::theme(
               axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5)
             )
 
-          ggsave(file.path(deg_dir, "DEGpatterns_clusters.png"),
+          ggsave(file.path(deg_dir, "DEGpatterns_groups.png"),   # renamed
                  plot = p, width = 14, height = 10, dpi = 500)
-          message("    DEGpatterns: ", length(unique(cluster_df$cluster)), " clusters")
+          message("    DEGpatterns: ", length(old_levels), " groups (renumbered 1..",
+                  length(old_levels), ")")
 
-          # Save gene groups as TSV with sanitised column headers
+          # Gene groups TSV — use the remapped, contiguous group numbers
           tryCatch({
-            gene_group_data <- p$data
-            grouped_genes <- split(unique(gene_group_data$genes), gene_group_data$title)
-
-            # Pad lists to equal length
+            grouped_genes <- split(cluster_df$genes,
+                                   paste0("group_", cluster_df$cluster))
             max_len <- max(sapply(grouped_genes, length))
             gene_df <- as.data.frame(do.call(cbind, lapply(grouped_genes, function(x) {
               c(x, rep("", max_len - length(x)))
             })))
-
-            # Sanitise column names: replace special chars with underscores
             colnames(gene_df) <- gsub("[^A-Za-z0-9_]", "_", colnames(gene_df))
-            # Collapse multiple underscores and trim trailing ones
             colnames(gene_df) <- gsub("_+", "_", colnames(gene_df))
             colnames(gene_df) <- gsub("_$", "", colnames(gene_df))
-
             write.table(gene_df, file.path(deg_dir, "gene_groups.tsv"),
                         sep = "\t", quote = FALSE, row.names = FALSE)
             message("    Gene groups saved: ", ncol(gene_df), " groups")
@@ -626,6 +645,79 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
           theme(axis.text.x = element_text(angle = 45, hjust = 1))
         ggsave(file.path(ovr_dir, "unique_markers_barplot.png"),
                plot = p, width = max(6, length(unique_markers) * 1.2), height = 5, dpi = 300)
+      }
+
+      # Heatmap: ALL unique marker genes (rows), samples (cols), row-split by
+      # the level each gene is unique to. May be tall — that is intended.
+      if (length(unique_markers) > 0) {
+        tryCatch({
+          # gene -> level map, preserving level order in `conditions`
+          gene_level <- unlist(lapply(names(unique_markers), function(lvl)
+            setNames(rep(lvl, nrow(unique_markers[[lvl]])),
+                     unique_markers[[lvl]]$gene)))
+          genes_all <- names(gene_level)
+          genes_all <- genes_all[genes_all %in% rownames(assay(vsd))]
+
+          if (length(genes_all) >= 2) {
+            mat <- assay(vsd)[genes_all, , drop = FALSE]
+            mat_scaled <- t(scale(t(mat)))
+
+            # order columns by region level
+            col_ord <- order(factor(meta[[condition_col]],
+                                    levels = if (length(conditions) > 0) conditions
+                                             else unique(meta[[condition_col]])))
+            mat_scaled <- mat_scaled[, col_ord, drop = FALSE]
+            meta_ord   <- meta[col_ord, , drop = FALSE]
+
+            # drop zero-variance genes (all-NaN rows after scaling)
+            finite_rows <- apply(mat_scaled, 1, function(z) all(is.finite(z)))
+            mat_scaled  <- mat_scaled[finite_rows, , drop = FALSE]
+
+            if (nrow(mat_scaled) >= 2) {
+              row_split <- factor(gene_level[rownames(mat_scaled)],
+                                  levels = if (length(conditions) > 0) conditions
+                                           else unique(gene_level))
+
+              avail_cols <- region_colors[names(region_colors) %in%
+                                          unique(as.character(meta_ord[[condition_col]]))]
+              col_anno <- if (length(avail_cols) > 0) {
+                HeatmapAnnotation(Region = meta_ord[[condition_col]],
+                                  col = list(Region = avail_cols), show_legend = TRUE)
+              } else {
+                HeatmapAnnotation(Region = meta_ord[[condition_col]], show_legend = TRUE)
+              }
+
+              col_fun  <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+              n_row    <- nrow(mat_scaled); n_col <- ncol(mat_scaled)
+              body_mm  <- max(n_row * 3, 40)               # 3 mm per gene row
+              dev_h_px <- round((body_mm / 25.4 + 3.0) * 150)
+
+              ht_uniq <- Heatmap(
+                mat_scaled, name = "Z-score", col = col_fun,
+                top_annotation = col_anno,
+                height = unit(body_mm, "mm"),
+                row_split = row_split,
+                cluster_row_slices = FALSE,
+                cluster_columns = FALSE,
+                cluster_rows = TRUE,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                row_names_gp = gpar(fontsize = 5),
+                column_names_gp = gpar(fontsize = 7),
+                row_title_gp = gpar(fontsize = 8),
+                column_title = "Unique markers per level (all genes)",
+                heatmap_legend_param = list(title = "Z-score")
+              )
+              png(file.path(ovr_dir, "unique_markers_heatmap.png"),
+                  width = max(900, n_col * 55), height = dev_h_px, res = 150)
+              draw(ht_uniq, merge_legend = TRUE)
+              dev.off()
+              message("    Unique markers heatmap: ", n_row, " genes")
+            }
+          }
+        }, error = function(e) {
+          message("    Unique markers heatmap failed: ", conditionMessage(e))
+        })
       }
 
     }, error = function(e) {

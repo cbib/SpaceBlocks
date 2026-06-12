@@ -25,6 +25,14 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
+# Shared composition-barplot helpers (black edge, legend==stack order, config colours)
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from composition_barplots import draw_stacked_composition, find_niche_column
+
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stderr)]
@@ -79,12 +87,131 @@ def apply_region_palette(adata, region_colors):
         ]
 
 
+def _pick_keys(adata, niche_column=None):
+    """Return (manual_leiden, tsv, auto, niche) obs keys (any may be None)."""
+    manual = adata.uns.get("annotation_leiden_key")
+    if manual not in adata.obs.columns:
+        leiden_cols = sorted(c for c in adata.obs.columns if c.startswith("leiden_"))
+        manual = leiden_cols[0] if leiden_cols else None
+    tsv = "cell_type_tsv" if "cell_type_tsv" in adata.obs.columns else None
+    auto = next((c for c in ["cell_type_ingest", "cell_type_external"]
+                 if c in adata.obs.columns), None)
+    niche = find_niche_column(adata, niche_column)
+    return manual, tsv, auto, niche
+
+
+def _build_page1(adata, sample_id, keys, library_id):
+    """Row 1 = UMAPs, Row 2 = spatial, for clusters / tsv / auto / niche."""
+    manual, tsv, auto, niche = keys
+    panels = [(manual, "Clusters"), (tsv, "TSV annotation"),
+              (auto, "Auto annotation"), (niche, "Spatial niche")]
+    panels = [(k, t) for k, t in panels if k]
+    n = len(panels)
+    fig, axes = plt.subplots(2, n, figsize=(8 * n, 14),
+                             gridspec_kw={"wspace": 0.5, "hspace": 0.25},
+                             squeeze=False)
+    fig.suptitle(f"Sample: {sample_id}", fontsize=18, fontweight="bold", y=0.99)
+    for j, (key, title) in enumerate(panels):
+        try:
+            sc.pl.umap(adata, color=key, size=2, frameon=False, title=title,
+                       legend_fontsize=6, na_in_legend=False,
+                       ax=axes[0, j], show=False)
+        except Exception as e:
+            log.warning("  UMAP %s failed: %s", title, e); axes[0, j].set_title(f"{title} (failed)")
+        try:
+            sc.pl.spatial(adata, color=key, spot_size=20, frameon=False,
+                          title=title, library_id=library_id,
+                          legend_fontsize=6, na_in_legend=False,
+                          ax=axes[1, j], show=False)
+        except Exception as e:
+            log.warning("  Spatial %s failed: %s", title, e); axes[1, j].set_title(f"{title} (failed)")
+    return fig
+
+
+def _top_markers_by_tsv(adata, tsv_key, n=10):
+    """Top-n DE markers per tsv cell type (deduped, order preserved)."""
+    try:
+        adata.obs[tsv_key] = adata.obs[tsv_key].astype("category")
+        adata.obs[tsv_key] = adata.obs[tsv_key].cat.remove_unused_categories()
+        if adata.obs[tsv_key].nunique() < 2:
+            return []
+        sc.tl.rank_genes_groups(adata, groupby=tsv_key, method="wilcoxon")
+        names = adata.uns["rank_genes_groups"]["names"]
+        ordered = []
+        for grp in names.dtype.names:
+            for g in list(names[grp])[:n]:
+                if g in adata.var_names and g not in ordered:
+                    ordered.append(g)
+        return ordered
+    except Exception as e:
+        log.warning("  marker ranking failed: %s", e)
+        return []
+
+
+def _build_page2(adata, sample_id, keys, annotation_colors, sample_col):
+    """Row 1 = composition barplots, Row 2 = horizontal marker dotplot."""
+    manual, tsv, auto, niche = keys
+    cmap = (annotation_colors.get(tsv, {}) if (tsv and isinstance(annotation_colors, dict)) else {})
+
+    has_regions = ("region_annotation" in adata.obs.columns
+                   and adata.obs["region_annotation"].nunique() > 1
+                   and not all(adata.obs["region_annotation"] == "Unlabeled"))
+    bases = [(sample_col, "Sample")]
+    if has_regions:
+        bases.append(("region_annotation", "Region"))
+    if niche:
+        bases.append((niche, "Niche"))
+
+    ncol_top = max(1, 2 * len(bases))
+    fig = plt.figure(figsize=(7 * ncol_top, 14))
+    fig.suptitle(f"Sample: {sample_id} — composition & markers",
+                 fontsize=18, fontweight="bold", y=0.99)
+    gs = gridspec.GridSpec(2, ncol_top, figure=fig,
+                           height_ratios=[1, 1.1], hspace=0.5, wspace=0.6)
+
+    if tsv:
+        for i, (gkey, glabel) in enumerate(bases):
+            ct = pd.crosstab(adata.obs[gkey], adata.obs[tsv])
+            ax_abs = fig.add_subplot(gs[0, 2 * i])
+            draw_stacked_composition(ax_abs, ct, cmap, normalize=False,
+                                     ylabel="Number of cells", xlabel=glabel,
+                                     title=f"by {glabel} (absolute)",
+                                     legend_title="Cell type",
+                                     legend=(i == len(bases) - 1))
+            ax_rel = fig.add_subplot(gs[0, 2 * i + 1])
+            draw_stacked_composition(ax_rel, ct, cmap, normalize=True,
+                                     ylabel="Percentage (%)", xlabel=glabel,
+                                     title=f"by {glabel} (relative)",
+                                     legend=False)
+
+    ax_dot = fig.add_subplot(gs[1, :])
+    genes = _top_markers_by_tsv(adata, tsv, n=10) if tsv else []
+    if genes and tsv:
+        try:
+            dp = sc.pl.dotplot(adata, var_names=genes, groupby=tsv,
+                               standard_scale="var", swap_axes=True,  # genes on Y
+                               ax=ax_dot, show=False, return_fig=False)
+            # rotate gene (y-axis) labels 45° for readability
+            for lbl in ax_dot.get_yticklabels():
+                lbl.set_rotation(45); lbl.set_ha("right")
+        except Exception as e:
+            log.warning("  marker dotplot failed: %s", e)
+            ax_dot.text(0.5, 0.5, f"Dotplot failed: {e}", ha="center", va="center",
+                        transform=ax_dot.transAxes, fontsize=8)
+    else:
+        ax_dot.text(0.5, 0.5, "No tsv markers available", ha="center", va="center",
+                    transform=ax_dot.transAxes)
+    ax_dot.set_title("Top-10 markers per TSV cell type")
+    return fig
+
+
 # ── Parameters ───────────────────────────────────────────────────────────────
 annotated_paths   = [str(p) for p in snakemake.input.annotated]
 markers_path      = str(snakemake.input.annotation_markers)
 sample_ids        = list(snakemake.params.sample_ids)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 out_report        = str(snakemake.output.report)
 
 try:
@@ -112,149 +239,27 @@ try:
                 if "spatial" in adata.uns and len(adata.uns["spatial"]) == 1:
                     library_id = list(adata.uns["spatial"].keys())[0]
 
-                # Find best leiden column
-                leiden_cols = sorted([c for c in adata.obs.columns if c.startswith("leiden_")])
-                leiden_key = leiden_cols[0] if leiden_cols else None
-
-                # Find best annotation column
-                annot_key = None
-                for candidate in ["cell_type_tsv", "cell_type_refined",
-                                  "cell_type_ingest", "cell_type_external"]:
-                    if candidate in adata.obs.columns:
-                        annot_key = candidate
-                        break
-
-                # Apply palettes
+                # palettes
                 for obs_key in ["cell_type_tsv", "cell_type_refined",
                                 "cell_type_ingest", "cell_type_external"]:
                     apply_palette(adata, obs_key, ANNOTATION_COLORS)
                 apply_region_palette(adata, REGION_COLORS)
 
-                # ── Build figure ─────────────────────────────────────────
-                fig = plt.figure(figsize=(28, 16))
-                fig.suptitle(f"Sample: {sample_id}", fontsize=18, fontweight="bold", y=0.98)
-                gs = gridspec.GridSpec(2, 4, figure=fig,
-                                       height_ratios=[1, 1.2],
-                                       hspace=0.35, wspace=0.35)
+                sample_col = next((c for c in ["sample", "sample_batch"]
+                                   if c in adata.obs.columns), None)
+                if sample_col is None:
+                    adata.obs["sample"] = sample_id
+                    sample_col = "sample"
 
-                # Row 1: UMAP (clusters) | UMAP (annotation) | Spatial (clusters) | Spatial (annotation)
-                # Panel 1: UMAP clusters
-                if leiden_key:
-                    ax1 = fig.add_subplot(gs[0, 0])
-                    try:
-                        sc.pl.umap(adata, color=leiden_key, size=2, frameon=False,
-                                   title="Clusters", ax=ax1, show=False)
-                    except Exception as e:
-                        log.warning("  UMAP clusters failed: %s", e)
-                        ax1.set_title("Clusters (failed)")
+                keys = _pick_keys(adata, NICHE_COLUMN)
 
-                # Panel 2: UMAP annotation
-                if annot_key:
-                    ax2 = fig.add_subplot(gs[0, 1])
-                    try:
-                        sc.pl.umap(adata, color=annot_key, size=2, frameon=False,
-                                   title=annot_key.replace("cell_type_", ""),
-                                   ax=ax2, show=False)
-                    except Exception as e:
-                        log.warning("  UMAP annotation failed: %s", e)
-                        ax2.set_title("Annotation (failed)")
+                fig1 = _build_page1(adata, sample_id, keys, library_id)
+                pdf.savefig(fig1, bbox_inches="tight"); plt.close(fig1)
 
-                # Panel 3: Spatial clusters
-                if leiden_key:
-                    ax3 = fig.add_subplot(gs[0, 2])
-                    try:
-                        sc.pl.spatial(adata, color=leiden_key, spot_size=20, frameon=False,
-                                      title="Spatial – clusters",
-                                      library_id=library_id, ax=ax3, show=False)
-                    except Exception as e:
-                        log.warning("  Spatial clusters failed: %s", e)
-                        ax3.set_title("Spatial clusters (failed)")
-
-                # Panel 4: Spatial annotation
-                if annot_key:
-                    ax4 = fig.add_subplot(gs[0, 3])
-                    try:
-                        sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
-                                      title="Spatial – " + annot_key.replace("cell_type_", ""),
-                                      library_id=library_id, ax=ax4, show=False)
-                    except Exception as e:
-                        log.warning("  Spatial annotation failed: %s", e)
-                        ax4.set_title("Spatial annotation (failed)")
-
-                # Row 2: Dotplot (spanning 3 columns) | Barplot (1 column)
-
-                # Panel 5: Dotplot with cell type markers
-                ax5 = fig.add_subplot(gs[1, 0:3])
-                if annot_key and marker_dict:
-                    try:
-                        # Filter markers to genes present in adata
-                        filtered = {}
-                        for ct, genes in marker_dict.items():
-                            present = [g for g in genes if g in adata.var_names]
-                            if present:
-                                filtered[ct] = present
-
-                        if filtered:
-                            # Ensure annotation is category with unused removed
-                            adata.obs[annot_key] = adata.obs[annot_key].cat.remove_unused_categories()
-                            sc.pl.dotplot(
-                                adata, filtered, groupby=annot_key,
-                                standard_scale="var", swap_axes=True,
-                                title="Cell type markers", ax=ax5, show=False)
-                        else:
-                            ax5.text(0.5, 0.5, "No marker genes found in adata",
-                                     ha="center", va="center", transform=ax5.transAxes)
-                            ax5.set_title("Cell type markers")
-                    except Exception as e:
-                        log.warning("  Dotplot failed: %s", e)
-                        ax5.text(0.5, 0.5, f"Dotplot failed: {e}",
-                                 ha="center", va="center", transform=ax5.transAxes,
-                                 fontsize=8)
-                else:
-                    ax5.text(0.5, 0.5, "No annotation or markers available",
-                             ha="center", va="center", transform=ax5.transAxes)
-                    ax5.set_title("Cell type markers")
-
-                # Panel 6: Composition barplot (by region)
-                ax6 = fig.add_subplot(gs[1, 3])
-                has_regions = ("region_annotation" in adata.obs.columns
-                               and adata.obs["region_annotation"].nunique() > 1
-                               and not all(adata.obs["region_annotation"] == "Unlabeled"))
-                if annot_key and has_regions:
-                    try:
-                        ct = pd.crosstab(adata.obs["region_annotation"],
-                                         adata.obs[annot_key])
-                        ct_norm = ct.div(ct.sum(axis=1), axis=0) * 100
-
-                        colors = None
-                        if isinstance(ANNOTATION_COLORS, dict):
-                            cd = ANNOTATION_COLORS.get(annot_key, {})
-                            if cd:
-                                colors = [cd.get(str(c), "#cccccc") for c in ct_norm.columns]
-
-                        ct_norm.plot(kind="bar", stacked=True, ax=ax6, color=colors,
-                                     legend=False)
-                        ax6.set_ylabel("Percentage (%)")
-                        ax6.set_xlabel("Region")
-                        ax6.set_title("Cell proportions by region")
-                        ax6.tick_params(axis="x", rotation=45)
-                        # Compact legend below the barplot
-                        ax6.legend(bbox_to_anchor=(1.02, 1), loc="upper left",
-                                   fontsize=6, title=annot_key.replace("cell_type_", ""),
-                                   title_fontsize=7)
-                    except Exception as e:
-                        log.warning("  Barplot failed: %s", e)
-                        ax6.text(0.5, 0.5, f"Barplot failed: {e}",
-                                 ha="center", va="center", transform=ax6.transAxes,
-                                 fontsize=8)
-                else:
-                    ax6.text(0.5, 0.5, "No region annotation",
-                             ha="center", va="center", transform=ax6.transAxes)
-                    ax6.set_title("Cell proportions by region")
-
-                pdf.savefig(fig, dpi=200, bbox_inches="tight")
-                plt.close(fig)
-                log.info("  Page saved for %s", sample_id)
+                fig2 = _build_page2(adata, sample_id, keys,
+                                    ANNOTATION_COLORS, sample_col)
+                pdf.savefig(fig2, bbox_inches="tight"); plt.close(fig2)
+                log.info("  Pages saved for %s", sample_id)
 
             except Exception as e:
                 log.warning("FAILED page for %s: %s\n%s", sample_id, e,

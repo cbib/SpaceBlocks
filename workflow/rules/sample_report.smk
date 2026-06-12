@@ -18,6 +18,7 @@ rule sample_report:
         sample_ids=SAMPLE_IDS,
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
+        niche_column=GENE_EXPLORATION.get("niche_column", ""),
     log:
         out=f"{LOGDIR}/sample_report/sample_report.out",
         err=f"{LOGDIR}/sample_report/sample_report.err",

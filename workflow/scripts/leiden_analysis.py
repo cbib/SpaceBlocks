@@ -158,7 +158,7 @@ try:
     plt.axhline(y=sil_avg, color="red", linestyle="--", label="Average Silhouette")
     plt.ylabel("Silhouette Score")
     plt.xlabel("Cluster and Cell Index")
-    plt.title(f"Silhouette (resolution {resolution})")
+    plt.title(f"Silhouette (resolution {resolution}) – avg {sil_avg:.3f}")
     plt.ylim(-1, 1)
     plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1))
     plt.grid(axis="y")
