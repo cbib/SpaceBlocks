@@ -55,6 +55,23 @@ log = logging.getLogger("sample_report")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _rasterize_heavy_layers(fig):
+    """Rasterise the heavy scatter layers (UMAP / spatial spot collections and
+    any embedded images) of every axis in a figure, keeping text, lines, axes
+    and legends as vector. This works around scanpy's ``vector_friendly``
+    rasterisation being applied inconsistently (scverse/scanpy#2005), where
+    spatial scatters in particular stay vector and bloat the PDF (one path per
+    spot → hundreds of MB). When the page is then written with a finite dpi, the
+    rasterised layers are baked at that resolution, cutting file size by ~10x
+    while labels stay crisp/selectable."""
+    import matplotlib.collections as mcoll
+    import matplotlib.image as mimage
+    for ax in fig.get_axes():
+        for art in ax.get_children():
+            if isinstance(art, (mcoll.Collection, mimage.AxesImage)):
+                art.set_rasterized(True)
+
+
 def read_tsv_to_dict(tsv_path):
     with open(tsv_path) as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -152,9 +169,10 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
                  has_regions):
     """Return a list of page-2 figures.
 
-    • Composition barplots (by sample, absolute + relative) are included ONLY
-      when the sample has neither region nor spatial-niche information — with
-      region/niche present they duplicate the integrated/annotation outputs.
+    • Composition barplots: when the sample has region and/or spatial-niche
+      information, the cell-type composition is broken down by those (one
+      absolute + one relative panel each). Only when NEITHER is present does it
+      fall back to a single by-sample breakdown (the otherwise-trivial view).
     • A horizontal marker dotplot (genes on X) with a compact vertical colour
       bar and an accurately-sized dot-size legend.
     """
@@ -163,22 +181,36 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
             if (tsv and isinstance(annotation_colors, dict)) else {})
     figs = []
 
-    # ── Composition barplots only when there is no region/niche structure ──
-    show_bars = not (has_regions or niche)
-    if show_bars and tsv:
+    # Group the composition by region/niche when available; only fall back to
+    # the (trivial) per-sample breakdown when there is no region and no niche.
+    bases = []
+    if has_regions:
+        bases.append(("region_annotation", "Region"))
+    if niche:
+        bases.append((niche, "Niche"))
+    if not bases:
+        bases.append((sample_col, "Sample"))
+
+    if tsv:
         try:
-            ct = pd.crosstab(adata.obs[sample_col], adata.obs[tsv])
-            figb, (ax_abs, ax_rel) = plt.subplots(
-                1, 2, figsize=(13, 5), gridspec_kw={"wspace": 0.45})
+            ncol = 2 * len(bases)
+            figb = plt.figure(figsize=(6.5 * ncol, 5.5))
             figb.suptitle(f"Sample: {sample_id} — composition",
                           fontsize=16, fontweight="bold", y=1.02)
-            draw_stacked_composition(ax_abs, ct, cmap, normalize=False,
-                                     ylabel="Number of cells", xlabel="Sample",
-                                     title="absolute", legend=False)
-            draw_stacked_composition(ax_rel, ct, cmap, normalize=True,
-                                     ylabel="Percentage (%)", xlabel="Sample",
-                                     title="relative", legend_title="Cell type",
-                                     legend=True)
+            gs = gridspec.GridSpec(1, ncol, figure=figb, wspace=0.5)
+            for i, (gkey, glabel) in enumerate(bases):
+                ct = pd.crosstab(adata.obs[gkey], adata.obs[tsv])
+                ax_abs = figb.add_subplot(gs[0, 2 * i])
+                draw_stacked_composition(ax_abs, ct, cmap, normalize=False,
+                                         ylabel="Number of cells", xlabel=glabel,
+                                         title=f"by {glabel} (absolute)",
+                                         legend=False)
+                ax_rel = figb.add_subplot(gs[0, 2 * i + 1])
+                draw_stacked_composition(ax_rel, ct, cmap, normalize=True,
+                                         ylabel="Percentage (%)", xlabel=glabel,
+                                         title=f"by {glabel} (relative)",
+                                         legend_title="Cell type",
+                                         legend=(i == len(bases) - 1))
             figs.append(figb)
         except Exception as e:
             log.warning("  composition barplots failed: %s", e)
@@ -274,10 +306,12 @@ try:
                                and not all(adata.obs["region_annotation"] == "Unlabeled"))
 
                 fig1 = _build_page1(adata, sample_id, keys, library_id)
+                _rasterize_heavy_layers(fig1)
                 pdf.savefig(fig1, bbox_inches="tight", dpi=DPI); plt.close(fig1)
 
                 for fig2 in _build_page2(adata, sample_id, keys,
                                          ANNOTATION_COLORS, sample_col, has_regions):
+                    _rasterize_heavy_layers(fig2)
                     pdf.savefig(fig2, bbox_inches="tight", dpi=DPI); plt.close(fig2)
                 log.info("  Pages saved for %s", sample_id)
 

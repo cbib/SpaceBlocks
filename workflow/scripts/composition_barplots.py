@@ -209,6 +209,20 @@ def _composition_long(obs, sample_key, region_key, cat_key, normalize):
     return df
 
 
+def _stagger_xticklabels(ax, threshold=8, fontsize=7):
+    """Reduce x-label overlap on dense axes by dropping every other label onto a
+    second line (odd ticks → lower line). Rendered horizontally so the two lines
+    stack cleanly. Sparse axes (< `threshold` ticks) keep the rotated labels,
+    where overlap isn't an issue. More robust than rotation alone because the
+    effective horizontal label density is halved regardless of name length."""
+    labels = [t.get_text() for t in ax.get_xticklabels()]
+    if len(labels) < threshold:
+        return
+    staggered = [lab if (i % 2 == 0) else "\n" + lab
+                 for i, lab in enumerate(labels)]
+    ax.set_xticklabels(staggered, rotation=0, ha="center", fontsize=fontsize)
+
+
 def composition_grouped(adata, outer_key, inner_key, cat_key, color_map,
                         out_path, *, normalize=True, outer_order=None,
                         inner_order=None, cat_label="Cell type", ylabel=None,
@@ -247,6 +261,7 @@ def composition_grouped(adata, outer_key, inner_key, cat_key, color_map,
                           legend=False)
     ax.set_xticklabels([str(inner) for _, inner in pivot.index],
                        rotation=45, ha="right", fontsize=7)
+    _stagger_xticklabels(ax)                            # two-line stagger if dense
     ax.tick_params(axis="x", length=0)
     ax.margins(x=0.005)
 
