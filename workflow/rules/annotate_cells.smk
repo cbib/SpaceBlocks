@@ -28,6 +28,7 @@ rule annotate_cells:
         precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
+        dpi=ANALYSIS.get("plot_dpi", 300),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
     log:
         out=f"{LOGDIR}/annotate_cells/{{sample}}.out",

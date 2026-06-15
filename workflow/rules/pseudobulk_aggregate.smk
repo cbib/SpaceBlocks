@@ -25,6 +25,7 @@ rule pseudobulk_aggregate:
         min_counts_per_pseudobulk=ANALYSIS.get("min_counts_per_pseudobulk", 1000),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
+        dpi=ANALYSIS.get("plot_dpi", 300),
     log:
         out=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.out",
         err=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.err",

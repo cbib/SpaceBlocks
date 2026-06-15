@@ -291,6 +291,49 @@ def composite_vertical(image_paths, output_path, dpi=300, pad=30):
         img.close()
 
 
+def generate_sample_contribution(plot_adata, var_name, title_name, annot_key,
+                                 has_regions, sample_col, out_path, dpi):
+    """Across ALL samples, screen each sample's contribution to one entry's
+    expression/score. Composite of dotplots (single entry) grouped by:
+    patient, patient × area, patient × cell type. Stacked via PIL."""
+    if sample_col is None or sample_col not in plot_adata.obs.columns:
+        return
+    ad = plot_adata.copy()
+    samp = ad.obs[sample_col].astype(str)
+    ad.obs["_patient"] = samp
+    groupbys = [("_patient", "by patient")]
+    if has_regions and "region_annotation" in ad.obs.columns:
+        ad.obs["_patient_area"] = samp + " | " + ad.obs["region_annotation"].astype(str)
+        groupbys.append(("_patient_area", "by patient \u00d7 area"))
+    if annot_key in ad.obs.columns:
+        ad.obs["_patient_ct"] = samp + " | " + ad.obs[annot_key].astype(str)
+        groupbys.append(("_patient_ct", "by patient \u00d7 cell type"))
+
+    tmp_files = []
+    for gb, sub in groupbys:
+        try:
+            n_groups = ad.obs[gb].nunique()
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
+            sc.pl.dotplot(ad, var_names=[var_name], groupby=gb,
+                          standard_scale="var",
+                          figsize=(max(5, 0.25 * n_groups + 3),
+                                   max(3, n_groups * 0.3)),
+                          title=f"{title_name} \u2013 {sub}", show=False)
+            plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
+            plt.close("all")
+            tmp_files.append(tmp)
+        except Exception as e:
+            log.warning("    Contribution dotplot (%s) failed: %s", sub, e)
+            plt.close("all")
+    if tmp_files:
+        composite_vertical(tmp_files, out_path, dpi=dpi)
+    for f in tmp_files:
+        try:
+            os.unlink(f)
+        except OSError:
+            pass
+
+
 def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
                       prefix, dpi, annotation_colors=None, region_colors=None):
     """Generate a composite PNG of dotplots (cell type, region, cell type ×
@@ -539,6 +582,8 @@ try:
                    and adata.obs["region_annotation"].nunique() > 1
                    and not all(adata.obs["region_annotation"] == "Unlabeled"))
     has_niche = bool(NICHE_COLUMN) and NICHE_COLUMN in adata.obs.columns
+    sample_col = next((c for c in ["sample", "sample_batch"]
+                       if c in adata.obs.columns), None)
 
     # ── 7. Generate PNGs ─────────────────────────────────────────────────
 
@@ -561,6 +606,11 @@ try:
         generate_umap_composite(adata, gene_name, ANNOT_KEY, has_regions,
                                 os.path.join(int_dir, f"{gene_name}_UMAPs.png"),
                                 vmin, vmax, DPI, "expression")
+
+        # Per-entry, all-samples contribution (patient / patient×area / patient×ct)
+        generate_sample_contribution(
+            adata, gene_name, gene_name, ANNOT_KEY, has_regions, sample_col,
+            os.path.join(int_dir, f"{gene_name}_sample_contribution.png"), DPI)
 
         if has_niche:
             try:
@@ -606,6 +656,12 @@ try:
         generate_dotplots(score_ad, [score_col], ANNOT_KEY, has_regions,
                           int_dir, f"{sig_name}_aucell", DPI,
                           ANNOTATION_COLORS, REGION_COLORS)
+
+        # Per-entry, all-samples contribution of the AUCell score
+        generate_sample_contribution(
+            score_ad, score_col, f"{sig_name} AUCell", ANNOT_KEY, has_regions,
+            sample_col,
+            os.path.join(int_dir, f"{sig_name}_sample_contribution.png"), DPI)
         del score_ad
 
         # UMAPs

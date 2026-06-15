@@ -46,6 +46,10 @@ min_replicates <- as.integer(snakemake@params[["min_replicates"]])
 de_n_genes     <- as.integer(snakemake@params[["de_n_genes"]])
 padj_thr       <- as.numeric(snakemake@params[["padj_threshold"]])
 lfc_thr        <- as.numeric(snakemake@params[["lfc_threshold"]])
+# Plot resolution (config param); defaults to 300 if the rule doesn't pass it.
+.dpi_param     <- snakemake@params[["dpi"]]
+res_dpi        <- if (is.null(.dpi_param)) 300L else as.integer(.dpi_param)
+px_scale       <- res_dpi / 150                  # keep physical size, scale pixels
 message("  min_reps: ", min_replicates, ", de_n_genes: ", de_n_genes,
         ", padj: ", padj_thr, ", lfc: ", lfc_thr)
 
@@ -117,7 +121,7 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
   row_mm   <- 5
   body_mm  <- max(n_row * row_mm, 40)
   body_h   <- unit(body_mm, "mm")
-  dev_h_px <- round((body_mm / 25.4 + 2.6) * 150)   # +2.6in for title/anno/legend
+  dev_h_px <- round((body_mm / 25.4 + 2.6) * res_dpi)  # +2.6in for title/anno/legend
 
   # Color mapping for annotation
   avail_cols <- region_cols[names(region_cols) %in% levels(split_factor)]
@@ -154,8 +158,8 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       heatmap_legend_param = list(title = "Z-score")
     )
     png(file.path(out_dir, paste0("heatmap_unsplit_", contrast_name, ".png")),
-        width = max(800, n_col * 50),
-        height = dev_h_px, res = 150)
+        width = round(max(800, n_col * 50) * px_scale),
+        height = dev_h_px, res = res_dpi)
     draw(ht_unsplit, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Unsplit heatmap failed: ", conditionMessage(e)))
@@ -180,8 +184,8 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
       heatmap_legend_param = list(title = "Z-score")
     )
     png(file.path(out_dir, paste0("heatmap_split_", contrast_name, ".png")),
-        width = max(900, n_col * 55),
-        height = dev_h_px, res = 150)
+        width = round(max(900, n_col * 55) * px_scale),
+        height = dev_h_px, res = res_dpi)
     draw(ht_split, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Split heatmap failed: ", conditionMessage(e)))
@@ -363,7 +367,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
           theme(legend.position = "right")
 
         ggsave(file.path(pairwise_dir, paste0("volcano_", contrast_name, ".png")),
-               plot = p, width = 9, height = 7, dpi = 300)
+               plot = p, width = 9, height = 7, dpi = res_dpi)
       }, error = function(e) {
         message("      Volcano failed: ", conditionMessage(e))
       })
@@ -457,7 +461,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
             )
 
           ggsave(file.path(deg_dir, "DEGpatterns_groups.png"),   # renamed
-                 plot = p, width = 14, height = 10, dpi = 500)
+                 plot = p, width = 14, height = 10, dpi = max(res_dpi, 500L))
           message("    DEGpatterns: ", length(old_levels), " groups (renumbered 1..",
                   length(old_levels), ")")
 
@@ -553,7 +557,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
           theme_bw() + theme(legend.position = "right")
 
         ggsave(file.path(ovr_dir, paste0("volcano_", focal_safe, "_vs_rest.png")),
-               plot = p, width = 9, height = 7, dpi = 300)
+               plot = p, width = 9, height = 7, dpi = res_dpi)
       }, error = function(e) {
         message("      OVR volcano failed: ", conditionMessage(e))
       })
@@ -644,7 +648,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
           theme_bw() +
           theme(axis.text.x = element_text(angle = 45, hjust = 1))
         ggsave(file.path(ovr_dir, "unique_markers_barplot.png"),
-               plot = p, width = max(6, length(unique_markers) * 1.2), height = 5, dpi = 300)
+               plot = p, width = max(6, length(unique_markers) * 1.2), height = 5, dpi = res_dpi)
       }
 
       # Heatmap: ALL unique marker genes (rows), samples (cols), row-split by
@@ -689,8 +693,17 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
 
               col_fun  <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
               n_row    <- nrow(mat_scaled); n_col <- ncol(mat_scaled)
-              body_mm  <- max(n_row * 3, 40)               # 3 mm per gene row
-              dev_h_px <- round((body_mm / 25.4 + 3.0) * 150)
+              res_png  <- res_dpi
+              extra_in <- 3.0                              # title + anno + legend
+              max_px   <- 30000                            # png/cairo device ceiling
+              row_mm   <- 3                                # desired mm per gene row
+              body_mm  <- max(n_row * row_mm, 40)
+              dev_h_px <- round((body_mm / 25.4 + extra_in) * res_png)
+              if (dev_h_px > max_px) {                      # too tall for the device:
+                dev_h_px <- max_px                          # cap and shrink rows to fit
+                body_mm  <- (max_px / res_png - extra_in) * 25.4
+              }
+              row_fs   <- if (n_row > 400) 3 else 5         # smaller font when dense
 
               ht_uniq <- Heatmap(
                 mat_scaled, name = "Z-score", col = col_fun,
@@ -700,16 +713,17 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
                 cluster_row_slices = FALSE,
                 cluster_columns = FALSE,
                 cluster_rows = TRUE,
-                show_row_names = TRUE,
+                show_row_names = (n_row <= 1500),           # labels unreadable beyond this
                 show_column_names = TRUE,
-                row_names_gp = gpar(fontsize = 5),
+                row_names_gp = gpar(fontsize = row_fs),
                 column_names_gp = gpar(fontsize = 7),
                 row_title_gp = gpar(fontsize = 8),
                 column_title = "Unique markers per level (all genes)",
                 heatmap_legend_param = list(title = "Z-score")
               )
               png(file.path(ovr_dir, "unique_markers_heatmap.png"),
-                  width = max(900, n_col * 55), height = dev_h_px, res = 150)
+                  width = round(max(900, n_col * 55) * px_scale),
+                  height = dev_h_px, res = res_png)
               draw(ht_uniq, merge_legend = TRUE)
               dev.off()
               message("    Unique markers heatmap: ", n_row, " genes")

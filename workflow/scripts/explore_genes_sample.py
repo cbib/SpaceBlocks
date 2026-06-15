@@ -116,72 +116,6 @@ def make_score_adata(adata, score_col):
     )
 
 
-def build_entry_score_adata(adata, individual_genes, signatures):
-    """AnnData with one var per ENTRY: log-norm expression for individual genes,
-    the AUCell score for signatures (signature member genes are NOT shown
-    individually). Returns None if nothing usable."""
-    names, cols = [], []
-    for g in individual_genes:
-        if g in adata.var_names:
-            x = adata[:, g].X
-            x = x.toarray().ravel() if hasattr(x, "toarray") else np.asarray(x).ravel()
-            names.append(g)
-            cols.append(np.asarray(x, dtype=np.float32))
-    for s in signatures:
-        score_col = f"AUCell_{s}"
-        if score_col in adata.obs.columns:
-            names.append(s)
-            cols.append(np.asarray(adata.obs[score_col].values, dtype=np.float32))
-    if not names:
-        return None
-    X = np.column_stack(cols).astype(np.float32)
-    obs = adata.obs.drop(columns=[n for n in names if n in adata.obs.columns],
-                         errors="ignore").copy()
-    return sc.AnnData(X=X, obs=obs, var=pd.DataFrame(index=names))
-
-
-def generate_score_dotplot_composite(score_ad, annot_key, has_regions,
-                                     sample_id, out_path, dpi):
-    """Composite of three dotplots (entries on X) for one sample:
-    by patient, by patient × area, by patient × cell type. Stacked via PIL."""
-    score_ad = score_ad.copy()
-    score_ad.obs["_patient"] = str(sample_id)
-    groupbys = [("_patient", "by patient")]
-    if has_regions and "region_annotation" in score_ad.obs.columns:
-        score_ad.obs["_patient_region"] = (
-            str(sample_id) + " | " + score_ad.obs["region_annotation"].astype(str))
-        groupbys.append(("_patient_region", "by patient \u00d7 area"))
-    if annot_key in score_ad.obs.columns:
-        score_ad.obs["_patient_ct"] = (
-            str(sample_id) + " | " + score_ad.obs[annot_key].astype(str))
-        groupbys.append(("_patient_ct", "by patient \u00d7 cell type"))
-
-    var_names = list(score_ad.var_names)
-    fig_w = max(8, len(var_names) * 0.45 + 4)
-    tmp_files = []
-    for gb, title in groupbys:
-        try:
-            n_groups = score_ad.obs[gb].nunique()
-            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
-            sc.pl.dotplot(score_ad, var_names=var_names, groupby=gb,
-                          standard_scale="var",
-                          figsize=(fig_w, max(3, n_groups * 0.4)),
-                          title=f"{sample_id} \u2013 {title}", show=False)
-            plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
-            plt.close("all")
-            tmp_files.append(tmp)
-        except Exception as e:
-            log.warning("    Score dotplot (%s) failed: %s", title, e)
-            plt.close("all")
-    if tmp_files:
-        composite_vertical(tmp_files, out_path, dpi=dpi)
-    for f in tmp_files:
-        try:
-            os.unlink(f)
-        except OSError:
-            pass
-
-
 def composite_vertical(image_paths, output_path, dpi=300, pad=30):
     """Stack images vertically with padding, save as PNG."""
     imgs = []
@@ -581,20 +515,6 @@ try:
             log.warning("  AUCell failed: %s", e)
 
     # ── 5. Generate PNGs ─────────────────────────────────────────────────
-
-    # Per-sample score/expression composite (all entries together): one PNG
-    # with three dotplots — by patient, by patient × area, by patient × cell type.
-    try:
-        score_ad_all = build_entry_score_adata(adata, individual_genes, signatures)
-        if score_ad_all is not None:
-            persample_dir = os.path.join(base_dir, "PerSampleScores")
-            os.makedirs(persample_dir, exist_ok=True)
-            generate_score_dotplot_composite(
-                score_ad_all, ANNOT_KEY, has_regions, sample_id,
-                os.path.join(persample_dir, f"{sample_id}_score_dotplots.png"), DPI)
-            del score_ad_all
-    except Exception as e:
-        log.warning("  Per-sample score dotplot composite failed: %s", e)
 
     for gene_name in individual_genes:
         if gene_name not in ranges_map:

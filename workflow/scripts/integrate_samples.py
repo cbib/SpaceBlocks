@@ -29,8 +29,7 @@ except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
 from composition_barplots import (
-    composition_pair, find_niche_column,
-    composition_by_sample_grouped, composition_by_region_faceted,
+    composition_pair, find_niche_column, composition_grouped,
 )
 
 try:
@@ -65,6 +64,7 @@ N_NEIGHBORS     = int(snakemake.params.n_neighbors)
 SKETCH_FRAC     = float(snakemake.params.sketch_fraction)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+DPI          = int(getattr(snakemake.params, "dpi", 300))
 NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 
 out_concat     = str(snakemake.output.concatenated)
@@ -128,14 +128,14 @@ try:
     sc.pl.umap(adata, color=["sample_batch"], size=2, frameon=False,
                title="Uncorrected – by sample")
     plt.savefig(os.path.join(output_dir, "UMAP_uncorrected_by_sample.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     if "cell_type_tsv" in adata.obs.columns:
         sc.pl.umap(adata, color=["cell_type_tsv"], size=2, frameon=False,
                    title="Uncorrected – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_uncorrected_by_celltype.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # ── 3. Harmony integration ───────────────────────────────────────────
@@ -162,21 +162,21 @@ try:
     sc.pl.umap(adata_harmony, color=["sample_batch"], size=2, frameon=False,
                title="Harmony – by sample")
     plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_sample.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     if "cell_type_tsv" in adata_harmony.obs.columns:
         sc.pl.umap(adata_harmony, color=["cell_type_tsv"], size=2, frameon=False,
                    title="Harmony – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     if "cell_type_refined" in adata_harmony.obs.columns:
         sc.pl.umap(adata_harmony, color=["cell_type_refined"], size=2, frameon=False,
                    title="Harmony – by cell type (refined)")
         plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype_refined.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # ── Composition barplots (sample / region / niche) ───────────────────
@@ -197,19 +197,20 @@ try:
         label = annot_col.replace("cell_type_", "")
         composition_pair(adata, "sample_batch", annot_col, cmap, bar_dir,
                          f"barplot_{label}_by_sample", group_label="Sample",
-                         cat_label=label)
+                         cat_label=label, dpi=DPI)
         if has_regions:
             composition_pair(adata, "region_annotation", annot_col, cmap,
                              bar_dir, f"barplot_{label}_by_region",
-                             group_label="Region", cat_label=label)
+                             group_label="Region", cat_label=label, dpi=DPI)
         if niche_col:
             composition_pair(adata, niche_col, annot_col, cmap, bar_dir,
                              f"barplot_{label}_by_niche", group_label="Niche",
-                             cat_label=label)
+                             cat_label=label, dpi=DPI)
 
-    # Sample × region cell-type composition — two layouts, absolute + relative:
-    #   • grouped by sample (samples side by side, regions within each group)
-    #   • faceted by region (one panel per region, samples within each panel)
+    # Sample × region cell-type composition — two single-axis grouped layouts,
+    # absolute + relative:
+    #   • grouped by sample (sample headers, regions within each group)
+    #   • grouped by region (region headers, samples within each group)
     if has_regions and annot_cols:
         primary = annot_cols[0]
         pcmap = (ANNOTATION_COLORS.get(primary, {})
@@ -217,18 +218,19 @@ try:
         plabel = primary.replace("cell_type_", "")
         region_order = (list(REGION_COLORS.keys())
                         if isinstance(REGION_COLORS, dict) and REGION_COLORS else None)
+        sample_order = sorted(adata.obs["sample_batch"].astype(str).unique())
         for norm, suffix, yl in [(False, "absolute", "Number of cells"),
                                  (True, "relative", "Percentage (%)")]:
-            composition_by_sample_grouped(
+            composition_grouped(
                 adata, "sample_batch", "region_annotation", primary, pcmap,
                 os.path.join(bar_dir, f"barplot_{plabel}_grouped_by_sample_{suffix}.png"),
-                normalize=norm, region_order=region_order,
-                cat_label=plabel, ylabel=yl)
-            composition_by_region_faceted(
-                adata, "sample_batch", "region_annotation", primary, pcmap,
-                os.path.join(bar_dir, f"barplot_{plabel}_faceted_by_region_{suffix}.png"),
-                normalize=norm, region_order=region_order,
-                cat_label=plabel, ylabel=yl)
+                normalize=norm, outer_order=sample_order, inner_order=region_order,
+                cat_label=plabel, ylabel=yl, dpi=DPI)
+            composition_grouped(
+                adata, "region_annotation", "sample_batch", primary, pcmap,
+                os.path.join(bar_dir, f"barplot_{plabel}_grouped_by_region_{suffix}.png"),
+                normalize=norm, outer_order=region_order, inner_order=sample_order,
+                cat_label=plabel, ylabel=yl, dpi=DPI)
 
     # ── 4. Geosketch ─────────────────────────────────────────────────────
     if not HAS_GEOSKETCH:
@@ -274,13 +276,13 @@ try:
         sc.pl.umap(adata_ingested, color=["clusters"], size=2, frameon=False,
                    title="Geosketch – ingested clusters")
         plt.savefig(os.path.join(output_dir, "UMAP_sketched_clusters.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
         sc.pl.umap(adata_ingested, color=["sample_batch"], size=2, frameon=False,
                    title="Geosketch – by sample")
         plt.savefig(os.path.join(output_dir, "UMAP_sketched_by_sample.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
         del ingested_chunks, sketched_adata

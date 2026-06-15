@@ -148,61 +148,76 @@ def _top_markers_by_tsv(adata, tsv_key, n=10):
         return []
 
 
-def _build_page2(adata, sample_id, keys, annotation_colors, sample_col):
-    """Row 1 = composition barplots, Row 2 = horizontal marker dotplot."""
+def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
+                 has_regions):
+    """Return a list of page-2 figures.
+
+    • Composition barplots (by sample, absolute + relative) are included ONLY
+      when the sample has neither region nor spatial-niche information — with
+      region/niche present they duplicate the integrated/annotation outputs.
+    • A horizontal marker dotplot (genes on X) with a compact vertical colour
+      bar and an accurately-sized dot-size legend.
+    """
     manual, tsv, auto, niche = keys
-    cmap = (annotation_colors.get(tsv, {}) if (tsv and isinstance(annotation_colors, dict)) else {})
+    cmap = (annotation_colors.get(tsv, {})
+            if (tsv and isinstance(annotation_colors, dict)) else {})
+    figs = []
 
-    has_regions = ("region_annotation" in adata.obs.columns
-                   and adata.obs["region_annotation"].nunique() > 1
-                   and not all(adata.obs["region_annotation"] == "Unlabeled"))
-    bases = [(sample_col, "Sample")]
-    if has_regions:
-        bases.append(("region_annotation", "Region"))
-    if niche:
-        bases.append((niche, "Niche"))
-
-    ncol_top = max(1, 2 * len(bases))
-    fig = plt.figure(figsize=(7 * ncol_top, 14))
-    fig.suptitle(f"Sample: {sample_id} — composition & markers",
-                 fontsize=18, fontweight="bold", y=0.99)
-    gs = gridspec.GridSpec(2, ncol_top, figure=fig,
-                           height_ratios=[1, 1.1], hspace=0.5, wspace=0.6)
-
-    if tsv:
-        for i, (gkey, glabel) in enumerate(bases):
-            ct = pd.crosstab(adata.obs[gkey], adata.obs[tsv])
-            ax_abs = fig.add_subplot(gs[0, 2 * i])
+    # ── Composition barplots only when there is no region/niche structure ──
+    show_bars = not (has_regions or niche)
+    if show_bars and tsv:
+        try:
+            ct = pd.crosstab(adata.obs[sample_col], adata.obs[tsv])
+            figb, (ax_abs, ax_rel) = plt.subplots(
+                1, 2, figsize=(13, 5), gridspec_kw={"wspace": 0.45})
+            figb.suptitle(f"Sample: {sample_id} — composition",
+                          fontsize=16, fontweight="bold", y=1.02)
             draw_stacked_composition(ax_abs, ct, cmap, normalize=False,
-                                     ylabel="Number of cells", xlabel=glabel,
-                                     title=f"by {glabel} (absolute)",
-                                     legend_title="Cell type",
-                                     legend=(i == len(bases) - 1))
-            ax_rel = fig.add_subplot(gs[0, 2 * i + 1])
+                                     ylabel="Number of cells", xlabel="Sample",
+                                     title="absolute", legend=False)
             draw_stacked_composition(ax_rel, ct, cmap, normalize=True,
-                                     ylabel="Percentage (%)", xlabel=glabel,
-                                     title=f"by {glabel} (relative)",
-                                     legend=False)
+                                     ylabel="Percentage (%)", xlabel="Sample",
+                                     title="relative", legend_title="Cell type",
+                                     legend=True)
+            figs.append(figb)
+        except Exception as e:
+            log.warning("  composition barplots failed: %s", e)
 
-    ax_dot = fig.add_subplot(gs[1, :])
+    # ── Horizontal marker dotplot (genes on X), native scanpy legend column ──
     genes = _top_markers_by_tsv(adata, tsv, n=10) if tsv else []
     if genes and tsv:
         try:
-            dp = sc.pl.dotplot(adata, var_names=genes, groupby=tsv,
-                               standard_scale="var", swap_axes=True,  # genes on Y
-                               ax=ax_dot, show=False, return_fig=False)
-            # rotate gene (y-axis) labels 45° for readability
-            for lbl in ax_dot.get_yticklabels():
-                lbl.set_rotation(45); lbl.set_ha("right")
+            n_g = len(genes)
+            n_grp = adata.obs[tsv].astype("category").nunique()
+            dp = sc.pl.dotplot(
+                adata, var_names=genes, groupby=tsv, standard_scale="var",
+                swap_axes=False,                          # genes on X → horizontal
+                figsize=(max(9, n_g * 0.34), max(3.0, n_grp * 0.45)),
+                title=f"Sample: {sample_id} — top-10 markers per TSV cell type",
+                return_fig=True)
+            dp.legend(width=1.2)                          # compact, vertical colourbar
+            dp.make_figure()
+            main_ax = dp.ax_dict.get("mainplot_ax")
+            if main_ax is not None:
+                for lbl in main_ax.get_xticklabels():
+                    lbl.set_rotation(45)
+                    lbl.set_ha("right")
+            figs.append(dp.fig)
         except Exception as e:
             log.warning("  marker dotplot failed: %s", e)
-            ax_dot.text(0.5, 0.5, f"Dotplot failed: {e}", ha="center", va="center",
-                        transform=ax_dot.transAxes, fontsize=8)
-    else:
-        ax_dot.text(0.5, 0.5, "No tsv markers available", ha="center", va="center",
-                    transform=ax_dot.transAxes)
-    ax_dot.set_title("Top-10 markers per TSV cell type")
-    return fig
+            ferr, axe = plt.subplots(figsize=(11, 4))
+            axe.text(0.5, 0.5, f"Dotplot failed: {e}", ha="center", va="center",
+                     transform=axe.transAxes, fontsize=8)
+            axe.set_axis_off()
+            figs.append(ferr)
+
+    if not figs:
+        f, ax = plt.subplots(figsize=(11, 6))
+        ax.text(0.5, 0.5, "No markers / composition to display",
+                ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        figs.append(f)
+    return figs
 
 
 # ── Parameters ───────────────────────────────────────────────────────────────
@@ -211,6 +226,7 @@ markers_path      = str(snakemake.input.annotation_markers)
 sample_ids        = list(snakemake.params.sample_ids)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+DPI          = int(getattr(snakemake.params, "dpi", 300))
 NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 out_report        = str(snakemake.output.report)
 
@@ -253,12 +269,16 @@ try:
 
                 keys = _pick_keys(adata, NICHE_COLUMN)
 
-                fig1 = _build_page1(adata, sample_id, keys, library_id)
-                pdf.savefig(fig1, bbox_inches="tight"); plt.close(fig1)
+                has_regions = ("region_annotation" in adata.obs.columns
+                               and adata.obs["region_annotation"].nunique() > 1
+                               and not all(adata.obs["region_annotation"] == "Unlabeled"))
 
-                fig2 = _build_page2(adata, sample_id, keys,
-                                    ANNOTATION_COLORS, sample_col)
-                pdf.savefig(fig2, bbox_inches="tight"); plt.close(fig2)
+                fig1 = _build_page1(adata, sample_id, keys, library_id)
+                pdf.savefig(fig1, bbox_inches="tight", dpi=DPI); plt.close(fig1)
+
+                for fig2 in _build_page2(adata, sample_id, keys,
+                                         ANNOTATION_COLORS, sample_col, has_regions):
+                    pdf.savefig(fig2, bbox_inches="tight", dpi=DPI); plt.close(fig2)
                 log.info("  Pages saved for %s", sample_id)
 
             except Exception as e:
@@ -269,7 +289,7 @@ try:
                 ax.text(0.5, 0.5, f"Sample {sample_id}\nFailed: {e}",
                         ha="center", va="center", fontsize=14)
                 ax.set_axis_off()
-                pdf.savefig(fig, dpi=200)
+                pdf.savefig(fig, dpi=DPI)
                 plt.close(fig)
             finally:
                 # Free memory before next sample

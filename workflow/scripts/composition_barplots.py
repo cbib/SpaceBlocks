@@ -209,25 +209,27 @@ def _composition_long(obs, sample_key, region_key, cat_key, normalize):
     return df
 
 
-def composition_by_sample_grouped(adata, sample_key, region_key, cat_key,
-                                  color_map, out_path, *, normalize=True,
-                                  region_order=None, cat_label="Cell type",
-                                  ylabel=None, dpi=300, figsize=(18, 6)):
-    """Single stacked barplot: x = (sample × region) grouped by sample, with a
-    bold sample header above each group and region labels on the x-axis.
-    Stacks = cat_key categories. (Samples-side-by-side layout.)"""
+def composition_grouped(adata, outer_key, inner_key, cat_key, color_map,
+                        out_path, *, normalize=True, outer_order=None,
+                        inner_order=None, cat_label="Cell type", ylabel=None,
+                        dpi=300):
+    """Single-axis stacked barplot: x = (outer × inner), grouped by `outer_key`
+    with a bold header above each group + a dashed separator, and `inner_key`
+    labels on the x-axis. Stacks = cat_key categories. Figure width scales with
+    the number of columns so bars/labels stay readable."""
     obs = adata.obs
-    if any(k not in obs.columns for k in (sample_key, region_key, cat_key)):
+    if any(k not in obs.columns for k in (outer_key, inner_key, cat_key)):
         return
-    df = _composition_long(obs, sample_key, region_key, cat_key, normalize)
+    df = _composition_long(obs, outer_key, inner_key, cat_key, normalize)
     if df.empty:
         return
-    if region_order:
-        present = [r for r in region_order if r in set(df[region_key].astype(str))]
-        if present:
-            df[region_key] = pd.Categorical(df[region_key].astype(str),
-                                            categories=present, ordered=True)
-    pivot = (df.pivot_table(index=[sample_key, region_key], columns=cat_key,
+    for key, ordering in ((outer_key, outer_order), (inner_key, inner_order)):
+        if ordering:
+            present = [v for v in ordering if v in set(df[key].astype(str))]
+            if present:
+                df[key] = pd.Categorical(df[key].astype(str),
+                                         categories=present, ordered=True)
+    pivot = (df.pivot_table(index=[outer_key, inner_key], columns=cat_key,
                             values="value", fill_value=0, observed=True)
                .sort_index(level=[0, 1]))
     if pivot.empty:
@@ -236,86 +238,40 @@ def composition_by_sample_grouped(adata, sample_key, region_key, cat_key,
     palette = _resolve_palette(order, color_map)
     plot_cols = order[::-1]
 
-    fig, ax = plt.subplots(figsize=figsize)
+    n_cols = len(pivot.index)
+    fig_w = max(10, min(60, n_cols * 0.45 + 3))        # scale, but bounded
+    fig, ax = plt.subplots(figsize=(fig_w, 6))
     pivot[plot_cols].plot(kind="bar", stacked=True, ax=ax,
                           color=[palette[str(c)] for c in plot_cols],
-                          edgecolor=EDGE_COLOR, linewidth=0.3, width=0.6,
+                          edgecolor=EDGE_COLOR, linewidth=0.3, width=0.85,
                           legend=False)
-    ax.set_xticklabels([str(r) for _, r in pivot.index],
-                       rotation=45, ha="right", fontsize=9)
+    ax.set_xticklabels([str(inner) for _, inner in pivot.index],
+                       rotation=45, ha="right", fontsize=7)
+    ax.tick_params(axis="x", length=0)
+    ax.margins(x=0.005)
 
-    sample_positions = {}
-    for i, (s, _) in enumerate(pivot.index):
-        sample_positions.setdefault(s, []).append(i)
+    # bold outer-group headers + dashed separators between groups
+    outer_positions = {}
+    for i, (outer, _) in enumerate(pivot.index):
+        outer_positions.setdefault(outer, []).append(i)
     ymax = ax.get_ylim()[1]
-    for s, idxs in sample_positions.items():
-        ax.text((idxs[0] + idxs[-1]) / 2, ymax * 1.02, str(s),
-                ha="center", va="bottom", fontsize=10, fontweight="bold")
-        ax.axvline(idxs[-1] + 0.5, color="gray", linestyle="--", linewidth=0.5)
+    last = None
+    for outer, idxs in outer_positions.items():
+        ax.text((idxs[0] + idxs[-1]) / 2, ymax * 1.01, str(outer),
+                ha="center", va="bottom", fontsize=8, fontweight="bold")
+        if last is not None:
+            ax.axvline(idxs[0] - 0.5, color="gray", linestyle="--", linewidth=0.5)
+        last = idxs[-1]
 
     ax.set_ylabel(ylabel or ("Percentage (%)" if normalize else "Number of cells"))
     ax.set_xlabel("")
+    if normalize:
+        ax.set_ylim(0, 100)
     handles = [Patch(facecolor=palette[str(c)], edgecolor=EDGE_COLOR,
                      linewidth=0.3, label=str(c)) for c in order]
-    ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.02, 0.5),
-              frameon=False, title=cat_label, ncol=1, fontsize=8)
-    fig.tight_layout(rect=[0, 0, 0.85, 1])
-    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
-
-
-def composition_by_region_faceted(adata, sample_key, region_key, cat_key,
-                                  color_map, out_path, *, normalize=True,
-                                  region_order=None, cat_label="Cell type",
-                                  ylabel=None, dpi=300):
-    """Multi-panel stacked barplot: one panel per region, x = samples, stacks =
-    cat_key categories. (Regions-side-by-side layout.)"""
-    obs = adata.obs
-    if any(k not in obs.columns for k in (sample_key, region_key, cat_key)):
-        return
-    df = _composition_long(obs, sample_key, region_key, cat_key, normalize)
-    if df.empty:
-        return
-    region_vals = set(df[region_key].astype(str))
-    regions = ([r for r in region_order if r in region_vals] if region_order
-               else sorted(region_vals))
-    if not regions:
-        return
-    samples = sorted(df[sample_key].astype(str).unique())
-    cats = sorted(df[cat_key].astype(str).unique())
-    order = _ordered_columns(pd.DataFrame(columns=cats), color_map)
-    palette = _resolve_palette(order, color_map)
-    plot_cols = order[::-1]
-
-    ncols = len(regions)
-    fig, axes = plt.subplots(1, ncols, figsize=(4 * ncols, 5), sharey=True,
-                             squeeze=False)
-    axes = axes[0]
-    plt.subplots_adjust(wspace=0.15)
-    for ax, region in zip(axes, regions):
-        rdf = df[df[region_key].astype(str) == region]
-        for i, s in enumerate(samples):
-            sdf = rdf[rdf[sample_key].astype(str) == s]
-            bottom = 0.0
-            for c in plot_cols:
-                v = sdf.loc[sdf[cat_key].astype(str) == c, "value"]
-                h = float(v.values[0]) if len(v) else 0.0
-                ax.bar(i, h, bottom=bottom, color=palette[str(c)],
-                       edgecolor=EDGE_COLOR, linewidth=0.3, width=0.8)
-                bottom += h
-        ax.set_title(str(region), fontsize=10)
-        ax.set_xticks(range(len(samples)))
-        ax.set_xticklabels(samples, rotation=45, ha="right", fontsize=8)
-        ax.set_xlim(-0.5, len(samples) - 0.5)
-        if normalize:
-            ax.set_ylim(0, 100)
-    axes[0].set_ylabel(ylabel or ("Percentage (%)" if normalize else "Number of cells"),
-                       fontsize=10)
-    handles = [Patch(facecolor=palette[str(c)], edgecolor=EDGE_COLOR,
-                     linewidth=0.3, label=str(c)) for c in order]
-    fig.legend(handles=handles, loc="center left", bbox_to_anchor=(1.01, 0.5),
-               frameon=False, title=cat_label, ncol=1, fontsize=9)
-    fig.tight_layout(rect=[0, 0, 1, 1])
+    ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.01, 0.5),
+              frameon=False, title=cat_label, ncol=1, fontsize=8, title_fontsize=9)
+    fig.tight_layout(rect=[0, 0, 0.88, 1])
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 

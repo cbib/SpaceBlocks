@@ -87,15 +87,32 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir,
     fig, axes = plt.subplots(1, 3, figsize=(22, 5))
     fig.suptitle(f"Pseudobulk QC — {prefix}", fontsize=14, fontweight="bold")
 
-    # Panel 1: pseudobulk sample barplot
+    # Panel 1: cells-vs-counts per pseudobulk sample, coloured by condition
     try:
-        dc.plot_psbulk_samples(
-            pdata,
-            groupby=condition_col,
-            ax=axes[0],
-        )
+        rc = region_colors if isinstance(region_colors, dict) else {}
+        _conds = sorted(set(pdata.obs[condition_col].astype(str)))
+        _cmap_c = plt.cm.get_cmap("Set1", max(len(_conds), 1))
+        p1_colors = {c: rc.get(c, _cmap_c(i)) for i, c in enumerate(_conds)}
+
+        if {"psbulk_n_cells", "psbulk_counts"}.issubset(pdata.obs.columns):
+            cvals = pdata.obs[condition_col].astype(str)
+            for c in _conds:
+                m = (cvals == c).values
+                axes[0].scatter(pdata.obs.loc[m, "psbulk_n_cells"],
+                                pdata.obs.loc[m, "psbulk_counts"],
+                                c=[p1_colors[c]], label=c, s=50,
+                                edgecolors="black", linewidths=0.5)
+            axes[0].set_xscale("log")
+            axes[0].set_yscale("log")
+            axes[0].set_xlabel("Number of cells")
+            axes[0].set_ylabel("Total counts")
+            axes[0].legend(fontsize=7, loc="center left", bbox_to_anchor=(1.02, 0.5),
+                           borderaxespad=0, frameon=False)
+        else:
+            # QC columns absent — fall back to decoupler's own plot
+            dc.plot_psbulk_samples(pdata, groupby=condition_col, ax=axes[0])
+            axes[0].tick_params(axis="x", rotation=45)
         axes[0].set_title("Cells per pseudobulk sample")
-        axes[0].tick_params(axis="x", rotation=45)
     except Exception as e:
         log.warning("  plot_psbulk_samples failed: %s", e)
         axes[0].text(0.5, 0.5, f"Plot failed:\n{e}", ha="center", va="center",
@@ -173,7 +190,7 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir,
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     safe_prefix = prefix.replace("/", "_").replace(" ", "_")
     plt.savefig(os.path.join(plots_dir, f"{safe_prefix}_qc.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
 
@@ -184,6 +201,7 @@ MIN_CELLS      = int(snakemake.params.min_cells_per_pseudobulk)
 MIN_COUNTS     = int(snakemake.params.min_counts_per_pseudobulk)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+DPI          = int(getattr(snakemake.params, "dpi", 300))
 agg_dir        = str(snakemake.output.agg_dir)
 
 try:

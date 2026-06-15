@@ -172,7 +172,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
     sc.pl.umap(adata, color=[annot_key], size=2, wspace=0.25, frameon=False,
                title=f"Cell types ({label})")
     plt.savefig(os.path.join(subdir, f"UMAP_{label}_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     # Spatial overview
@@ -180,7 +180,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
         sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
                       title=f"Spatial – {label}", library_id=library_id)
         plt.savefig(os.path.join(subdir, f"spatial_all_{label}_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
     except Exception as e:
         log.warning("  [%s] Spatial failed: %s", label, e)
@@ -200,7 +200,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
                           title=ct, library_id=library_id)
             safe = ct.replace("/", "_").replace(" ", "_")
             plt.savefig(os.path.join(ct_dir, f"{safe}_{sample_id}.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
         except Exception as e:
             log.warning("  [%s] Spatial '%s' failed: %s", label, ct, e)
@@ -222,21 +222,21 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
                 sub, groupby=annot_key, standard_scale="var",
                 n_genes=de_n_genes, swap_axes=True, dendrogram=True)
             plt.savefig(os.path.join(subdir, f"top{de_n_genes}_dotplot_{label}_{sample_id}.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
 
             sc.pl.rank_genes_groups_heatmap(
                 sub, n_genes=de_n_genes, groupby=annot_key, use_raw=False,
                 swap_axes=True, dendrogram=True, show_gene_labels=True)
             plt.savefig(os.path.join(subdir, f"top{de_n_genes}_heatmap_{label}_{sample_id}.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
 
             sc.pl.rank_genes_groups_matrixplot(
                 sub, n_genes=de_n_genes, groupby=annot_key, use_raw=False,
                 swap_axes=True, dendrogram=True)
             plt.savefig(os.path.join(subdir, f"top{de_n_genes}_matrixplot_{label}_{sample_id}.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
 
             df = sc.get.rank_genes_groups_df(sub, None)
@@ -257,6 +257,7 @@ EXT_ANNOT_CFG       = snakemake.params.external_annotation
 PRECOMPUTED_DIR     = str(snakemake.params.precomputed_metadata_dir)
 ANNOTATION_COLORS   = snakemake.params.annotation_colors
 REGION_COLORS       = snakemake.params.region_colors
+DPI          = int(getattr(snakemake.params, "dpi", 300))
 NICHE_COLUMN        = getattr(snakemake.params, "niche_column", "")
 
 adata_path     = str(snakemake.input.adata)
@@ -463,7 +464,7 @@ try:
                        title=col.replace("cell_type_", ""), ax=ax, show=False,
                        legend_fontsize=6, na_in_legend=False)
         plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # Side-by-side SPATIAL comparison (only if >1 annotation method)
@@ -477,7 +478,7 @@ try:
                               library_id=library_id, ax=ax, show=False,
                               legend_fontsize=6, na_in_legend=False)
             plt.savefig(os.path.join(plots_dir, f"spatial_comparison_{sample_id}.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
         except Exception as e:
             log.warning("Spatial comparison plot failed: %s", e)
@@ -506,15 +507,15 @@ try:
         label = annot_col.replace("cell_type_", "")
         composition_pair(adata, sample_col, annot_col, cmap, bar_dir,
                          f"{label}_by_sample", group_label="Sample",
-                         cat_label=label)
+                         cat_label=label, dpi=DPI)
         if has_regions:
             composition_pair(adata, "region_annotation", annot_col, cmap,
                              bar_dir, f"{label}_by_region",
-                             group_label="Region", cat_label=label)
+                             group_label="Region", cat_label=label, dpi=DPI)
         if niche_col:
             composition_pair(adata, niche_col, annot_col, cmap, bar_dir,
                              f"{label}_by_niche", group_label="Niche",
-                             cat_label=label)
+                             cat_label=label, dpi=DPI)
 
     # Score distributions
     score_cols = [c for c in adata.obs.columns if c.startswith("score_")]
@@ -532,7 +533,7 @@ try:
             ax.legend()
         plt.tight_layout()
         plt.savefig(os.path.join(plots_dir, f"score_distributions_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # ── 5. Save ──────────────────────────────────────────────────────────

@@ -51,6 +51,7 @@ markers_path   = str(snakemake.input.cell_markers)
 res_dir        = str(snakemake.output.res_dir)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+DPI          = int(getattr(snakemake.params, "dpi", 300))
 
 
 def read_tsv_to_dict(tsv_path):
@@ -163,7 +164,7 @@ try:
     plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1))
     plt.grid(axis="y")
     plt.savefig(os.path.join(clust_eval_dir, f"silhouette_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     # Clustree (uses all pre-computed leiden columns)
@@ -173,7 +174,7 @@ try:
     if len(available_keys) >= 2:
         fig = clustree(adata, available_keys, edge_weight_threshold=0.00, show_fraction=True)
         fig.savefig(os.path.join(clust_eval_dir, f"clustree_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # ── QC plots ─────────────────────────────────────────────────────────
@@ -186,7 +187,7 @@ try:
         groupby="leiden", layer="raw_counts", jitter=0.1, multi_panel=True, show=True,
     )
     plt.savefig(os.path.join(qc_dir, f"QC_by_cluster_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     sc.pl.umap(
@@ -195,7 +196,7 @@ try:
         size=2, wspace=0.25, frameon=False,
     )
     plt.savefig(os.path.join(qc_dir, f"QC_UMAPs_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     if has_annotations:
@@ -207,46 +208,46 @@ try:
             multi_panel=True, show=True,
         )
         plt.savefig(os.path.join(qc_dir, f"QC_by_region_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # ── UMAPs ────────────────────────────────────────────────────────────
     log.info("UMAP plots …")
     sc.pl.umap(adata, color=["leiden"], size=2, wspace=0.25, frameon=False)
     plt.savefig(os.path.join(res_dir, f"UMAP_clusters_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     if has_annotations:
         sc.pl.umap(adata, color=["region_annotation"], size=2, wspace=0.25, frameon=False)
         plt.savefig(os.path.join(umap_dir, f"UMAP_region_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
         split_umap(adata, color="leiden", split_by="region_annotation", size=10)
         plt.savefig(os.path.join(umap_dir, f"UMAP_split_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
         ax = (pd.crosstab(adata.obs["leiden"], adata.obs["region_annotation"],
                           normalize="columns").T.plot(kind="bar", stacked=True))
         ax.legend(title=f"leiden_{resolution}", bbox_to_anchor=(1.26, 1.02), loc="upper right")
         plt.savefig(os.path.join(umap_dir, f"normalized_barplot_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
         ax = (pd.crosstab(adata.obs["leiden"], adata.obs["region_annotation"])
               .T.plot(kind="bar", stacked=True))
         ax.legend(title=f"leiden_{resolution}", bbox_to_anchor=(1.26, 1.02), loc="upper right")
         plt.savefig(os.path.join(umap_dir, f"absolute_barplot_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # ── Spatial cluster maps ─────────────────────────────────────────────
     log.info("Spatial plots …")
     sc.pl.spatial(adata, color="leiden", spot_size=20, title="Leiden Clusters", frameon=False)
     plt.savefig(os.path.join(res_dir, f"spatial_all_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     for cluster in adata.obs["leiden"].unique():
@@ -257,7 +258,7 @@ try:
             palette=["black"], alpha_img=0.5,
         )
         plt.savefig(os.path.join(spatial_dir, f"spatial_{cluster}_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     for cluster in adata.obs["leiden"].cat.categories:
@@ -273,7 +274,7 @@ try:
             title=f"Cluster {cluster}",
         )
         plt.savefig(os.path.join(spatial_dir, f"UMAP_highlight_{cluster}_{sample_id}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # ── Markers ──────────────────────────────────────────────────────────
@@ -286,7 +287,7 @@ try:
         swap_axes=True, dendrogram=True,
     )
     plt.savefig(os.path.join(res_dir, f"top{DE_N_GENES}_dotplot_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     sc.pl.rank_genes_groups_heatmap(
@@ -294,7 +295,7 @@ try:
         swap_axes=True, dendrogram=True, show_gene_labels=True,
     )
     plt.savefig(os.path.join(res_dir, f"top{DE_N_GENES}_heatmap_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     sc.pl.rank_genes_groups_matrixplot(
@@ -302,7 +303,7 @@ try:
         swap_axes=True, dendrogram=True,
     )
     plt.savefig(os.path.join(res_dir, f"top{DE_N_GENES}_matrixplot_{sample_id}.png"),
-                dpi=300, bbox_inches="tight")
+                dpi=DPI, bbox_inches="tight")
     plt.close()
 
     # Cell-type markers
@@ -322,13 +323,13 @@ try:
             standard_scale="var", show=True, title=f"{cell_type} markers",
         )
         plt.savefig(os.path.join(ct_dir, f"dotplot_{cell_type}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
         for gene in genes:
             sc.pl.umap(adata, color=gene, show=False)
             plt.savefig(os.path.join(ct_dir, f"UMAP_{gene}.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
 
     # ── Save cluster markers TSV only ────────────────────────────────────

@@ -103,7 +103,7 @@ def _make_barplot(crosstab_df, title, ylabel, out_path, normalize=False,
     save_stacked_composition(
         crosstab_df, out_path, color_map, normalize=normalize,
         ylabel=ylabel, title=title, legend_title=crosstab_df.columns.name,
-        figsize=(max(8, len(crosstab_df) * 0.8), 5),
+        figsize=(max(8, len(crosstab_df) * 0.8), 5), dpi=DPI,
     )
 
 
@@ -204,7 +204,7 @@ def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
             n_genes=de_n_genes, swap_axes=True, dendrogram=True,
         )
         plt.savefig(os.path.join(res_dir, f"dotplot_top{de_n_genes}_res{res}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
     except Exception as e:
         log.warning("      Dotplot failed: %s", e)
@@ -216,7 +216,7 @@ def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
             swap_axes=True, dendrogram=True, show_gene_labels=True,
         )
         plt.savefig(os.path.join(res_dir, f"heatmap_top{de_n_genes}_res{res}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
     except Exception as e:
         log.warning("      Heatmap failed: %s", e)
@@ -228,7 +228,7 @@ def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
             swap_axes=True, dendrogram=True,
         )
         plt.savefig(os.path.join(res_dir, f"matrixplot_top{de_n_genes}_res{res}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
     except Exception as e:
         log.warning("      Matrixplot failed: %s", e)
@@ -290,7 +290,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
             plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1))
             plt.grid(axis="y")
             plt.savefig(os.path.join(clust_eval_dir, f"silhouette_res{res}.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
         except Exception as e:
             log.warning("    [%s] Silhouette res=%.1f failed: %s", branch_name, res, e)
@@ -303,7 +303,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                 fig = clustree(adata, available, edge_weight_threshold=0.00,
                                show_fraction=True)
                 fig.savefig(os.path.join(clust_eval_dir, "clustree.png"),
-                            dpi=300, bbox_inches="tight")
+                            dpi=DPI, bbox_inches="tight")
                 plt.close()
             except Exception as e:
                 log.warning("    [%s] Clustree failed: %s", branch_name, e)
@@ -315,7 +315,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                if c in adata.obs.columns]
     if qc_cols:
         sc.pl.umap(adata, color=qc_cols, size=2, wspace=0.25, frameon=False)
-        plt.savefig(os.path.join(qc_dir, "QC_UMAPs.png"), dpi=300, bbox_inches="tight")
+        plt.savefig(os.path.join(qc_dir, "QC_UMAPs.png"), dpi=DPI, bbox_inches="tight")
         plt.close()
 
     violin_cols = [c for c in ["n_genes_by_counts", "total_counts",
@@ -332,7 +332,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                     jitter=0.1, multi_panel=True, show=True,
                 )
                 plt.savefig(os.path.join(qc_dir, f"QC_by_cluster_res{res}.png"),
-                            dpi=300, bbox_inches="tight")
+                            dpi=DPI, bbox_inches="tight")
                 plt.close()
             except Exception as e:
                 log.warning("    [%s] QC violin res=%.1f failed: %s", branch_name, res, e)
@@ -357,21 +357,21 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
         sc.pl.umap(adata, color=[key], size=2, wspace=0.25, frameon=False,
                    title=f"Leiden {res}")
         plt.savefig(os.path.join(umap_dir, f"UMAP_clusters_res{res}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     if sample_col:
         sc.pl.umap(adata, color=[sample_col], size=2, wspace=0.25, frameon=False,
                    title="By sample")
         plt.savefig(os.path.join(umap_dir, "UMAP_by_sample.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     if annot_col in adata.obs.columns:
         sc.pl.umap(adata, color=[annot_col], size=2, wspace=0.25, frameon=False,
                    title=f"Original annotation ({annot_col})")
         plt.savefig(os.path.join(umap_dir, f"UMAP_by_{annot_col}.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     has_regions = (
@@ -384,7 +384,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
         sc.pl.umap(adata, color=["region_annotation"], size=2, wspace=0.25, frameon=False,
                    title="By region")
         plt.savefig(os.path.join(umap_dir, "UMAP_by_region.png"),
-                    dpi=300, bbox_inches="tight")
+                    dpi=DPI, bbox_inches="tight")
         plt.close()
 
     # Split UMAPs (use middle resolution)
@@ -398,7 +398,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
             split_umap(adata, color=split_leiden_key, split_by=sample_col,
                        size=10, ncol=4)
             plt.savefig(os.path.join(umap_dir, "UMAP_split_by_sample.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
         except Exception as e:
             log.warning("    [%s] Split UMAP by sample failed: %s", branch_name, e)
@@ -408,7 +408,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
             split_umap(adata, color=split_leiden_key, split_by="region_annotation",
                        size=10, ncol=3)
             plt.savefig(os.path.join(umap_dir, "UMAP_split_by_region.png"),
-                        dpi=300, bbox_inches="tight")
+                        dpi=DPI, bbox_inches="tight")
             plt.close()
         except Exception as e:
             log.warning("    [%s] Split UMAP by region failed: %s", branch_name, e)
@@ -457,6 +457,7 @@ N_PCS          = int(snakemake.params.n_pcs)
 DE_N_GENES     = int(snakemake.params.de_n_genes)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS  = snakemake.params.region_colors
+DPI          = int(getattr(snakemake.params, "dpi", 300))
 sub_dir        = str(snakemake.output.sub_dir)
 
 try:
