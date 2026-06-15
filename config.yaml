@@ -39,6 +39,7 @@ external_annotation:
   column: "manual_celltype"
 
 analysis:
+  plot_dpi: 300                   # dpi used for plotting through the pipeline rules
   min_counts: 1
   min_cells: 3
   min_genes: 100
