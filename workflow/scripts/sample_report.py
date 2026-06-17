@@ -8,7 +8,6 @@ Each page contains:
 Memory is bounded by loading one sample at a time.
 """
 
-import csv
 import gc
 import logging
 import os
@@ -70,17 +69,6 @@ def _rasterize_heavy_layers(fig):
         for art in ax.get_children():
             if isinstance(art, (mcoll.Collection, mimage.AxesImage)):
                 art.set_rasterized(True)
-
-
-def read_tsv_to_dict(tsv_path):
-    with open(tsv_path) as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        columns = {field: [] for field in reader.fieldnames}
-        for row in reader:
-            for key, val in row.items():
-                if val.strip():
-                    columns[key].append(val.strip())
-    return columns
 
 
 def apply_palette(adata, obs_key, colors_cfg):
@@ -254,7 +242,6 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
 
 # ── Parameters ───────────────────────────────────────────────────────────────
 annotated_paths   = [str(p) for p in snakemake.input.annotated]
-markers_path      = str(snakemake.input.annotation_markers)
 sample_ids        = list(snakemake.params.sample_ids)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
@@ -268,12 +255,6 @@ try:
     log.info("=" * 70)
 
     Path(out_report).parent.mkdir(parents=True, exist_ok=True)
-
-    # Read marker genes
-    marker_dict = {}
-    if markers_path and os.path.isfile(markers_path):
-        raw_markers = read_tsv_to_dict(markers_path)
-        marker_dict = {ct: genes for ct, genes in raw_markers.items() if genes}
 
     with PdfPages(out_report) as pdf:
         for adata_path, sample_id in zip(annotated_paths, sample_ids):

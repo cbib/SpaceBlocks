@@ -11,7 +11,6 @@ rule sample_report:
             f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
             sample=SAMPLE_IDS,
         ),
-        annotation_markers=config.get("annotation_markers", ""),
     output:
         report=f"{OUTDIR_PP}/integrated_samples/samples_report.pdf",
     params:
