@@ -16,7 +16,7 @@ rule pseudobulk_aggregate:
             f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated"
         ),
     wildcard_constraints:
-        annot_type="tsv_annotation|refined_annotation|ingest_annotation",
+        annot_type="tsv_annotation|ingest_annotation",
         analysis_level="by_region|by_celltype_region|by_niche_region",
     params:
         annot_type=lambda wc: wc.annot_type,

@@ -209,20 +209,6 @@ def _composition_long(obs, sample_key, region_key, cat_key, normalize):
     return df
 
 
-def _stagger_xticklabels(ax, threshold=8, fontsize=7):
-    """Reduce x-label overlap on dense axes by dropping every other label onto a
-    second line (odd ticks → lower line). Rendered horizontally so the two lines
-    stack cleanly. Sparse axes (< `threshold` ticks) keep the rotated labels,
-    where overlap isn't an issue. More robust than rotation alone because the
-    effective horizontal label density is halved regardless of name length."""
-    labels = [t.get_text() for t in ax.get_xticklabels()]
-    if len(labels) < threshold:
-        return
-    staggered = [lab if (i % 2 == 0) else "\n" + lab
-                 for i, lab in enumerate(labels)]
-    ax.set_xticklabels(staggered, rotation=0, ha="center", fontsize=fontsize)
-
-
 def composition_grouped(adata, outer_key, inner_key, cat_key, color_map,
                         out_path, *, normalize=True, outer_order=None,
                         inner_order=None, cat_label="Cell type", ylabel=None,
@@ -253,27 +239,31 @@ def composition_grouped(adata, outer_key, inner_key, cat_key, color_map,
     plot_cols = order[::-1]
 
     n_cols = len(pivot.index)
-    fig_w = max(10, min(60, n_cols * 0.45 + 3))        # scale, but bounded
-    fig, ax = plt.subplots(figsize=(fig_w, 6))
+    fig_w = max(10, min(80, n_cols * 0.5 + 3))         # scale, but bounded
+    fig, ax = plt.subplots(figsize=(fig_w, 6.5))
     pivot[plot_cols].plot(kind="bar", stacked=True, ax=ax,
                           color=[palette[str(c)] for c in plot_cols],
                           edgecolor=EDGE_COLOR, linewidth=0.3, width=0.85,
                           legend=False)
+    # Inner labels vertical → never overlap regardless of count or name length.
     ax.set_xticklabels([str(inner) for _, inner in pivot.index],
-                       rotation=45, ha="right", fontsize=7)
-    _stagger_xticklabels(ax)                            # two-line stagger if dense
+                       rotation=90, ha="center", va="top", fontsize=6)
     ax.tick_params(axis="x", length=0)
     ax.margins(x=0.005)
 
-    # bold outer-group headers + dashed separators between groups
+    # Bold outer-group headers on two alternating vertical levels (so adjacent
+    # sample names never collide) + dashed separators between groups.
     outer_positions = {}
     for i, (outer, _) in enumerate(pivot.index):
         outer_positions.setdefault(outer, []).append(i)
-    ymax = ax.get_ylim()[1]
+    top = 100.0 if normalize else ax.get_ylim()[1]
+    hdr_fs = 8 if len(outer_positions) <= 12 else 7
     last = None
-    for outer, idxs in outer_positions.items():
-        ax.text((idxs[0] + idxs[-1]) / 2, ymax * 1.01, str(outer),
-                ha="center", va="bottom", fontsize=8, fontweight="bold")
+    for k, (outer, idxs) in enumerate(outer_positions.items()):
+        y = top * (1.045 if (k % 2) else 1.01)          # stagger two levels
+        ax.text((idxs[0] + idxs[-1]) / 2, y, str(outer),
+                ha="center", va="bottom", fontsize=hdr_fs, fontweight="bold",
+                clip_on=False)
         if last is not None:
             ax.axvline(idxs[0] - 0.5, color="gray", linestyle="--", linewidth=0.5)
         last = idxs[-1]

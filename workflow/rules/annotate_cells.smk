@@ -6,21 +6,18 @@ def _annotate_input_adata(wc):
 
 rule annotate_cells:
     """
-    Annotate cells: TSV clusters + marker refinement + external annotation.
+    Annotate cells: TSV cluster mapping + optional external annotation.
     If use_precomputed_clusters, reads leiden from metadata TSV.
     """
     input:
         adata=_annotate_input_adata,
         metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
         cluster_annotations=config.get("cluster_annotations", ""),
-        annotation_markers=config.get("annotation_markers", ""),
     output:
         adata_annot=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
         plots_dir=directory(f"{SAMPLES_DIR}/{{sample}}/annotation"),
     params:
         sample_id=lambda wc: wc.sample,
-        marker_threshold=ANALYSIS.get("marker_refinement_threshold", 1.0),
-        min_markers_expressed=ANALYSIS.get("min_markers_expressed", 2),
         min_cells_per_type=ANALYSIS.get("min_cells_per_type", 15),
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         use_precomputed=USE_PRECOMPUTED,

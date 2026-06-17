@@ -1,22 +1,14 @@
 """
-annotate_cells.py – Cell type annotation + scaled-expression refinement
-========================================================================
-1. TSV-based annotation: maps Leiden clusters → cell types.
+annotate_cells.py – Cell type annotation
+=========================================
+1. TSV-based annotation: maps Leiden clusters → cell types (cell_type_tsv).
 
-2. Scaled-expression refinement for rare/missed cell types:
-   - Z-score scales expression ONLY for the marker genes (memory-safe)
-   - For each refinement cell type, computes the mean scaled expression
-     of its markers per cell
-   - A cell is reassigned if:
-     (a) mean scaled score > threshold (default 1.0 = 1 SD above mean)
-     (b) at least min_markers_expressed genes are individually > 0
-         in scaled space
-   - Multiple passing → '_mixed'; none passing → keep TSV label
-   - Post-filter: types with < min_cells_per_type revert to TSV
-   - Scores stored in obs for inspection
+2. External annotation (optional): loads a cell-type column from the metadata
+   TSV (cell_type_external) when enabled in config.
 
-3. Generates annotation plots for TSV and refined annotations.
-   If cell_type_ingest is present (from ingest_ref), plots it too.
+3. Generates annotation plots for the TSV annotation. If cell_type_ingest
+   (from ingest_ref) or cell_type_external are present, plots them too, plus
+   side-by-side UMAP/spatial comparisons and per-sample composition barplots.
 """
 
 import csv
@@ -32,7 +24,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scanpy as sc
-from scipy import sparse
 
 # Shared composition-barplot helpers (black edge, legend==stack order, config colours)
 try:
@@ -82,83 +73,6 @@ def find_sample_column(annot_df, sample_id):
     if sample_id in annot_df.columns:
         return sample_id, None
     return None, None
-
-
-def extract_and_scale(adata, gene_names):
-    """
-    Extract a subset of genes and Z-score scale per gene.
-    Returns a dense (n_cells, n_genes) array.  Memory-safe because
-    it only densifies the marker columns, not the full matrix.
-    """
-    idx = [adata.var_names.get_loc(g) for g in gene_names]
-    sub = adata.X[:, idx]
-    if sparse.issparse(sub):
-        sub = sub.toarray()
-    else:
-        sub = np.asarray(sub, dtype=np.float64)
-    means = sub.mean(axis=0)
-    stds = sub.std(axis=0)
-    stds[stds == 0] = 1
-    return (sub - means) / stds
-
-
-def refine_annotations_scaled(adata, marker_dict, threshold, min_markers,
-                              min_cells, tsv_col):
-    """
-    Refine cell-type annotations using mean scaled expression of markers.
-    Only scales the marker genes — not the full expression matrix.
-    """
-    # Collect all unique marker genes
-    all_marker_genes = list({g for genes in marker_dict.values() for g in genes})
-    log.info("  Scaling %d unique marker genes (not the full matrix) …", len(all_marker_genes))
-    scaled_markers = extract_and_scale(adata, all_marker_genes)
-
-    # Build a gene-name → column-index map for the scaled sub-matrix
-    gene_to_col = {g: i for i, g in enumerate(all_marker_genes)}
-
-    # Compute scores per refinement cell type
-    score_df = pd.DataFrame(index=adata.obs_names)
-    n_positive_df = pd.DataFrame(index=adata.obs_names)
-
-    for ct, genes in marker_dict.items():
-        cols = [gene_to_col[g] for g in genes]
-        scaled_sub = scaled_markers[:, cols]
-        score_df[ct] = scaled_sub.mean(axis=1)
-        n_positive_df[ct] = (scaled_sub > 0).sum(axis=1)
-        log.info("  %s: score range [%.2f, %.2f], median %.2f",
-                 ct, score_df[ct].min(), score_df[ct].max(), score_df[ct].median())
-
-    # Assign
-    log.info("  Assigning (threshold=%.2f, min_markers=%d) …", threshold, min_markers)
-    refined = []
-    for idx in range(adata.n_obs):
-        passing = []
-        for ct in marker_dict:
-            if (score_df[ct].iloc[idx] > threshold
-                    and n_positive_df[ct].iloc[idx] >= min_markers):
-                passing.append(ct)
-        if len(passing) == 1:
-            refined.append(passing[0])
-        elif len(passing) > 1:
-            refined.append("_".join(sorted(passing)) + "_mixed")
-        else:
-            refined.append(adata.obs[tsv_col].iloc[idx])
-
-    refined = pd.Series(refined, index=adata.obs_names)
-
-    # Post-filter rare new types
-    type_counts = refined.value_counts()
-    tsv_types = set(adata.obs[tsv_col].astype(str).unique())
-    rare_new = [t for t in type_counts[type_counts < min_cells].index
-                if t not in tsv_types]
-    if rare_new:
-        n_rev = refined.isin(rare_new).sum()
-        log.info("  Reverting %d cells in %d rare types (< %d cells): %s",
-                 n_rev, len(rare_new), min_cells, rare_new)
-        mask = refined.isin(rare_new)
-        refined[mask] = adata.obs[tsv_col].astype(str)[mask]
-
-    return refined, score_df
 
 
 def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
@@ -248,8 +162,6 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
 
 # ── Parameters ───────────────────────────────────────────────────────────────
 sample_id           = snakemake.params.sample_id
-threshold           = float(snakemake.params.marker_threshold)
-MIN_MARKERS         = int(snakemake.params.min_markers_expressed)
 MIN_CELLS_PER_TYPE  = int(snakemake.params.min_cells_per_type)
 DE_N_GENES          = int(snakemake.params.de_n_genes)
 USE_PRECOMPUTED     = bool(snakemake.params.use_precomputed)
@@ -263,15 +175,12 @@ NICHE_COLUMN        = getattr(snakemake.params, "niche_column", "")
 adata_path     = str(snakemake.input.adata)
 metadata_path  = str(snakemake.input.metadata)
 annot_tsv_path = str(snakemake.input.cluster_annotations)
-markers_path   = str(snakemake.input.annotation_markers)
 out_adata_path = str(snakemake.output.adata_annot)
 plots_dir      = str(snakemake.output.plots_dir)
 
 try:
     log.info("=" * 70)
     log.info("Annotating sample: %s", sample_id)
-    log.info("  Scaled-score threshold: %.2f", threshold)
-    log.info("  Min markers expressed:  %d", MIN_MARKERS)
     log.info("  Min cells per type:     %d", MIN_CELLS_PER_TYPE)
     log.info("=" * 70)
 
@@ -317,7 +226,6 @@ try:
     if annot_col is None:
         log.warning("Sample '%s' not found in TSV. All cells → 'Unannotated'.", sample_id)
         adata.obs["cell_type_tsv"] = "Unannotated"
-        adata.obs["cell_type_refined"] = "Unannotated"
         Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)
         adata.write(out_adata_path)
         sys.exit(0)
@@ -355,44 +263,7 @@ try:
     tsv_counts = adata.obs["cell_type_tsv"].value_counts()
     log.info("TSV annotation distribution:\n%s", tsv_counts.to_string())
 
-    # ── 2. Marker-based refinement (scaled, memory-safe) ─────────────────
-    log.info("Refining with scaled expression scores …")
-    raw_marker_dict = read_tsv_to_dict(markers_path)
-
-    for ct, genes in raw_marker_dict.items():
-        log.info("  %s: %d marker genes provided", ct, len(genes))
-
-    marker_dict = {}
-    for ct, genes in raw_marker_dict.items():
-        present = [g for g in genes if g in adata.var_names]
-        missing = [g for g in genes if g not in adata.var_names]
-        if missing:
-            log.warning("  %s: %d/%d NOT FOUND: %s", ct, len(missing), len(genes), missing)
-        if present:
-            marker_dict[ct] = present
-            log.info("  %s: using %d/%d genes", ct, len(present), len(genes))
-        else:
-            log.warning("  %s: ALL genes missing — excluded", ct)
-
-    if not marker_dict:
-        log.warning("No usable markers. Refined = TSV.")
-        adata.obs["cell_type_refined"] = adata.obs["cell_type_tsv"].copy()
-    else:
-        refined_labels, score_df = refine_annotations_scaled(
-            adata, marker_dict, threshold, MIN_MARKERS, MIN_CELLS_PER_TYPE,
-            tsv_col="cell_type_tsv",
-        )
-        adata.obs["cell_type_refined"] = pd.Categorical(refined_labels)
-        for ct in score_df.columns:
-            adata.obs[f"score_{ct}"] = score_df[ct].values
-
-    refined_counts = adata.obs["cell_type_refined"].value_counts()
-    log.info("Refined annotation distribution:\n%s", refined_counts.to_string())
-
-    changed = (adata.obs["cell_type_tsv"].astype(str) != adata.obs["cell_type_refined"].astype(str)).sum()
-    log.info("  %d cells (%.1f%%) changed by refinement", changed, 100 * changed / adata.n_obs)
-
-    # ── 3. External annotation (from metadata TSV column) ────────────────
+    # ── 2. External annotation (from metadata TSV column) ────────────────
     ext_enabled = False
     if isinstance(EXT_ANNOT_CFG, dict) and EXT_ANNOT_CFG.get("enabled", False):
         ext_col = EXT_ANNOT_CFG.get("column", "")
@@ -418,13 +289,12 @@ try:
                 else:
                     log.warning("  External column '%s' not in metadata. Skipping.", ext_col)
 
-    # ── 4. Plots ─────────────────────────────────────────────────────────
+    # ── 3. Plots ─────────────────────────────────────────────────────────
     log.info("Generating annotation plots …")
 
     # Apply custom palettes if configured
     if isinstance(ANNOTATION_COLORS, dict):
-        for obs_key in ["cell_type_tsv", "cell_type_refined",
-                        "cell_type_ingest", "cell_type_external"]:
+        for obs_key in ["cell_type_tsv", "cell_type_ingest", "cell_type_external"]:
             cd = ANNOTATION_COLORS.get(obs_key, {})
             if cd and obs_key in adata.obs.columns:
                 cats = adata.obs[obs_key].cat.categories
@@ -439,8 +309,6 @@ try:
 
     generate_annotation_plots(adata, "cell_type_tsv", "tsv", plots_dir,
                               sample_id, DE_N_GENES, library_id)
-    generate_annotation_plots(adata, "cell_type_refined", "refined", plots_dir,
-                              sample_id, DE_N_GENES, library_id)
 
     # If ingest labels exist, plot those too
     if has_ingest:
@@ -452,8 +320,8 @@ try:
                                   sample_id, DE_N_GENES, library_id)
 
     # Side-by-side comparison (dynamic number of panels)
-    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_refined",
-                                       "cell_type_ingest", "cell_type_external"]
+    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_ingest",
+                                       "cell_type_external"]
                           if c in adata.obs.columns]
     n_panels = len(annot_cols_present)
     if n_panels >= 2:
@@ -484,8 +352,8 @@ try:
             log.warning("Spatial comparison plot failed: %s", e)
 
     # ── Per-sample composition barplots (sample / region / niche) ────────
-    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_refined",
-                                      "cell_type_ingest", "cell_type_external"]
+    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_ingest",
+                                      "cell_type_external"]
                           if c in adata.obs.columns]
 
     # sample column (one bar per sample; here a single sample)
@@ -517,26 +385,7 @@ try:
                              f"{label}_by_niche", group_label="Niche",
                              cat_label=label, dpi=DPI)
 
-    # Score distributions
-    score_cols = [c for c in adata.obs.columns if c.startswith("score_")]
-    if score_cols:
-        fig, axes = plt.subplots(1, len(score_cols),
-                                 figsize=(5 * len(score_cols), 4))
-        if len(score_cols) == 1:
-            axes = [axes]
-        for ax, col in zip(axes, score_cols):
-            ax.hist(adata.obs[col].values, bins=50, edgecolor="black", alpha=0.7)
-            ax.axvline(threshold, color="red", ls="--", label=f"threshold={threshold}")
-            ax.set_title(col.replace("score_", ""))
-            ax.set_xlabel("Mean scaled score")
-            ax.set_ylabel("Cells")
-            ax.legend()
-        plt.tight_layout()
-        plt.savefig(os.path.join(plots_dir, f"score_distributions_{sample_id}.png"),
-                    dpi=DPI, bbox_inches="tight")
-        plt.close()
-
-    # ── 5. Save ──────────────────────────────────────────────────────────
+    # ── 4. Save ──────────────────────────────────────────────────────────
     log.info("Saving annotated adata → %s", out_adata_path)
     adata.uns["annotation_leiden_key"] = leiden_key   # the TSV-annotation res
     Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)

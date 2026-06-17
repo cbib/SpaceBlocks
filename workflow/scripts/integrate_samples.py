@@ -116,7 +116,7 @@ try:
 
     # Apply custom palettes if configured
     if isinstance(ANNOTATION_COLORS, dict):
-        for obs_key in ["sample_batch", "cell_type_tsv", "cell_type_refined",
+        for obs_key in ["sample_batch", "cell_type_tsv",
                         "cell_type_ingest", "cell_type_external", "leiden_uncorrected"]:
             cd = ANNOTATION_COLORS.get(obs_key, {})
             if cd and obs_key in adata.obs.columns:
@@ -172,19 +172,12 @@ try:
                     dpi=DPI, bbox_inches="tight")
         plt.close()
 
-    if "cell_type_refined" in adata_harmony.obs.columns:
-        sc.pl.umap(adata_harmony, color=["cell_type_refined"], size=2, frameon=False,
-                   title="Harmony – by cell type (refined)")
-        plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype_refined.png"),
-                    dpi=DPI, bbox_inches="tight")
-        plt.close()
-
     # ── Composition barplots (sample / region / niche) ───────────────────
     log.info("Composition barplots …")
     bar_dir = os.path.join(output_dir, "barplots")
     os.makedirs(bar_dir, exist_ok=True)
-    annot_cols = [c for c in ["cell_type_tsv", "cell_type_refined",
-                              "cell_type_ingest", "cell_type_external"]
+    annot_cols = [c for c in ["cell_type_tsv", "cell_type_ingest",
+                              "cell_type_external"]
                   if c in adata.obs.columns]
     has_regions = ("region_annotation" in adata.obs.columns
                    and adata.obs["region_annotation"].nunique() > 1

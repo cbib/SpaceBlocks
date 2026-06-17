@@ -288,8 +288,8 @@ try:
                     library_id = list(adata.uns["spatial"].keys())[0]
 
                 # palettes
-                for obs_key in ["cell_type_tsv", "cell_type_refined",
-                                "cell_type_ingest", "cell_type_external"]:
+                for obs_key in ["cell_type_tsv", "cell_type_ingest",
+                                "cell_type_external"]:
                     apply_palette(adata, obs_key, ANNOTATION_COLORS)
                 apply_region_palette(adata, REGION_COLORS)
 
