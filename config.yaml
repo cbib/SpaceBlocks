@@ -127,12 +127,36 @@ gene_exploration:
   queries: "config/gene_queries.tsv"
   annot_key: "cell_type_tsv"              # obs column shown alongside expression
   aucell_max_rank_fraction: 0.05          # top 5% of genes for AUCell recovery
-  # niche_column: "niche"                 # uncomment when niche identification is added
+  niche_column: "spatial_niche"           # obs column written by the spatial_niches rule
   dpi: 300
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  Subcompartment analysis
+#  Spatial niche / domain identification (BANKSY)
 # ═══════════════════════════════════════════════════════════════════════════
+# Runs BANKSY jointly across all samples (before annotation) to find spatial
+# domains common to the cohort. Per-sample niche TSVs are injected as the
+# `spatial_niche` obs column by annotate_cells. Set enabled: false to skip.
+spatial_niches:
+  enabled: true
+  # External/precomputed niche TSV directory (files named niche_{sample}.tsv,
+  # columns: barcode <TAB> spatial_niche). Empty = compute with the rule.
+  # Set this to swap in a different niche method without changing the pipeline.
+  niche_dir: ""
+  lambda: 0.8                  # 0.8 = domain/niche segmentation (0.2 = cell typing)
+  num_neighbours: 18           # BANKSY spatial kNN (single-cell / MERFISH-like)
+  max_m: 1                     # azimuthal Fourier harmonics for the AGF
+  nbr_weight_decay: "scaled_gaussian"
+  use_hvg: true               # false = all genes (see note: memory at scale)
+  n_top_genes: 2000            # only used when use_hvg: true
+  # n_pcs omitted → defaults to analysis.n_pcs (the PCs used in preprocess_umap)
+  niche_resolution: 1.0        # Leiden resolution that defines the niche labels
+  # Diagnostic scan (plots only) to help calibrate niche_resolution:
+  resolution_scan_min: 0.8
+  resolution_scan_max: 1.2
+  resolution_scan_step: 0.2
+
+
+
 
 # Subcompartment subclustering — leave empty or omit to skip
 # Keys become subcompartment names, strings are matched against the
@@ -200,6 +224,10 @@ resources:
     mem_mb: 65536
     runtime: 360
     threads: 8
+  spatial_niches:
+    mem_mb: 194768
+    runtime: 1440
+    threads: 16
   subcluster:
     mem_mb: 120768
     runtime: 1440

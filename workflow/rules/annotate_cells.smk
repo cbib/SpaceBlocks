@@ -4,6 +4,21 @@ def _annotate_input_adata(wc):
     return f"{SAMPLES_DIR}/{wc.sample}/adata_{wc.sample}.h5ad"
 
 
+def _annotate_niche_input(wc):
+    """Spatial-niche TSV for this sample (barcode → spatial_niche), injected as
+    the spatial_niche obs column. Resolves to an external directory when
+    configured (precomputed / alternative method), otherwise to the
+    spatial_niches rule output. Returns [] when niche identification is
+    disabled, so annotate_cells does not depend on it."""
+    sn = config.get("spatial_niches", {})
+    if not sn.get("enabled", False):
+        return []
+    ext = sn.get("niche_dir", "")
+    if ext:
+        return f"{ext.rstrip('/')}/niche_{wc.sample}.tsv"
+    return f"{OUTDIR_PP}/spatial_niches/tsv/niche_{wc.sample}.tsv"
+
+
 rule annotate_cells:
     """
     Annotate cells: TSV cluster mapping + optional external annotation.
@@ -13,6 +28,7 @@ rule annotate_cells:
         adata=_annotate_input_adata,
         metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
         cluster_annotations=config.get("cluster_annotations", ""),
+        spatial_niche=_annotate_niche_input,
     output:
         adata_annot=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
         plots_dir=directory(f"{SAMPLES_DIR}/{{sample}}/annotation"),

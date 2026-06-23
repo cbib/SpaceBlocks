@@ -85,6 +85,12 @@ GENE_EXPLORATION = config.get("gene_exploration", {})
 _gene_queries_path = GENE_EXPLORATION.get("queries", "")
 HAS_GENE_EXPLORATION = bool(_gene_queries_path) and os.path.isfile(_gene_queries_path)
 
+SPATIAL_NICHES = config.get("spatial_niches", {})
+SPATIAL_NICHES_ENABLED = bool(SPATIAL_NICHES.get("enabled", False))
+# Niche TSVs are produced by the spatial_niches rule unless an external/
+# precomputed directory is provided (in which case the rule is not run).
+SPATIAL_NICHES_EXTERNAL = bool(SPATIAL_NICHES.get("niche_dir", ""))
+
 
 def get_resource(rule_name, key):
     section = config.get("resources", {})
@@ -110,6 +116,12 @@ def get_all_targets(wildcards):
         targets.append(f"{SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
         for res in RESOLUTIONS:
             targets.append(f"{SAMPLES_DIR}/{sample}/leiden_resolution_{res}")
+    if SPATIAL_NICHES_ENABLED and not SPATIAL_NICHES_EXTERNAL:
+        targets.append(f"{OUTDIR_PP}/spatial_niches/spatial_niches_concatenated.h5ad")
+        targets.append(f"{OUTDIR_PP}/spatial_niches/plots")
+        targets.extend(expand(
+            f"{OUTDIR_PP}/spatial_niches/tsv/niche_{{sample}}.tsv",
+            sample=SAMPLE_IDS))
     if HAS_CLUSTER_ANNOT:
         if HAS_INGEST_REF:
             for sample in SAMPLE_IDS:
@@ -144,6 +156,7 @@ include: "rules/spaceranger.smk"
 include: "rules/preprocess_umap.smk"
 include: "rules/leiden_analysis.smk"
 include: "rules/ingest_ref.smk"
+include: "rules/spatial_niches.smk"
 include: "rules/annotate_cells.smk"
 include: "rules/pseudobulk_aggregate.smk"
 include: "rules/pseudobulk_de.smk"
@@ -173,6 +186,8 @@ rule run_upstream:
         f"{OUTDIR_PP}/cluster_annotations_template.tsv",
         *(expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_ingested.h5ad",
                  sample=SAMPLE_IDS) if HAS_INGEST_REF else []),
+        *([f"{OUTDIR_PP}/spatial_niches/spatial_niches_concatenated.h5ad"]
+          if (SPATIAL_NICHES_ENABLED and not SPATIAL_NICHES_EXTERNAL) else []),
 
 rule run_downstream:
     """Annotation + DE + neighbourhood + integration."""

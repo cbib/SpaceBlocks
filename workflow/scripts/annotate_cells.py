@@ -289,6 +289,23 @@ try:
                 else:
                     log.warning("  External column '%s' not in metadata. Skipping.", ext_col)
 
+    # ── 2b. Spatial niche labels (from spatial_niches rule / external) ───
+    _ni = getattr(snakemake.input, "spatial_niche", "")
+    if isinstance(_ni, (list, tuple)):
+        niche_tsv = str(_ni[0]) if len(_ni) else ""
+    else:
+        niche_tsv = str(_ni) if _ni else ""
+    if niche_tsv and os.path.isfile(niche_tsv):
+        log.info("Merging spatial niche labels from %s …", niche_tsv)
+        ndf = pd.read_csv(niche_tsv, sep="\t", index_col=0)
+        col = "spatial_niche" if "spatial_niche" in ndf.columns else ndf.columns[0]
+        mapped = ndf[col].reindex(adata.obs_names)
+        n_assigned = int(mapped.notna().sum())
+        mapped = mapped.fillna("Unassigned").astype(str)
+        adata.obs["spatial_niche"] = pd.Categorical(mapped)
+        log.info("  spatial_niche: %d/%d cells assigned, %d niches",
+                 n_assigned, adata.n_obs, adata.obs["spatial_niche"].nunique())
+
     # ── 3. Plots ─────────────────────────────────────────────────────────
     log.info("Generating annotation plots …")
 
