@@ -144,16 +144,25 @@ spatial_niches:
   niche_dir: ""
   lambda: 0.8                  # 0.8 = domain/niche segmentation (0.2 = cell typing)
   num_neighbours: 18           # BANKSY spatial kNN (single-cell / MERFISH-like)
+  cluster_n_neighbours: 15     # expression-space kNN for Leiden clustering (scanpy)
+  n_iterations: -1              # Leiden iterations (igraph flavor); 2 = fast & safe (not -1)
   max_m: 1                     # azimuthal Fourier harmonics for the AGF
   nbr_weight_decay: "scaled_gaussian"
   use_hvg: true               # false = all genes (see note: memory at scale)
   n_top_genes: 2000            # only used when use_hvg: true
   # n_pcs omitted → defaults to analysis.n_pcs (the PCs used in preprocess_umap)
-  niche_resolution: 1.0        # Leiden resolution that defines the niche labels
-  # Diagnostic scan (plots only) to help calibrate niche_resolution:
+  niche_resolution: 0.3        # Leiden resolution that defines the niche labels
+                               # (domains are coarse; lower = fewer, broader niches)
+  # Diagnostic scan (plots only) to help calibrate niche_resolution.
+  # OFF by default: each extra resolution is another Leiden partition. Turn on
+  # once on a subset to choose niche_resolution, then leave off for production.
+  run_resolution_scan: false
   resolution_scan_min: 0.8
   resolution_scan_max: 1.2
   resolution_scan_step: 0.2
+  # Integrated UMAP is viz-only and very slow on >1M cells (umap-learn). The
+  # per-sample spatial maps and niche TSVs do not need it. Leave off for speed.
+  compute_umap: false
 
 
 
@@ -225,8 +234,8 @@ resources:
     runtime: 360
     threads: 8
   spatial_niches:
-    mem_mb: 194768
-    runtime: 1440
+    mem_mb: 175768
+    runtime: 720
     threads: 16
   subcluster:
     mem_mb: 120768

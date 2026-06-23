@@ -84,6 +84,7 @@ SCAN_STEP       = float(snakemake.params.resolution_scan_step)
 RUN_SCAN        = bool(getattr(snakemake.params, "run_resolution_scan", False))
 COMPUTE_UMAP    = bool(getattr(snakemake.params, "compute_umap", False))
 CLUSTER_NN      = int(getattr(snakemake.params, "cluster_n_neighbours", 15))
+N_ITERATIONS    = int(getattr(snakemake.params, "n_iterations", 2))
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI             = int(getattr(snakemake.params, "dpi", 300))
@@ -150,13 +151,27 @@ def stagger_coordinates(adata, sample_key, coord_keys):
              len(order), global_max_x)
 
 
-def _spatial_scatter(adata, sample_key, color_key, out_path, dpi):
+def build_niche_palette(categories, config_colors):
+    """One niche → colour mapping reused across every niche plot, so a niche has
+    the same colour in the spatial maps, the staggered map, the UMAPs and the
+    composition barplots. Uses config colours where provided, else tab20(+b)."""
+    import matplotlib
+    base = (list(matplotlib.colormaps["tab20"].colors)
+            + list(matplotlib.colormaps["tab20b"].colors))
+    cfg = config_colors or {}
+    pal = {}
+    for i, c in enumerate(categories):
+        key = str(c)
+        pal[key] = cfg.get(key, matplotlib.colors.to_hex(base[i % len(base)]))
+    return pal
+
+
+def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
     """Per-sample spatial domain maps (scatter of obsm['spatial'], no image
-    dependency), one panel per sample, shared niche colour mapping."""
+    dependency), one panel per sample, using the shared niche colour map."""
     samples = list(pd.unique(adata.obs[sample_key]))
     cats = list(pd.Categorical(adata.obs[color_key]).categories)
-    cmap = plt.cm.get_cmap("tab20", max(len(cats), 1))
-    colour = {c: cmap(i) for i, c in enumerate(cats)}
+    colour = {c: color_map.get(str(c), "#cccccc") for c in cats}
     n = len(samples)
     ncol = min(4, n)
     nrow = int(np.ceil(n / ncol))
@@ -295,7 +310,7 @@ try:
 
     def _leiden(res, key):
         sc.tl.leiden(adata, resolution=res, key_added=key, random_state=SEED,
-                     flavor="igraph", n_iterations=2, directed=False)
+                     flavor="igraph", n_iterations=N_ITERATIONS, directed=False)
 
     scan_counts = []
     scan = _resolution_scan(SCAN_MIN, SCAN_MAX, SCAN_STEP) if RUN_SCAN else []
@@ -347,17 +362,19 @@ try:
 
     # ── Plots ────────────────────────────────────────────────────────────
     log.info("Plots …")
-    # niche palette (config override, else default)
+    # ONE niche → colour mapping reused across every niche plot (per-sample
+    # spatial maps, combined staggered map, UMAPs, composition barplots) so a
+    # niche is the same colour everywhere.
     niche_cfg = (ANNOTATION_COLORS.get(NICHE_KEY, {})
                  if isinstance(ANNOTATION_COLORS, dict) else {})
     cats = list(adata.obs[NICHE_KEY].cat.categories)
-    if niche_cfg:
-        adata.uns[f"{NICHE_KEY}_colors"] = [niche_cfg.get(str(c), "#cccccc")
-                                            for c in cats]
+    niche_palette = build_niche_palette(cats, niche_cfg)
+    adata.uns[f"{NICHE_KEY}_colors"] = [niche_palette[str(c)] for c in cats]
 
     try:
         _spatial_scatter(adata, "sample", NICHE_KEY,
-                         os.path.join(plots_dir, "spatial_niches_per_sample.png"), DPI)
+                         os.path.join(plots_dir, "spatial_niches_per_sample.png"),
+                         DPI, niche_palette)
     except Exception as e:
         log.warning("  spatial scatter failed: %s", e)
 
@@ -379,12 +396,17 @@ try:
     # Combined staggered domain map coloured by niche (all samples, one view)
     try:
         xy = adata.obsm[COORD_KEYS[2]]
-        codes = adata.obs[NICHE_KEY].cat.codes
+        colors = adata.obs[NICHE_KEY].astype(str).map(niche_palette).values
         fig, ax = plt.subplots(figsize=(min(40, 4 * len(sample_ids)), 5))
-        ax.scatter(xy[:, 0], xy[:, 1], c=codes, cmap="tab20", s=1,
+        ax.scatter(xy[:, 0], xy[:, 1], c=colors, s=1,
                    linewidths=0, rasterized=True)
         ax.set_aspect("equal"); ax.invert_yaxis(); ax.set_axis_off()
         ax.set_title("BANKSY spatial niches (staggered, all samples)", fontsize=10)
+        handles = [plt.Line2D([0], [0], marker="o", linestyle="", markersize=5,
+                              color=niche_palette[str(c)], label=str(c)) for c in cats]
+        ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.0, 0.5),
+                  frameon=False, title="Niche", fontsize=6, title_fontsize=7,
+                  ncol=max(1, len(cats) // 20 + 1))
         fig.savefig(os.path.join(plots_dir, "spatial_niches_staggered.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close(fig)
@@ -446,14 +468,14 @@ try:
 
     # niche composition (by sample, and by region if present)
     try:
-        composition_pair(adata, "sample", NICHE_KEY, niche_cfg, plots_dir,
+        composition_pair(adata, "sample", NICHE_KEY, niche_palette, plots_dir,
                          "niche_by_sample", group_label="Sample",
                          cat_label="Niche", dpi=DPI)
         has_regions = ("region_annotation" in adata.obs.columns
                        and adata.obs["region_annotation"].nunique() > 1
                        and not all(adata.obs["region_annotation"] == "Unlabeled"))
         if has_regions:
-            composition_pair(adata, "region_annotation", NICHE_KEY, niche_cfg,
+            composition_pair(adata, "region_annotation", NICHE_KEY, niche_palette,
                              plots_dir, "niche_by_region", group_label="Region",
                              cat_label="Niche", dpi=DPI)
     except Exception as e:

@@ -34,6 +34,7 @@ Place this file in the same directory as the other rule scripts
 from __future__ import annotations
 
 import os
+import warnings
 
 import matplotlib
 matplotlib.use("Agg")
@@ -163,7 +164,11 @@ def save_stacked_composition(ct, out_path, color_map=None, *, normalize=False,
     draw_stacked_composition(ax, ct, color_map, normalize=normalize,
                              ylabel=ylabel, xlabel=xlabel, title=title,
                              legend_title=legend_title, edge_lw=edge_lw)
-    fig.tight_layout()
+    # bbox_inches="tight" below handles final margins; tight_layout() can warn
+    # when staggered group headers don't fit — suppress that cosmetic warning.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*Tight layout not applied.*")
+        fig.tight_layout()
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
