@@ -1,3 +1,25 @@
+def _spatial_niches_inputs(wc):
+    """Inputs for spatial_niches. When use_precomputed is set with an external
+    niche_dir, the per-sample niche_{sample}.tsv are added as MANDATORY inputs:
+    Snakemake then aborts the rule (Missing input files) if any is absent, before
+    the job starts. This is complementary to the in-script safeguard, which also
+    catches empty TSVs and partial cell coverage (which Snakemake cannot see).
+    When niche_dir is empty the rule reloads from its own output dir, so nothing
+    is added here (no circular dependency) and the script check applies alone."""
+    inputs = {
+        "adatas": expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
+                         sample=SAMPLE_IDS),
+    }
+    sn = config.get("spatial_niches", {})
+    if sn.get("use_precomputed", False):
+        d = sn.get("niche_dir", "")
+        if d:
+            inputs["precomputed_niches"] = [
+                os.path.join(d, f"niche_{s}.tsv") for s in SAMPLE_IDS
+            ]
+    return inputs
+
+
 rule spatial_niches:
     """
     Cross-sample spatial niche / domain identification with BANKSY.
@@ -13,8 +35,7 @@ rule spatial_niches:
     of the pipeline.
     """
     input:
-        adatas=expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
-                      sample=SAMPLE_IDS),
+        unpack(_spatial_niches_inputs),
     output:
         concatenated=f"{OUTDIR_PP}/spatial_niches/spatial_niches_concatenated.h5ad",
         niche_tsvs=expand(f"{OUTDIR_PP}/spatial_niches/tsv/niche_{{sample}}.tsv",
@@ -31,13 +52,15 @@ rule spatial_niches:
         n_top_genes=SPATIAL_NICHES.get("n_top_genes", ANALYSIS.get("n_top_genes", 2000)),
         n_pcs=SPATIAL_NICHES.get("n_pcs", ANALYSIS.get("n_pcs", 30)),
         niche_resolution=SPATIAL_NICHES.get("niche_resolution", 0.3),
-        resolution_scan_min=SPATIAL_NICHES.get("resolution_scan_min", 0.2),
-        resolution_scan_max=SPATIAL_NICHES.get("resolution_scan_max", 1.0),
-        resolution_scan_step=SPATIAL_NICHES.get("resolution_scan_step", 0.2),
-        run_resolution_scan=SPATIAL_NICHES.get("run_resolution_scan", False),
         compute_umap=SPATIAL_NICHES.get("compute_umap", False),
         cluster_n_neighbours=SPATIAL_NICHES.get("cluster_n_neighbours", 15),
         n_iterations=SPATIAL_NICHES.get("n_iterations", 2),
+        use_precomputed=SPATIAL_NICHES.get("use_precomputed", False),
+        niche_dir=SPATIAL_NICHES.get("niche_dir", ""),
+        refine=SPATIAL_NICHES.get("refine", False),
+        refine_num_neigh=SPATIAL_NICHES.get("refine_num_neigh", 6),
+        refine_iterations=SPATIAL_NICHES.get("refine_iterations", 1),
+        refine_auto=SPATIAL_NICHES.get("refine_auto", False),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),

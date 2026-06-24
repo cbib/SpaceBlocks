@@ -13,14 +13,15 @@ Flow (multi-sample BANKSY with Harmony, cell resolution):
   4. initialize_banksy + generate_banksy_matrix  → neighbour-augmented matrix.
   5. PCA on the BANKSY matrix.
   6. Harmony across samples on the BANKSY PCA (spatially-informed integration).
-  7. Leiden at niche_resolution → spatial_niche; a diagnostic resolution scan
-     is also produced (plots only) to help calibrate niche_resolution.
+  7. Leiden at niche_resolution → spatial_niche.
+  8. (Optional) BANKSY spatial majority-vote refinement of the niche labels
+     (refine), applied to freshly-computed OR reloaded/precomputed niches.
 
 Outputs:
   spatial_niches/
   ├── spatial_niches_concatenated.h5ad   (light: lognorm X + niche + embeddings)
   ├── tsv/niche_{sample}.tsv             (barcode → spatial_niche, per sample)
-  └── plots/                             (spatial maps, UMAPs, scan, composition)
+  └── plots/                             (spatial maps, UMAPs, composition)
 """
 
 import logging
@@ -41,6 +42,7 @@ from scipy import sparse
 from banksy.initialize_banksy import initialize_banksy
 from banksy.embed_banksy import generate_banksy_matrix
 from banksy_utils.umap_pca import pca_umap
+from banksy_utils.refine_clusters import refine_once
 
 # Shared composition-barplot helpers (scripts/ is on sys.path for script: rules)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -78,13 +80,15 @@ USE_HVG         = bool(snakemake.params.use_hvg)
 N_TOP_GENES     = int(snakemake.params.n_top_genes)
 N_PCS           = int(snakemake.params.n_pcs)
 NICHE_RES       = float(snakemake.params.niche_resolution)
-SCAN_MIN        = float(snakemake.params.resolution_scan_min)
-SCAN_MAX        = float(snakemake.params.resolution_scan_max)
-SCAN_STEP       = float(snakemake.params.resolution_scan_step)
-RUN_SCAN        = bool(getattr(snakemake.params, "run_resolution_scan", False))
 COMPUTE_UMAP    = bool(getattr(snakemake.params, "compute_umap", False))
 CLUSTER_NN      = int(getattr(snakemake.params, "cluster_n_neighbours", 15))
 N_ITERATIONS    = int(getattr(snakemake.params, "n_iterations", 2))
+USE_PRECOMPUTED = bool(getattr(snakemake.params, "use_precomputed", False))
+NICHE_DIR       = str(getattr(snakemake.params, "niche_dir", "") or "")
+REFINE          = bool(getattr(snakemake.params, "refine", False))
+REFINE_NEIGH    = int(getattr(snakemake.params, "refine_num_neigh", 6))
+REFINE_ITERS    = int(getattr(snakemake.params, "refine_iterations", 1))
+REFINE_AUTO     = bool(getattr(snakemake.params, "refine_auto", False))
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI             = int(getattr(snakemake.params, "dpi", 300))
@@ -95,12 +99,6 @@ plots_dir    = str(snakemake.output.plots_dir)
 
 NICHE_KEY = "spatial_niche"
 COORD_KEYS = ("x_pixel", "y_pixel", "coord_xy")   # BANKSY reads obsm[coord_keys[2]]
-
-
-def _resolution_scan(rmin, rmax, step):
-    """Inclusive resolution range via integer-step arithmetic (IEEE-safe)."""
-    n = round((rmax - rmin) / step)
-    return [round(rmin + i * step, 10) for i in range(n + 1)]
 
 
 def harmony_embedding(emb, obs, batch_key, seed):
@@ -203,6 +201,33 @@ def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
     plt.close(fig)
 
 
+def _resolve_precomputed():
+    """Return {sample: tsv_path} with a niche TSV for EVERY sample (external
+    niche_dir first, else the rule's own output dir). SAFEGUARD: if any sample's
+    TSV is missing, ERROR OUT — when use_precomputed is requested, silently
+    recomputing would defeat the reproducibility intent, so we fail loudly rather
+    than fall back to computing."""
+    src, missing = {}, []
+    for sid in sample_ids:
+        cands = []
+        if NICHE_DIR:
+            cands.append(os.path.join(NICHE_DIR, f"niche_{sid}.tsv"))
+        cands.append(os.path.join(tsv_dir, f"niche_{sid}.tsv"))  # pipeline output
+        found = next((c for c in cands if os.path.isfile(c)), None)
+        if found is None:
+            missing.append(sid)
+        else:
+            src[sid] = found
+    if missing:
+        raise FileNotFoundError(
+            f"use_precomputed=True but niche TSVs are MISSING for "
+            f"{len(missing)}/{len(sample_ids)} sample(s): {', '.join(missing)} "
+            f"(searched {NICHE_DIR or tsv_dir}). Aborting — set use_precomputed: "
+            f"false to compute, or provide a complete set of niche_{{sample}}.tsv.")
+    log.info("Precomputed niche TSVs resolved for all %d samples.", len(sample_ids))
+    return src
+
+
 try:
     log.info("=" * 70)
     log.info("Spatial niche identification (BANKSY) across %d samples", len(adata_paths))
@@ -237,112 +262,164 @@ try:
     if "spatial" not in adata.obsm:
         raise ValueError("obsm['spatial'] missing after concatenation.")
 
-    # ── 2. Feature selection ─────────────────────────────────────────────
-    # NB: adata.X here is log-normalized (preprocess_umap: normalize_total +
-    # log1p; raw counts in layers["raw_counts"]). The default "seurat" flavor
-    # expects exactly log-normalized data, so it is correct here. (Raw counts
-    # would instead require flavor="seurat_v3", layer="raw_counts".)
-    bank_input = adata.copy()
-    if USE_HVG:
-        log.info("Selecting %d HVGs (flavor=seurat, on log-normalized X) …",
-                 N_TOP_GENES)
-        sc.pp.highly_variable_genes(bank_input, n_top_genes=N_TOP_GENES,
-                                    flavor="seurat")
-        bank_input = bank_input[:, bank_input.var["highly_variable"]].copy()
-        log.info("  Using %d HVGs", bank_input.n_vars)
-    else:
-        log.info("use_hvg=False → using all %d genes", bank_input.n_vars)
-
-    # Memory guard: the BANKSY matrix is DENSE and (1 + max_m + 1)·n_genes wide.
-    feats = bank_input.n_vars * (2 + MAX_M)
-    est_gb = bank_input.n_obs * feats * 4 / 1e9
-    log.info("BANKSY matrix will be ~%d cells × %d features (~%.1f GB dense, float32)",
-             bank_input.n_obs, feats, est_gb)
-    if est_gb > 80:
-        log.warning("  Projected BANKSY matrix is large (~%.0f GB). Consider "
-                    "use_hvg=true / a smaller n_top_genes if this OOMs.", est_gb)
-
-    # NB: following the official multi-sample notebook, BANKSY is run on the
-    # normalized expression directly (no sc.pp.scale); PCA centres internally.
-
-    # ── 3. Stagger coordinates ───────────────────────────────────────────
+    # ── 2. Stagger coordinates (both modes: BANKSY graph in compute mode,
+    #       spatial plots in both) ───────────────────────────────────────
     log.info("Staggering per-sample spatial coordinates …")
-    stagger_coordinates(bank_input, "sample", COORD_KEYS)
-    # carry the staggered coords onto the light object too (for plotting / save)
-    for k in COORD_KEYS[:2]:
-        adata.obs[k] = bank_input.obs[k].values
-    adata.obsm[COORD_KEYS[2]] = bank_input.obsm[COORD_KEYS[2]]
+    stagger_coordinates(adata, "sample", COORD_KEYS)
 
-    # ── 4. BANKSY neighbour-augmented matrix ─────────────────────────────
-    log.info("Initialising BANKSY + building neighbour-augmented matrix …")
-    banksy_dict = initialize_banksy(
-        bank_input, coord_keys=COORD_KEYS,
-        num_neighbours=NUM_NEIGHBOURS, nbr_weight_decay=NBR_DECAY, max_m=MAX_M,
-        plt_edge_hist=False, plt_nbr_weights=False, plt_agf_angles=False,
-        plt_theta=False,
-    )
-    banksy_dict, _ = generate_banksy_matrix(
-        bank_input, banksy_dict, lambda_list=[LAMBDA], max_m=MAX_M, verbose=False,
-    )
-
-    # ── 5. PCA on the BANKSY matrix (official banksy_utils.pca_umap) ──────
-    log.info("PCA (%d PCs) on the BANKSY matrix …", N_PCS)
-    pca_umap(banksy_dict, pca_dims=[N_PCS], plt_remaining_var=False, add_umap=False)
-    banksy_adata = banksy_dict[NBR_DECAY][LAMBDA]["adata"]
-    adata.obsm["X_pca_banksy"] = np.asarray(
-        banksy_adata.obsm[f"reduced_pc_{N_PCS}"], dtype=np.float32)
-
-    # ── 6. Harmony across samples on the BANKSY PCA ──────────────────────
-    log.info("Harmony integration across samples …")
-    adata.obsm["X_pca_harmony_banksy"] = harmony_embedding(
-        banksy_adata.obsm[f"reduced_pc_{N_PCS}"], adata.obs, "sample", SEED)
-    del bank_input, banksy_dict, banksy_adata
-
-    # ── 7. Clustering — scanpy approximate-NN graph + igraph Leiden ──────
-    # Fast and portable on any HPC (no GPU needed). scanpy's neighbours uses
-    # approximate kNN (pynndescent), and Leiden runs with flavor="igraph",
-    # n_iterations=2 — NOT run-to-convergence (-1), which is the step that
-    # hangs at ~1M cells. Clusters the Harmony-corrected BANKSY embedding.
-    log.info("Building kNN graph (n_neighbors=%d) on the Harmony embedding …",
-             CLUSTER_NN)
-    sc.pp.neighbors(adata, use_rep="X_pca_harmony_banksy",
-                    n_neighbors=CLUSTER_NN, random_state=SEED)
-
-    def _leiden(res, key):
-        sc.tl.leiden(adata, resolution=res, key_added=key, random_state=SEED,
-                     flavor="igraph", n_iterations=N_ITERATIONS, directed=False)
-
-    scan_counts = []
-    scan = _resolution_scan(SCAN_MIN, SCAN_MAX, SCAN_STEP) if RUN_SCAN else []
-    for r in scan:
-        _leiden(r, f"_scan_{r}")
-        n = int(adata.obs[f"_scan_{r}"].nunique())
-        scan_counts.append((r, n))
-        log.info("  resolution %.2f → %d domains", r, n)
-
-    # Authoritative niche labels at niche_resolution
-    log.info("Leiden (igraph, 2 iterations) @ resolution %.2f …", NICHE_RES)
-    _leiden(NICHE_RES, NICHE_KEY)
-    raw_cats = sorted(adata.obs[NICHE_KEY].unique().tolist(), key=lambda x: int(x))
-    adata.obs[NICHE_KEY] = pd.Categorical(
-        adata.obs[NICHE_KEY].astype(str),
-        categories=[str(c) for c in raw_cats], ordered=True)
-    log.info("spatial_niche @ resolution %.2f → %d niches",
-             NICHE_RES, adata.obs[NICHE_KEY].nunique())
-
-    # Integrated UMAP on the Harmony-corrected embedding — OPT-IN: umap-learn
-    # on ~1M cells is very slow and is viz-only (the per-sample spatial maps and
-    # niche TSVs do not need it). Enable with compute_umap: true.
-    if COMPUTE_UMAP:
+    # ── 3. Niche labels: reload precomputed, or compute with BANKSY ──────
+    if USE_PRECOMPUTED:
+        niche_source = _resolve_precomputed()   # ERRORS if any TSV is missing
+        log.info("use_precomputed=True → reloading niche labels, skipping BANKSY/Leiden")
+        labels = pd.Series(index=adata.obs_names, dtype=object)
+        uncovered = {}
+        for sid, src in niche_source.items():
+            ndf = pd.read_csv(src, sep="\t", index_col=0)
+            col = NICHE_KEY if NICHE_KEY in ndf.columns else (
+                ndf.columns[0] if len(ndf.columns) else None)
+            m = (adata.obs["sample"] == sid).values
+            ids = adata.obs["cell_id"].values[m]
+            if col is None or ndf.shape[0] == 0:
+                uncovered[sid] = (int(m.sum()), int(m.sum()))      # empty TSV
+                continue
+            vals = ndf[col].reindex(ids)
+            n_miss = int(vals.isna().sum())
+            if n_miss:
+                uncovered[sid] = (n_miss, int(m.sum()))
+            labels.loc[adata.obs_names[m]] = vals.values
+            log.info("  %s ← %s", sid, src)
+        # SAFEGUARD: every cell of every sample must be covered, else ERROR OUT.
+        if uncovered:
+            detail = "; ".join(f"{s}: {n}/{tot} cells uncovered"
+                               for s, (n, tot) in uncovered.items())
+            raise ValueError(
+                "use_precomputed=True but the niche TSVs do not fully cover all "
+                f"cells — {detail}. Aborting (the TSV may be empty or out of sync "
+                "with the current cells). Recompute with use_precomputed: false, or "
+                "supply complete niche TSVs.")
+        labels = labels.astype(str)
         try:
-            import umap
-            log.info("Computing integrated UMAP on the Harmony embedding …")
-            adata.obsm["X_umap_banksy"] = umap.UMAP(
-                random_state=SEED).fit_transform(adata.obsm["X_pca_harmony_banksy"])
-        except Exception as e:
-            log.warning("UMAP skipped (%s)", e)
+            raw_cats = sorted(labels.unique().tolist(), key=lambda x: int(x))
+        except ValueError:
+            raw_cats = sorted(labels.unique().tolist())
+        adata.obs[NICHE_KEY] = pd.Categorical(
+            labels.values, categories=[str(c) for c in raw_cats], ordered=True)
+        log.info("Reloaded spatial_niche → %d niches", adata.obs[NICHE_KEY].nunique())
     else:
-        log.info("compute_umap=False → skipping integrated UMAP")
+        # NB: adata.X is log-normalized (preprocess_umap: normalize_total +
+        # log1p; raw counts in layers["raw_counts"]). The default "seurat"
+        # flavor expects log-normalized data, so it is correct here.
+        bank_input = adata.copy()
+        if USE_HVG:
+            log.info("Selecting %d HVGs (flavor=seurat, on log-normalized X) …",
+                     N_TOP_GENES)
+            sc.pp.highly_variable_genes(bank_input, n_top_genes=N_TOP_GENES,
+                                        flavor="seurat")
+            bank_input = bank_input[:, bank_input.var["highly_variable"]].copy()
+            log.info("  Using %d HVGs", bank_input.n_vars)
+        else:
+            log.info("use_hvg=False → using all %d genes", bank_input.n_vars)
+
+        # Memory guard: BANKSY matrix is DENSE and (2 + max_m)·n_genes wide.
+        feats = bank_input.n_vars * (2 + MAX_M)
+        est_gb = bank_input.n_obs * feats * 4 / 1e9
+        log.info("BANKSY matrix ~%d cells × %d features (~%.1f GB dense, float32)",
+                 bank_input.n_obs, feats, est_gb)
+        if est_gb > 80:
+            log.warning("  Projected BANKSY matrix is large (~%.0f GB). Consider "
+                        "use_hvg=true / smaller n_top_genes if this OOMs.", est_gb)
+
+        # ── BANKSY neighbour-augmented matrix (uses staggered coord_xy) ──
+        log.info("Initialising BANKSY + building neighbour-augmented matrix …")
+        banksy_dict = initialize_banksy(
+            bank_input, coord_keys=COORD_KEYS,
+            num_neighbours=NUM_NEIGHBOURS, nbr_weight_decay=NBR_DECAY, max_m=MAX_M,
+            plt_edge_hist=False, plt_nbr_weights=False, plt_agf_angles=False,
+            plt_theta=False,
+        )
+        banksy_dict, _ = generate_banksy_matrix(
+            bank_input, banksy_dict, lambda_list=[LAMBDA], max_m=MAX_M, verbose=False,
+        )
+
+        # ── PCA (official banksy_utils.pca_umap) ─────────────────────────
+        log.info("PCA (%d PCs) on the BANKSY matrix …", N_PCS)
+        pca_umap(banksy_dict, pca_dims=[N_PCS], plt_remaining_var=False, add_umap=False)
+        banksy_adata = banksy_dict[NBR_DECAY][LAMBDA]["adata"]
+        adata.obsm["X_pca_banksy"] = np.asarray(
+            banksy_adata.obsm[f"reduced_pc_{N_PCS}"], dtype=np.float32)
+
+        # ── Harmony across samples on the BANKSY PCA ─────────────────────
+        log.info("Harmony integration across samples …")
+        adata.obsm["X_pca_harmony_banksy"] = harmony_embedding(
+            banksy_adata.obsm[f"reduced_pc_{N_PCS}"], adata.obs, "sample", SEED)
+        del bank_input, banksy_dict, banksy_adata
+
+        # ── Clustering: scanpy approximate-NN graph + igraph Leiden ──────
+        log.info("Building kNN graph (n_neighbors=%d) on the Harmony embedding …",
+                 CLUSTER_NN)
+        sc.pp.neighbors(adata, use_rep="X_pca_harmony_banksy",
+                        n_neighbors=CLUSTER_NN, random_state=SEED)
+
+        def _leiden(res, key):
+            sc.tl.leiden(adata, resolution=res, key_added=key, random_state=SEED,
+                         flavor="igraph", n_iterations=N_ITERATIONS, directed=False)
+
+        log.info("Leiden (igraph, %d iterations) @ resolution %.2f …",
+                 N_ITERATIONS, NICHE_RES)
+        _leiden(NICHE_RES, NICHE_KEY)
+        raw_cats = sorted(adata.obs[NICHE_KEY].unique().tolist(), key=lambda x: int(x))
+        adata.obs[NICHE_KEY] = pd.Categorical(
+            adata.obs[NICHE_KEY].astype(str),
+            categories=[str(c) for c in raw_cats], ordered=True)
+        log.info("spatial_niche @ resolution %.2f → %d niches",
+                 NICHE_RES, adata.obs[NICHE_KEY].nunique())
+
+        # Integrated UMAP (opt-in; viz-only, slow on ~1M cells)
+        if COMPUTE_UMAP:
+            try:
+                import umap
+                log.info("Computing integrated UMAP on the Harmony embedding …")
+                adata.obsm["X_umap_banksy"] = umap.UMAP(
+                    random_state=SEED).fit_transform(adata.obsm["X_pca_harmony_banksy"])
+            except Exception as e:
+                log.warning("UMAP skipped (%s)", e)
+        else:
+            log.info("compute_umap=False → skipping integrated UMAP")
+
+    # ── 4. Optional BANKSY spatial refinement ────────────────────────────
+    # Spatial majority-vote smoothing (BANKSY refine_once): each cell adopts its
+    # spatial-neighbourhood majority niche when >50% of neighbours agree. Reads
+    # the STAGGERED coord_xy, so neighbours are within-sample (per-sample
+    # smoothing). Applies to BOTH freshly-computed and reloaded/precomputed
+    # niches. Raw labels are kept in obs["{NICHE_KEY}_raw"].
+    if REFINE:
+        log.info("Spatial refinement (BANKSY majority vote, num_neigh=%d, %s) …",
+                 REFINE_NEIGH, "auto" if REFINE_AUTO else f"{REFINE_ITERS} iter")
+        adata.obs[f"{NICHE_KEY}_raw"] = adata.obs[NICHE_KEY].copy()
+        cur = list(adata.obs[NICHE_KEY].astype(str))
+        max_iter = 50 if REFINE_AUTO else max(1, REFINE_ITERS)
+        for it in range(max_iter):
+            new, _, _ = refine_once(adata, cur, None, COORD_KEYS,
+                                    num_neigh=REFINE_NEIGH)
+            changed = int(np.sum(np.asarray(cur) != np.asarray(new)))
+            cur = list(new)
+            ratio = changed / max(1, len(cur))
+            log.info("  refine iter %d: %d cells changed (%.2f%%)",
+                     it + 1, changed, 100 * ratio)
+            if REFINE_AUTO and ratio < 0.005:
+                break
+            if not REFINE_AUTO and (it + 1) >= REFINE_ITERS:
+                break
+        try:
+            ref_cats = sorted(set(cur), key=lambda x: int(x))
+        except ValueError:
+            ref_cats = sorted(set(cur))
+        adata.obs[NICHE_KEY] = pd.Categorical(
+            cur, categories=[str(c) for c in ref_cats], ordered=True)
+        n0 = adata.obs[f"{NICHE_KEY}_raw"].nunique()
+        n1 = adata.obs[NICHE_KEY].nunique()
+        log.info("Refinement complete: %d → %d niches "
+                 "(raw kept in obs['%s_raw'])", n0, n1, NICHE_KEY)
 
     # ── Per-sample niche TSVs (barcode → spatial_niche) ──────────────────
     log.info("Writing per-sample niche TSVs …")
@@ -426,46 +503,6 @@ try:
             except Exception as e:
                 log.warning("  UMAP (%s) failed: %s", color, e)
 
-    # resolution-scan diagnostic: domains vs resolution
-    if scan_counts:
-      try:
-        rs = [r for r, _ in scan_counts]
-        ns = [n for _, n in scan_counts]
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(rs, ns, marker="o")
-        ax.axvline(NICHE_RES, color="red", ls="--",
-                   label=f"niche_resolution={NICHE_RES}")
-        ax.set_xlabel("Leiden resolution")
-        ax.set_ylabel("Number of spatial domains")
-        ax.set_title("Resolution scan (domain count)")
-        ax.legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(os.path.join(plots_dir, "resolution_scan_domains.png"),
-                    dpi=DPI, bbox_inches="tight")
-        plt.close(fig)
-      except Exception as e:
-        log.warning("  resolution-scan plot failed: %s", e)
-
-    # per-resolution UMAPs (small multiples) for visual calibration
-    if "X_umap_banksy" in adata.obsm:
-        scan_dir = os.path.join(plots_dir, "resolution_scan")
-        os.makedirs(scan_dir, exist_ok=True)
-        umap_xy = adata.obsm["X_umap_banksy"]
-        for r in scan:
-            try:
-                lab = adata.obs[f"_scan_{r}"].astype("category").cat.codes.values
-                fig, ax = plt.subplots(figsize=(5, 5))
-                ax.scatter(umap_xy[:, 0], umap_xy[:, 1], c=lab, cmap="tab20",
-                           s=2, linewidths=0, rasterized=True)
-                ax.set_title(f"resolution {r} – {adata.obs[f'_scan_{r}'].nunique()} domains",
-                             fontsize=9)
-                ax.set_axis_off()
-                fig.savefig(os.path.join(scan_dir, f"umap_res{r}.png"),
-                            dpi=DPI, bbox_inches="tight")
-                plt.close(fig)
-            except Exception as e:
-                log.warning("  scan UMAP (res %.2f) failed: %s", r, e)
-
     # niche composition (by sample, and by region if present)
     try:
         composition_pair(adata, "sample", NICHE_KEY, niche_palette, plots_dir,
@@ -482,9 +519,6 @@ try:
         log.warning("  niche composition barplots failed: %s", e)
 
     # ── Save light concatenated object ───────────────────────────────────
-    drop_cols = [c for c in adata.obs.columns if c.startswith("_scan_")]
-    if drop_cols:
-        adata.obs.drop(columns=drop_cols, inplace=True, errors="ignore")
     log.info("Saving concatenated → %s", out_concat)
     Path(out_concat).parent.mkdir(parents=True, exist_ok=True)
     adata.write(out_concat)

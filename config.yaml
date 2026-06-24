@@ -138,28 +138,38 @@ gene_exploration:
 # `spatial_niche` obs column by annotate_cells. Set enabled: false to skip.
 spatial_niches:
   enabled: true
+  # Reproducibility / cost control (mirrors use_precomputed_clusters for leiden).
+  # When true, the rule RELOADS niche labels instead of recomputing BANKSY+Leiden:
+  # it reads niche_{sample}.tsv from niche_dir (external/backup) if present for
+  # every sample, else from the rule's own output dir, else falls back to
+  # computing. It still concatenates, writes the canonical TSVs, and regenerates
+  # plots — cheaply. Compute once, then set true to freeze + skip the heavy work.
+  use_precomputed: false
   # External/precomputed niche TSV directory (files named niche_{sample}.tsv,
-  # columns: barcode <TAB> spatial_niche). Empty = compute with the rule.
-  # Set this to swap in a different niche method without changing the pipeline.
-  niche_dir: ""
+  # columns: barcode <TAB> spatial_niche). Empty = use the rule's own output dir.
+  # Also lets you swap in a different niche method without changing the pipeline.
+  niche_dir: "/scratch/CBiB/soterino/niches_visiumhd/"
   lambda: 0.8                  # 0.8 = domain/niche segmentation (0.2 = cell typing)
   num_neighbours: 18           # BANKSY spatial kNN (single-cell / MERFISH-like)
   cluster_n_neighbours: 15     # expression-space kNN for Leiden clustering (scanpy)
-  n_iterations: -1              # Leiden iterations (igraph flavor); 2 = fast & safe (not -1)
+  n_iterations: 2              # Leiden iterations (igraph flavor); 2 = fast & safe (not -1)
   max_m: 1                     # azimuthal Fourier harmonics for the AGF
   nbr_weight_decay: "scaled_gaussian"
-  use_hvg: true               # false = all genes (see note: memory at scale)
+  use_hvg: false               # false = all genes (see note: memory at scale)
   n_top_genes: 2000            # only used when use_hvg: true
   # n_pcs omitted → defaults to analysis.n_pcs (the PCs used in preprocess_umap)
   niche_resolution: 0.3        # Leiden resolution that defines the niche labels
                                # (domains are coarse; lower = fewer, broader niches)
-  # Diagnostic scan (plots only) to help calibrate niche_resolution.
-  # OFF by default: each extra resolution is another Leiden partition. Turn on
-  # once on a subset to choose niche_resolution, then leave off for production.
-  run_resolution_scan: false
-  resolution_scan_min: 0.8
-  resolution_scan_max: 1.2
-  resolution_scan_step: 0.2
+  # Optional spatial refinement (BANKSY majority vote): each cell adopts its
+  # spatial-neighbourhood majority niche when >50% of neighbours agree. Smooths
+  # salt-and-pepper / spatially-incoherent niches. Reads staggered coords, so it
+  # acts per-sample. Applies to freshly-computed AND reloaded/precomputed niches.
+  # NB: this targets spatial INCOHERENCE, not single-sample niches — a coherent
+  # niche present in one sample is kept. Raw labels are saved in obs.
+  refine: false
+  refine_num_neigh: 6          # spatial neighbours used in the majority vote
+  refine_iterations: 1         # number of refinement passes (used unless refine_auto)
+  refine_auto: false           # iterate until <0.5% of cells change (ignores refine_iterations)
   # Integrated UMAP is viz-only and very slow on >1M cells (umap-learn). The
   # per-sample spatial maps and niche TSVs do not need it. Leave off for speed.
   compute_umap: false
@@ -234,7 +244,7 @@ resources:
     runtime: 360
     threads: 8
   spatial_niches:
-    mem_mb: 175768
+    mem_mb: 124768
     runtime: 720
     threads: 16
   subcluster:
