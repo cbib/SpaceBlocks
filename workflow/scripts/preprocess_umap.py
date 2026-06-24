@@ -387,25 +387,33 @@ try:
             _meta_source = out_metadata
             log.info("Reloading precomputed clusters from output: %s", _meta_source)
         else:
-            _meta_source = None
-            log.warning("use_precomputed_clusters is true but no metadata file found. Computing fresh.")
+            # SAFEGUARD: missing metadata → ERROR OUT (do not silently recompute,
+            # which would defeat the reproducibility intent of use_precomputed).
+            raise FileNotFoundError(
+                f"use_precomputed_clusters=True but no metadata TSV found for sample "
+                f"'{sample_id}' (searched {PRECOMPUTED_DIR or '(precomputed_metadata_dir unset)'} "
+                f"and {out_metadata}). Aborting — set use_precomputed_clusters: false to "
+                f"compute, or provide metadata_{sample_id}.tsv.")
 
-        if _meta_source:
-            saved_meta = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
-            for key in leiden_keys:
-                if key in saved_meta.columns:
-                    adata.obs[key] = pd.Categorical(saved_meta[key].reindex(adata.obs_names).astype(int))
-                    log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
-                else:
-                    log.warning("  %s not in saved metadata, computing …", key)
-                    res = float(key.replace("leiden_", "").replace("_", "."))
-                    sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
-        else:
-            log.info("Computing Leiden for %d resolutions: %s", len(resolutions), list(resolutions))
-            for res in resolutions:
-                key = f"leiden_{str(res).replace('.', '_')}"
+        saved_meta = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
+        # SAFEGUARD: every cell of this sample must be covered by the metadata,
+        # else ERROR OUT (the TSV may be empty or out of sync with the cells).
+        missing_cells = adata.obs_names.difference(saved_meta.index)
+        if saved_meta.shape[0] == 0 or len(missing_cells) > 0:
+            raise ValueError(
+                f"use_precomputed_clusters=True but metadata for sample '{sample_id}' "
+                f"does not cover all cells — {len(missing_cells)}/{adata.n_obs} cells "
+                f"absent from {_meta_source} (the TSV may be empty or out of sync). "
+                f"Recompute with use_precomputed_clusters: false, or supply a complete file.")
+
+        for key in leiden_keys:
+            if key in saved_meta.columns:
+                adata.obs[key] = pd.Categorical(saved_meta[key].reindex(adata.obs_names).astype(int))
+                log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
+            else:
+                log.warning("  %s not in saved metadata, computing …", key)
+                res = float(key.replace("leiden_", "").replace("_", "."))
                 sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
-                log.info("  res=%.1f → %d clusters", res, adata.obs[key].nunique())
     else:
         log.info("Computing Leiden for %d resolutions: %s", len(resolutions), list(resolutions))
         for res in resolutions:

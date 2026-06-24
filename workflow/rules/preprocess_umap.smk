@@ -3,9 +3,13 @@ def _preprocess_inputs(wc):
     if USE_PRECOMPUTED:
         precomp_dir = config.get("precomputed_metadata_dir", "")
         if precomp_dir:
-            meta_file = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
-            if os.path.isfile(meta_file):
-                inputs["precomputed_meta"] = meta_file
+            # MANDATORY input: Snakemake aborts (Missing input files) if this
+            # sample's metadata is absent, before the job runs — complementary to
+            # the in-script safeguard, which also catches empty / partial-coverage
+            # TSVs (which Snakemake cannot see). When precomputed_metadata_dir is
+            # empty the script reloads from the rule's own output (no input added,
+            # no circular dependency) and the script check applies alone.
+            inputs["precomputed_meta"] = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
     return inputs
 
 
