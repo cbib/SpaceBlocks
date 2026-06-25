@@ -64,7 +64,11 @@ ext_annot = config.get("external_annotation", {})
 if ext_annot.get("enabled", False):
     ANNOT_TYPES.append("external_annotation")
 
-ANALYSIS_LEVELS = ["by_region", "by_celltype_region"] # Future: append "by_niche_region" once niche identification is added
+ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"])
+
+# Pseudobulk DESeq2 DE is OPTIONAL and OFF by default (the pseudobulk_aggregate
+# count matrices + PCA QC are still produced; only the R/DESeq2 step is gated).
+RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 
 
 def _cluster_annotations_available():
@@ -134,7 +138,8 @@ def get_all_targets(wildcards):
         for at in ANNOT_TYPES:
             for level in ANALYSIS_LEVELS:
                 targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/aggregated")
-                targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/de_results")
+                if RUN_DE:
+                    targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/de_results")
         targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
         targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
@@ -193,8 +198,8 @@ rule run_downstream:
     """Annotation + DE + neighbourhood + integration."""
     input:
         expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad", sample=SAMPLE_IDS),
-        expand(f"{OUTDIR_PP}/pseudobulk/{{at}}/{{level}}/de_results",
-               at=ANNOT_TYPES, level=ANALYSIS_LEVELS),
+        *(expand(f"{OUTDIR_PP}/pseudobulk/{{at}}/{{level}}/de_results",
+                 at=ANNOT_TYPES, level=ANALYSIS_LEVELS) if RUN_DE else []),
         expand(f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{at}}",
                sample=SAMPLE_IDS, at=ANNOT_TYPES),
         f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",

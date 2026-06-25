@@ -30,6 +30,7 @@ except NameError:                      # very old Snakemake
 sys.path.insert(0, _here)
 from composition_barplots import (
     composition_pair, find_niche_column, composition_grouped,
+    build_niche_palette,
 )
 
 try:
@@ -224,6 +225,43 @@ try:
                 os.path.join(bar_dir, f"barplot_{plabel}_grouped_by_region_{suffix}.png"),
                 normalize=norm, outer_order=region_order, inner_order=sample_order,
                 cat_label=plabel, ylabel=yl, dpi=DPI)
+
+    # ── Spatial-niche composition (niche as the stack) ───────────────────
+    # Niche colours come from the shared value-deterministic palette so they
+    # match the spatial_niches rule. (Cell-type-by-niche, with niche as the
+    # x-axis, is already produced inside the annot loop above.)
+    if niche_col:
+        nvals = adata.obs[niche_col].astype(str)
+        try:
+            ncats = sorted(nvals.unique(), key=lambda x: int(x))
+        except ValueError:
+            ncats = sorted(nvals.unique())
+        niche_cfg = (ANNOTATION_COLORS.get("spatial_niche", {})
+                     if isinstance(ANNOTATION_COLORS, dict) else {})
+        niche_pal = build_niche_palette(ncats, niche_cfg)
+
+        # (1) spatial-niche composition per sample (absolute + relative)
+        composition_pair(adata, "sample_batch", niche_col, niche_pal, bar_dir,
+                         "barplot_spatial_niche_by_sample",
+                         group_label="Sample", cat_label="Niche", dpi=DPI)
+
+        # (2) grouped by area (region), composition by spatial niche
+        #     (absolute + relative; mirrors barplot_*_grouped_by_region)
+        if has_regions:
+            region_order2 = (list(REGION_COLORS.keys())
+                             if isinstance(REGION_COLORS, dict) and REGION_COLORS
+                             else None)
+            sample_order2 = sorted(adata.obs["sample_batch"].astype(str).unique())
+            for norm, suffix, yl in [(False, "absolute", "Number of cells"),
+                                     (True, "relative", "Percentage (%)")]:
+                composition_grouped(
+                    adata, "region_annotation", "sample_batch", niche_col,
+                    niche_pal,
+                    os.path.join(bar_dir,
+                        f"barplot_spatial_niche_grouped_by_region_{suffix}.png"),
+                    normalize=norm, outer_order=region_order2,
+                    inner_order=sample_order2, cat_label="Niche", ylabel=yl,
+                    dpi=DPI)
 
     # ── 4. Geosketch ─────────────────────────────────────────────────────
     if not HAS_GEOSKETCH:

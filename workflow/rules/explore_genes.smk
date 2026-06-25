@@ -56,6 +56,7 @@ rule explore_genes_sample:
         outdir=f"{OUTDIR_PP}/gene_exploration",
         sample_id=lambda wc: wc.sample,
         annot_key=GENE_EXPLORATION.get("annot_key", "cell_type_tsv"),
+        niche_column=GENE_EXPLORATION.get("niche_column", ""),
         aucell_fraction=GENE_EXPLORATION.get("aucell_max_rank_fraction", 0.05),
         dpi=GENE_EXPLORATION.get("dpi", ANALYSIS.get("plot_dpi", 300)),
         annotation_colors=config.get("annotation_colors", {}),

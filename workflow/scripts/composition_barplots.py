@@ -47,6 +47,31 @@ EDGE_COLOR = "black"
 EDGE_LW = 0.4
 
 
+def build_niche_palette(categories, config_colors=None):
+    """Deterministic niche → colour map, IDENTICAL across every rule that plots
+    spatial niches (spatial_niches, sample_report, integrate_samples,
+    explore_genes). Config colours (annotation_colors['spatial_niche']) win;
+    otherwise each INTEGER niche label K maps to a FIXED slot base[K], so a niche
+    keeps its colour even when a plot only holds a SUBSET of niches (e.g. a single
+    sample) or the labels are non-contiguous (e.g. after refinement). Non-integer
+    labels fall back to position. tab20 + tab20b = 40 base colours, then cycles."""
+    base = (list(matplotlib.colormaps["tab20"].colors)
+            + list(matplotlib.colormaps["tab20b"].colors))
+    cfg = config_colors if isinstance(config_colors, dict) else {}
+    pal = {}
+    for pos, c in enumerate(categories):
+        key = str(c)
+        if key in cfg:
+            pal[key] = cfg[key]
+        else:
+            try:
+                idx = int(c)
+            except (ValueError, TypeError):
+                idx = pos
+            pal[key] = matplotlib.colors.to_hex(base[idx % len(base)])
+    return pal
+
+
 # ── colour resolution ───────────────────────────────────────────────────────
 
 def _default_palette(n):

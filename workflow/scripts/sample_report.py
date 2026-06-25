@@ -30,7 +30,8 @@ try:
 except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
-from composition_barplots import draw_stacked_composition, find_niche_column
+from composition_barplots import (draw_stacked_composition, find_niche_column,
+                                  build_niche_palette)
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -202,6 +203,40 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
             figs.append(figb)
         except Exception as e:
             log.warning("  composition barplots failed: %s", e)
+
+    # Spatial-niche composition per region (niche AS the stack; colours match
+    # the spatial_niches rule via the shared value-deterministic palette).
+    if niche and has_regions:
+        try:
+            nvals = adata.obs[niche].astype(str)
+            try:
+                ncats = sorted(nvals.unique(), key=lambda x: int(x))
+            except ValueError:
+                ncats = sorted(nvals.unique())
+            niche_cfg = (annotation_colors.get("spatial_niche", {})
+                         if isinstance(annotation_colors, dict) else {})
+            niche_pal = build_niche_palette(ncats, niche_cfg)
+            ctn = pd.crosstab(adata.obs["region_annotation"], nvals)
+            fign = plt.figure(figsize=(13, 5.5))
+            fign.suptitle(f"Sample: {sample_id} — spatial niche composition",
+                          fontsize=16, fontweight="bold", y=1.02)
+            gsn = gridspec.GridSpec(1, 2, figure=fign, wspace=0.5)
+            axn_abs = fign.add_subplot(gsn[0, 0])
+            draw_stacked_composition(axn_abs, ctn, niche_pal, normalize=False,
+                                     ylabel="Number of cells", xlabel="Region",
+                                     title="Niche by region (absolute)",
+                                     legend=False)
+            axn_rel = fign.add_subplot(gsn[0, 1])
+            draw_stacked_composition(axn_rel, ctn, niche_pal, normalize=True,
+                                     ylabel="Percentage (%)", xlabel="Region",
+                                     title="Niche by region (relative)",
+                                     legend_title="Niche",
+                                     legend_kwargs=dict(
+                                         ncol=max(1, len(ncats) // 15 + 1),
+                                         fontsize=6))
+            figs.append(fign)
+        except Exception as e:
+            log.warning("  niche-by-region barplot failed: %s", e)
 
     # ── Horizontal marker dotplot (genes on X), native scanpy legend column ──
     genes = _top_markers_by_tsv(adata, tsv, n=10) if tsv else []

@@ -30,6 +30,8 @@ import pandas as pd
 import scanpy as sc
 from PIL import Image
 
+from composition_barplots import find_niche_column, build_niche_palette
+
 # Large cell type × region dotplots can exceed PIL's default pixel limit
 Image.MAX_IMAGE_PIXELS = None
 
@@ -143,11 +145,33 @@ def composite_vertical(image_paths, output_path, dpi=300, pad=30):
         img.close()
 
 
+def _compact_legend(ax, title="", per_col=20, fontsize=5):
+    """Recast an axis legend into multiple narrow columns so a high niche count
+    does not blow up the panel (~per_col entries per column)."""
+    leg = ax.get_legend()
+    if leg is None:
+        return
+    handles = (leg.legend_handles if hasattr(leg, "legend_handles")
+               else getattr(leg, "legendHandles", []))
+    labels = [t.get_text() for t in leg.get_texts()]
+    if not handles:
+        return
+    ncol = max(1, (len(labels) + per_col - 1) // per_col)
+    ax.legend(handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5),
+              ncol=ncol, fontsize=fontsize, frameon=False, title=title,
+              title_fontsize=fontsize + 1, handletextpad=0.3,
+              columnspacing=0.6, labelspacing=0.25, borderaxespad=0.2)
+
+
 def generate_spatial_composite(adata, color_col, annot_key, has_regions,
                                library_id, out_path, vmin, vmax, dpi,
-                               sample_id, title="expression"):
-    """Three-panel spatial composite: expression/score + cell type + region."""
-    n_panels = 2 + (1 if has_regions else 0)
+                               sample_id, title="expression",
+                               niche_col=None, niche_palette=None):
+    """Spatial composite: expression/score + cell type + region (+ spatial niche
+    when available). The niche panel uses the shared palette and a compacted
+    multi-column legend so a high niche count does not distort the composite."""
+    has_niche = bool(niche_col and niche_col in adata.obs.columns)
+    n_panels = 2 + (1 if has_regions else 0) + (1 if has_niche else 0)
     fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7),
                               gridspec_kw={"wspace": 0.5})
     fig.suptitle(sample_id, fontsize=16, fontweight="bold", y=1.02)
@@ -172,6 +196,7 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
         log.warning("    Spatial celltype failed: %s", e)
         axes[1].set_title("Cell types (failed)")
 
+    idx = 2
     # (3) Region
     if has_regions:
         try:
@@ -179,10 +204,31 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
                           frameon=False, title="Regions",
                           library_id=library_id,
                           legend_fontsize=6, na_in_legend=False,
-                          ax=axes[2], show=False)
+                          ax=axes[idx], show=False)
         except Exception as e:
             log.warning("    Spatial region failed: %s", e)
-            axes[2].set_title("Regions (failed)")
+            axes[idx].set_title("Regions (failed)")
+        idx += 1
+
+    # (4) Spatial niche — colours consistent with the spatial_niches rule, legend
+    #     compacted into columns so a high niche count stays readable.
+    if has_niche:
+        try:
+            if not isinstance(adata.obs[niche_col].dtype, pd.CategoricalDtype):
+                adata.obs[niche_col] = adata.obs[niche_col].astype(str).astype("category")
+            cats = list(adata.obs[niche_col].cat.categories)
+            if niche_palette:
+                adata.uns[f"{niche_col}_colors"] = [
+                    niche_palette.get(str(c), "#cccccc") for c in cats]
+            sc.pl.spatial(adata, color=niche_col, spot_size=20, frameon=False,
+                          title="Spatial niches", library_id=library_id,
+                          legend_fontsize=5, na_in_legend=False,
+                          ax=axes[idx], show=False)
+            _compact_legend(axes[idx], title="Niche")
+        except Exception as e:
+            log.warning("    Spatial niche failed: %s", e)
+            axes[idx].set_title("Spatial niches (failed)")
+        idx += 1
 
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -444,6 +490,7 @@ AUCELL_FRACTION   = float(snakemake.params.aucell_fraction)
 DPI               = int(snakemake.params.dpi)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+NICHE_COLUMN      = str(getattr(snakemake.params, "niche_column", "") or "")
 
 try:
     log.info("=" * 70)
@@ -481,6 +528,22 @@ try:
     has_regions = ("region_annotation" in adata.obs.columns
                    and adata.obs["region_annotation"].nunique() > 1
                    and not all(adata.obs["region_annotation"] == "Unlabeled"))
+
+    # Spatial niche (if present): shared value-deterministic palette → colours
+    # match the spatial_niches rule across the pipeline.
+    niche_col = find_niche_column(adata, NICHE_COLUMN or None)
+    niche_palette = None
+    if niche_col:
+        _nv = adata.obs[niche_col].astype(str)
+        try:
+            _ncats = sorted(_nv.unique(), key=lambda x: int(x))
+        except ValueError:
+            _ncats = sorted(_nv.unique())
+        niche_palette = build_niche_palette(
+            _ncats, ANNOTATION_COLORS.get("spatial_niche", {})
+            if isinstance(ANNOTATION_COLORS, dict) else {})
+        log.info("  spatial niche '%s' (%d niches) → composite panel",
+                 niche_col, len(_ncats))
 
     # ── 3. Validate ──────────────────────────────────────────────────────
     valid_entries = {}
@@ -531,7 +594,8 @@ try:
         generate_spatial_composite(
             adata, gene_name, ANNOT_KEY, has_regions, library_id,
             os.path.join(spatial_dir, f"{sample_id}_spatial.png"),
-            vmin, vmax, DPI, sample_id, title="expression")
+            vmin, vmax, DPI, sample_id, title="expression",
+            niche_col=niche_col, niche_palette=niche_palette)
 
         # Dotplot composite
         generate_dotplot_composite(
@@ -556,7 +620,8 @@ try:
         generate_spatial_composite(
             adata, score_col, ANNOT_KEY, has_regions, library_id,
             os.path.join(spatial_dir, f"{sample_id}_spatial.png"),
-            vmin, vmax, DPI, sample_id, title="AUCell")
+            vmin, vmax, DPI, sample_id, title="AUCell",
+            niche_col=niche_col, niche_palette=niche_palette)
 
         # Dotplot composite – member genes
         generate_dotplot_composite(

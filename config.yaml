@@ -53,6 +53,16 @@ analysis:
   # Integration
   sketch_fraction: 0.25              # fraction of cells for geosketch
   # Pseudobulk
+  run_pseudobulk_de: true       # OPTIONAL DESeq2 DE (R). Off by default; the
+                                 # pseudobulk_aggregate matrices + PCA QC still
+                                 # run — only the DE step is gated. Set true to
+                                 # request the de_results/ outputs.
+  # Grouping levels for pseudobulk aggregation + (optional) DE. Each listed level
+  # is built (and DE-tested when run_pseudobulk_de is true). "by_niche_region" is
+  # available but intentionally NOT included by default: with a high spatial-niche
+  # count it creates many pseudobulk groups (one per niche × region) and, for DE,
+  # many comparisons — so add it deliberately.
+  analysis_levels: ["by_region", "by_celltype_region"] # "by_niche_region" available but excluded
   min_cells_per_pseudobulk: 10   # minimum cells to form a pseudobulk sample
   min_replicates: 3              # minimum samples per condition for DE
   de_n_genes: 25                 # number of DE genes to plot

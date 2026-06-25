@@ -25,6 +25,8 @@ import pandas as pd
 import scanpy as sc
 from PIL import Image
 
+from composition_barplots import find_niche_column, build_niche_palette
+
 # Large cell type × region dotplots can exceed PIL's default pixel limit
 Image.MAX_IMAGE_PIXELS = None
 
@@ -426,10 +428,32 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
             pass
 
 
+def _compact_legend(ax, title="", per_col=20, fontsize=5):
+    """Recast an axis legend into multiple narrow columns so a high niche count
+    does not blow up the panel (~per_col entries per column)."""
+    leg = ax.get_legend()
+    if leg is None:
+        return
+    handles = (leg.legend_handles if hasattr(leg, "legend_handles")
+               else getattr(leg, "legendHandles", []))
+    labels = [t.get_text() for t in leg.get_texts()]
+    if not handles:
+        return
+    ncol = max(1, (len(labels) + per_col - 1) // per_col)
+    ax.legend(handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5),
+              ncol=ncol, fontsize=fontsize, frameon=False, title=title,
+              title_fontsize=fontsize + 1, handletextpad=0.3,
+              columnspacing=0.6, labelspacing=0.25, borderaxespad=0.2)
+
+
 def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
-                             vmin, vmax, dpi, title="expression"):
-    """Single composite PNG with 2–3 UMAPs side by side."""
-    n_panels = 2 + (1 if has_regions else 0)
+                             vmin, vmax, dpi, title="expression",
+                             niche_col=None, niche_palette=None):
+    """Composite PNG with 2–4 UMAPs (expression/score + cell type + region +
+    spatial niche). The niche panel uses the shared palette and a compacted
+    multi-column legend for high niche counts."""
+    has_niche = bool(niche_col and niche_col in adata.obs.columns)
+    n_panels = 2 + (1 if has_regions else 0) + (1 if has_niche else 0)
     fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7),
                               gridspec_kw={"wspace": 0.5})
 
@@ -448,14 +472,32 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
     except Exception as e:
         log.warning("  UMAP celltype failed: %s", e)
 
+    idx = 2
     if has_regions:
         try:
             sc.pl.umap(adata, color="region_annotation", size=2, frameon=False,
                         title="Regions", legend_fontsize=6,
                         na_in_legend=False,
-                        ax=axes[2], show=False)
+                        ax=axes[idx], show=False)
         except Exception as e:
             log.warning("  UMAP region failed: %s", e)
+        idx += 1
+
+    if has_niche:
+        try:
+            if not isinstance(adata.obs[niche_col].dtype, pd.CategoricalDtype):
+                adata.obs[niche_col] = adata.obs[niche_col].astype(str).astype("category")
+            cats = list(adata.obs[niche_col].cat.categories)
+            if niche_palette:
+                adata.uns[f"{niche_col}_colors"] = [
+                    niche_palette.get(str(c), "#cccccc") for c in cats]
+            sc.pl.umap(adata, color=niche_col, size=2, frameon=False,
+                        title="Spatial niches", legend_fontsize=5,
+                        na_in_legend=False, ax=axes[idx], show=False)
+            _compact_legend(axes[idx], title="Niche")
+        except Exception as e:
+            log.warning("  UMAP niche failed: %s", e)
+        idx += 1
 
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -585,6 +627,22 @@ try:
     sample_col = next((c for c in ["sample", "sample_batch"]
                        if c in adata.obs.columns), None)
 
+    # Spatial-niche palette (shared, value-deterministic) → niche colours match
+    # the spatial_niches rule in the UMAP composite niche panel.
+    niche_col = NICHE_COLUMN if has_niche else None
+    niche_palette = None
+    if has_niche:
+        _nv = adata.obs[niche_col].astype(str)
+        try:
+            _ncats = sorted(_nv.unique(), key=lambda x: int(x))
+        except ValueError:
+            _ncats = sorted(_nv.unique())
+        niche_palette = build_niche_palette(
+            _ncats, ANNOTATION_COLORS.get("spatial_niche", {})
+            if isinstance(ANNOTATION_COLORS, dict) else {})
+        log.info("spatial niche '%s' (%d niches) → UMAP panel + dotplots",
+                 niche_col, len(_ncats))
+
     # ── 7. Generate PNGs ─────────────────────────────────────────────────
 
     for gene_name in individual_genes:
@@ -605,7 +663,8 @@ try:
                           int_dir, gene_name, DPI, ANNOTATION_COLORS, REGION_COLORS)
         generate_umap_composite(adata, gene_name, ANNOT_KEY, has_regions,
                                 os.path.join(int_dir, f"{gene_name}_UMAPs.png"),
-                                vmin, vmax, DPI, "expression")
+                                vmin, vmax, DPI, "expression",
+                                niche_col=niche_col, niche_palette=niche_palette)
 
         # Per-entry, all-samples contribution (patient / patient×area / patient×ct)
         generate_sample_contribution(
@@ -667,7 +726,8 @@ try:
         # UMAPs
         generate_umap_composite(adata, score_col, ANNOT_KEY, has_regions,
                                 os.path.join(int_dir, f"{sig_name}_UMAPs.png"),
-                                vmin, vmax, DPI, "AUCell")
+                                vmin, vmax, DPI, "AUCell",
+                                niche_col=niche_col, niche_palette=niche_palette)
 
         if has_niche:
             try:
@@ -686,6 +746,53 @@ try:
             except Exception as e:
                 log.warning("  Niche dotplot failed: %s", e)
                 plt.close("all")
+
+        # Member-gene expression per niche (genes × niches) — new separate plot
+        if has_niche and present_genes:
+            try:
+                pg = [g for g in present_genes if g in adata.var_names]
+                if pg:
+                    n_niche = adata.obs[NICHE_COLUMN].nunique()
+                    fig_w = max(8, len(pg) * 0.5 + 4)
+                    sc.pl.dotplot(adata, var_names=pg, groupby=NICHE_COLUMN,
+                                  standard_scale="var",
+                                  figsize=(fig_w, max(4, n_niche * 0.5)),
+                                  title=f"{sig_name} genes – by niche",
+                                  show=False)
+                    plt.savefig(os.path.join(int_dir,
+                                f"{sig_name}_genes_dotplot_niche.png"),
+                                dpi=DPI, bbox_inches="tight")
+                    plt.close("all")
+            except Exception as e:
+                log.warning("  Niche member-gene dotplot failed: %s", e)
+                plt.close("all")
+
+    # ── Overall AUCell-by-niche overview: ALL signatures' scores × niches in
+    #    one dotplot (overall contribution of each signature per niche) ──────
+    if has_niche and signatures:
+        try:
+            sig_cols = [f"AUCell_{s}" for s in signatures
+                        if f"AUCell_{s}" in adata.obs.columns]
+            if sig_cols:
+                score_ad = sc.AnnData(
+                    X=adata.obs[sig_cols].to_numpy(dtype=np.float32),
+                    obs=adata.obs.drop(columns=sig_cols, errors="ignore"),
+                    var=pd.DataFrame(
+                        index=[c.replace("AUCell_", "") for c in sig_cols]))
+                n_niche = adata.obs[NICHE_COLUMN].nunique()
+                fig_w = max(8, len(sig_cols) * 0.5 + 4)
+                sc.pl.dotplot(score_ad, var_names=list(score_ad.var_names),
+                              groupby=NICHE_COLUMN, standard_scale="var",
+                              figsize=(fig_w, max(4, n_niche * 0.5)),
+                              title="AUCell signatures – by niche (overall)",
+                              show=False)
+                plt.savefig(os.path.join(base_dir, "aucell_overall_by_niche.png"),
+                            dpi=DPI, bbox_inches="tight")
+                plt.close("all")
+                del score_ad
+        except Exception as e:
+            log.warning("Overall AUCell-by-niche dotplot failed: %s", e)
+            plt.close("all")
 
     del adata
     gc.collect()

@@ -46,7 +46,7 @@ from banksy_utils.refine_clusters import refine_once
 
 # Shared composition-barplot helpers (scripts/ is on sys.path for script: rules)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from composition_barplots import composition_pair  # noqa: E402
+from composition_barplots import composition_pair, build_niche_palette  # noqa: E402
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -147,21 +147,6 @@ def stagger_coordinates(adata, sample_key, coord_keys):
     adata.obsm[xy_key] = np.vstack([df["x"].values, df["y"].values]).T
     log.info("  staggered %d samples along x (global_max_x=%.1f)",
              len(order), global_max_x)
-
-
-def build_niche_palette(categories, config_colors):
-    """One niche → colour mapping reused across every niche plot, so a niche has
-    the same colour in the spatial maps, the staggered map, the UMAPs and the
-    composition barplots. Uses config colours where provided, else tab20(+b)."""
-    import matplotlib
-    base = (list(matplotlib.colormaps["tab20"].colors)
-            + list(matplotlib.colormaps["tab20b"].colors))
-    cfg = config_colors or {}
-    pal = {}
-    for i, c in enumerate(categories):
-        key = str(c)
-        pal[key] = cfg.get(key, matplotlib.colors.to_hex(base[i % len(base)]))
-    return pal
 
 
 def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
