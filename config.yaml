@@ -38,6 +38,43 @@ external_annotation:
   enabled: false
   column: "manual_celltype"
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  Input contract (modular head → core hand-off)
+# ═══════════════════════════════════════════════════════════════════════════
+# prepare_input writes the UNFILTERED contract h5ad; validate_input, qc_sweep and
+# preprocess_umap read it. The path (contract.unfiltered_h5ad) and the validation
+# output root (outdir) are derived in the Snakefile from post_processing_outdir,
+# so only the semantic keys live here.
+contract:
+  sample_key: "sample"             # obs column identifying the sample
+  spatial_key: "spatial"           # obsm key holding the (x, y) coordinates
+  require_region: false            # hard-fail if obs.region_annotation is missing
+  require_raw_counts: true         # hard-fail if X is not integer raw counts
+  mito_prefix: ["MT-", "mt-"]      # gene-name prefixes used to detect mito genes
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  QC sweep — OPTIONAL pre-filtering diagnostic (run: snakemake qc_sweep_all)
+# ═══════════════════════════════════════════════════════════════════════════
+# Visualises WHERE candidate QC thresholds remove cells, before committing the
+# analysis.min_* / max_* filters. Writes plots + TSVs only — never an h5ad and
+# never filters. Thresholds are LISTS per feature; each value is drawn as a cutoff
+# and gets its own "landing" figure (qc_remove_<feature>.png).
+qc_sweep:
+  ingest_enabled: false            # overlay ingest cell-type labels on removed cells
+  ingest_pattern: ""               # {sample} pattern, e.g.
+                                   # "/scratch/.../Samples/{sample}/adata_{sample}_ingested.h5ad"
+  ingest_key: "cell_type_ingest"   # obs column carrying the cell-type label
+  cell_id_key: "cell_id"           # obs column used to match ingest ↔ contract cells
+  dpi: 300
+  thresholds:
+    default:                       # brackets the chosen analysis.* values below
+      min_genes:  [50, 100, 200]
+      min_counts: [1, 10, 50]
+      max_counts: [3000, 5000]
+      max_pct_mt: [10, 15, 20]
+    # per_sample:                  # optional; overrides `default` key-by-key
+    #   SAMPLE_A: { max_counts: [4000] }
+
 analysis:
   plot_dpi: 300                   # dpi used for plotting through the pipeline rules
   min_counts: 1
@@ -221,6 +258,22 @@ resources:
     mem_mb: 65536
     runtime: 1200
     threads: 16
+  generate_qupath_image:        # HEAD: pure file copy → very light
+    mem_mb: 4096
+    runtime: 30
+    threads: 1
+  prepare_input:                # HEAD: raw 10x read + centroid groupby over many 2µm bins
+    mem_mb: 32768
+    runtime: 240
+    threads: 4
+  validate_input:              # CORE gate: loads the full unfiltered h5ad to check it
+    mem_mb: 32768
+    runtime: 30
+    threads: 2
+  qc_sweep:                    # CORE optional: loads h5ad + plots ~1M cells (violins/spatial)
+    mem_mb: 49152
+    runtime: 180
+    threads: 4
   preprocess_umap:
     mem_mb: 32768
     runtime: 240

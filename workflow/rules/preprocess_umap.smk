@@ -1,37 +1,37 @@
+# workflow/rules/preprocess_umap.smk
+# ─────────────────────────────────────────────────────────────────────────────
+# CORE preprocessing. Now reads the UNFILTERED contract h5ad
+# (config["contract"]["unfiltered_h5ad"], produced by prepare_input) instead of
+# the Space Ranger tree, so it is technology-agnostic: QC filter → normalise →
+# PCA → UMAP → multi-resolution Leiden, with optional precomputed-cluster reload.
+# (The qupath_image output moved to rule generate_qupath_image; SR/image/geojson
+# reading moved to rule prepare_input.)
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _preprocess_inputs(wc):
-    inputs = {"sr_done": f"{OUTDIR_SR}/{wc.sample}/.done"}
+    inputs = {
+        "h5ad": config["contract"]["unfiltered_h5ad"].format(sample=wc.sample),
+        # gate: core runs only after the contract is validated
+        "validation": f"{config['outdir']}/{wc.sample}/validation/input_validation.json",
+    }
     if USE_PRECOMPUTED:
         precomp_dir = config.get("precomputed_metadata_dir", "")
         if precomp_dir:
-            # MANDATORY input: Snakemake aborts (Missing input files) if this
-            # sample's metadata is absent, before the job runs — complementary to
-            # the in-script safeguard, which also catches empty / partial-coverage
-            # TSVs (which Snakemake cannot see). When precomputed_metadata_dir is
-            # empty the script reloads from the rule's own output (no input added,
-            # no circular dependency) and the script check applies alone.
-            inputs["precomputed_meta"] = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
+            meta_file = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
+            if os.path.isfile(meta_file):
+                inputs["precomputed_meta"] = meta_file
     return inputs
 
 
 rule preprocess_umap:
-    """
-    Load Space Ranger outputs, QC, normalise, PCA, Harmony, UMAP, all Leiden.
-
-    Discovers files from the Space Ranger output directory rather than
-    depending on hardcoded paths, since the tree varies across versions.
-    Saves metadata TSV with cluster assignments for reproducibility, or uses
-    precomputed metadata if specified in config.
-    """
+    """Core QC / normalise / PCA / UMAP / multi-resolution Leiden on the contract h5ad."""
     input:
         unpack(_preprocess_inputs),
     output:
         adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
         metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
-        qupath_image=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
     params:
         sample_id=lambda wc: wc.sample,
-        sr_outdir=f"{OUTDIR_SR}/{{sample}}",
-        geojson_path=GEOJ_DIR,
         min_counts=ANALYSIS.get("min_counts", 1),
         min_cells=ANALYSIS.get("min_cells", 3),
         min_genes=ANALYSIS.get("min_genes", 100),

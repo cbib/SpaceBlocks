@@ -34,6 +34,15 @@ GEOJ_DIR   = config["geojson_path"]
 SAMPLES_DIR = f"{OUTDIR_PP}/Samples"
 RANDOM_SEED = config.get("random_seed", 42)
 
+# ── Input contract (modular head → core hand-off) ────────────────────────────
+# prepare_input WRITES this unfiltered h5ad; validate_input, qc_sweep and
+# preprocess_umap READ it. Path + validation root are derived here from
+# post_processing_outdir so they follow SAMPLES_DIR automatically (set after the
+# config-schema validation above, so they don't need to be declared in the schema).
+config.setdefault("contract", {})
+config["contract"]["unfiltered_h5ad"] = f"{SAMPLES_DIR}/{{sample}}/{{sample}}_unfiltered.h5ad"
+config["outdir"] = SAMPLES_DIR     # validate_input / qc_sweep write under the per-sample tree
+
 samples_df = (
     pd.read_csv(config["samples"])
     .fillna("")
@@ -158,6 +167,10 @@ def get_all_targets(wildcards):
 
 # ── Include rules ────────────────────────────────────────────────────────────
 include: "rules/spaceranger.smk"
+include: "rules/generate_qupath_image.smk"   # HEAD: hires image for QuPath annotation
+include: "rules/prepare_input.smk"           # HEAD: builds the unfiltered contract h5ad
+include: "rules/validate_input.smk"          # CORE: input-contract gate (per sample)
+include: "rules/qc_sweep.smk"                # CORE: optional pre-filtering QC diagnostic
 include: "rules/preprocess_umap.smk"
 include: "rules/leiden_analysis.smk"
 include: "rules/ingest_ref.smk"
@@ -212,6 +225,21 @@ rule subcluster_all:
     input:
         expand(f"{OUTDIR_PP}/Subcompartments/{{sc}}",
                sc=list(config.get("subcompartments", {}).keys())),
+
+rule qupath_images:
+    """HEAD: generate the hires images to annotate in QuPath.
+
+    Run this FIRST, annotate in QuPath, export each
+    {sample}_tissue_hires_image.geojson into geojson_path, then run prepare_input
+    (or run_upstream) onward."""
+    input:
+        expand(f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
+               sample=SAMPLE_IDS),
+
+rule qc_sweep_all:
+    """Optional pre-filtering QC diagnostic for every sample (no filtering)."""
+    input:
+        expand(f"{SAMPLES_DIR}/{{sample}}/qc_sweep/qc_violins.png", sample=SAMPLE_IDS),
 
 rule explore_genes:
     """Generate gene/signature exploration PNGs (integrated + per sample)."""
