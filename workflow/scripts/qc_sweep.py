@@ -6,9 +6,11 @@ the consequences of candidate QC thresholds explicit, so the final analysis.*
 thresholds can be chosen deliberately before run_upstream. It does NOT filter,
 NOT cluster and does NOT write an h5ad.
 
-Per-feature thresholds are LISTS (e.g. min_genes=[100, 200]) resolved per sample
-upstream (shared `default` + optional `per_sample` overrides). For every cutoff
-it shows WHERE on the tissue the affected cells land.
+Per-feature thresholds are GLOBAL candidate LISTS (e.g. min_genes=[100, 200])
+applied to every sample — this is a diagnostic sweep, so the same cutoffs are
+shown everywhere. For every cutoff it shows WHERE on the tissue the affected
+cells land. (Per-sample threshold tuning lives in preprocess_umap, where the
+filters are actually committed.)
 
 Outputs (per sample)
 --------------------

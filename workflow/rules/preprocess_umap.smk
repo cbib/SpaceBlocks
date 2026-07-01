@@ -20,6 +20,13 @@ def _preprocess_inputs(wc):
             meta_file = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
             if os.path.isfile(meta_file):
                 inputs["precomputed_meta"] = meta_file
+    # OPTIONAL per-sample QC threshold overrides (TSV: first column = sample name,
+    # columns = min_counts/min_genes/min_cells/max_counts/max_pct_mt). Declared as
+    # an input only when the file exists so Snakemake tracks edits to it; the
+    # script resolves the per-sample row and falls back to the analysis.* defaults.
+    th_tsv = config.get("preprocess_thresholds", "") or ""
+    if th_tsv and os.path.isfile(th_tsv):
+        inputs["thresholds_tsv"] = th_tsv
     return inputs
 
 
@@ -30,11 +37,16 @@ rule preprocess_umap:
     output:
         adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
         metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
+        report=f"{SAMPLES_DIR}/{{sample}}/{{sample}}_report.tsv",
     params:
         sample_id=lambda wc: wc.sample,
+        # analysis.* filtering defaults; the script may override any of these
+        # per sample from the optional thresholds_tsv (absent → these defaults).
         min_counts=ANALYSIS.get("min_counts", 1),
         min_cells=ANALYSIS.get("min_cells", 3),
         min_genes=ANALYSIS.get("min_genes", 100),
+        max_counts=ANALYSIS.get("max_counts", None),   # optional upper bound; None = off
+        max_pct_mt=ANALYSIS.get("max_pct_mt", None),   # optional upper bound; None = off
         n_neighbors=ANALYSIS.get("n_neighbors", 10),
         n_pcs=ANALYSIS.get("n_pcs", 30),
         resolution_scan_min=ANALYSIS.get("resolution_scan_min", 0.2),

@@ -13,6 +13,13 @@ ingest_ref_label_key: "04_celltypes"   # obs column in the reference
 cluster_annotations: "config/cluster_annotations.tsv"
 annotation_markers: "config/annotation_markers.tsv"
 
+# OPTIONAL per-sample QC filtering thresholds for preprocess_umap.
+# TSV: first column = sample name; remaining columns any of min_counts, min_genes,
+# min_cells, max_counts, max_pct_mt. Present values override the analysis.* filter
+# defaults for that sample, key-by-key; missing samples/columns/blank cells fall
+# back to analysis.*. Leave "" to use the analysis.* defaults for every sample.
+preprocess_thresholds: ""   # e.g. "config/preprocess_thresholds.tsv"
+
 spaceranger: "/home/soterinosogo/spaceranger-4.0.1/spaceranger"
 
 geojson_path: "/scratch/CBiB/soterino/geojson"
@@ -66,20 +73,22 @@ qc_sweep:
   ingest_key: "cell_type_ingest"   # obs column carrying the cell-type label
   cell_id_key: "cell_id"           # obs column used to match ingest ↔ contract cells
   dpi: 300
-  thresholds:
-    default:                       # brackets the chosen analysis.* values below
-      min_genes:  [50, 100, 200]
-      min_counts: [1, 10, 50]
-      max_counts: [3000, 5000]
-      max_pct_mt: [10, 15, 20]
-    # per_sample:                  # optional; overrides `default` key-by-key
-    #   SAMPLE_A: { max_counts: [4000] }
+  thresholds:                      # global candidate lists — one set, all samples.
+    min_genes:  [50, 100, 200]     # (per-sample tuning lives in preprocess_umap,
+    min_counts: [1, 10, 50]        #  via preprocess_thresholds, not here.)
+    max_counts: [3000, 5000]
+    max_pct_mt: [10, 15, 20]
 
 analysis:
   plot_dpi: 300                   # dpi used for plotting through the pipeline rules
   min_counts: 1
   min_cells: 3
   min_genes: 100
+  # Optional upper-bound filters applied in preprocess_umap (omit/comment to
+  # disable — absent means "no upper filter"). Per-sample overridable via
+  # preprocess_thresholds. max_pct_mt is skipped when no MT- genes are present.
+  # max_counts: 50000
+  # max_pct_mt: 20
   n_neighbors: 10
   n_pcs: 30
   de_n_genes: 10

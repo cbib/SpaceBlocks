@@ -35,6 +35,15 @@ properties:
       cell-type labels.  If missing or empty, DE and neighbourhood
       analyses are skipped.
 
+  preprocess_thresholds:
+    type: string
+    description: >
+      Optional path to a TSV of per-sample QC filtering thresholds for
+      preprocess_umap.  First column = sample name; remaining columns any of
+      min_counts, min_genes, min_cells, max_counts, max_pct_mt.  Present values
+      override the analysis.* defaults per sample, key-by-key; missing
+      samples/columns fall back to config.  Empty string disables overrides.
+
   geojson_path:
     type: string
   spaceranger_processing_outdir:
@@ -59,6 +68,15 @@ properties:
         type: integer
         minimum: 1
         default: 100
+      max_counts:
+        type: integer
+        minimum: 1
+        description: Optional upper bound on total counts per cell (omit to disable).
+      max_pct_mt:
+        type: number
+        minimum: 0
+        maximum: 100
+        description: Optional upper bound on percent mitochondrial counts (omit to disable).
       n_top_genes:
         type: integer
         minimum: 100

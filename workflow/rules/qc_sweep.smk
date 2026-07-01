@@ -6,10 +6,11 @@
 # It does NOT filter, NOT cluster and does NOT write an h5ad. Request its outputs
 # explicitly — it is not pulled in by run_upstream.
 #
-# Thresholds are LISTS per feature and may be SHARED across samples (a `default`
-# block) or UNIQUE per sample (a `per_sample` override block, merged key-by-key).
-# An ingest reference (cell-type labels) can optionally be overlaid for a richer
-# "what am I removing" diagnosis.
+# Thresholds are GLOBAL candidate LISTS per feature (one set applied to every
+# sample) — this is a diagnostic, so the same cutoffs are swept everywhere. Any
+# per-sample threshold tuning belongs in preprocess_umap (where filtering is
+# actually committed), NOT here. An ingest reference (cell-type labels) can
+# optionally be overlaid for a richer "what am I removing" diagnosis.
 #
 # Expected config (in addition to the `contract` / `outdir` / `samples` blocks
 # used by validate_input.smk):
@@ -20,28 +21,17 @@
 #     ingest_key: "cell_type_ingest"
 #     cell_id_key: "cell_id"
 #     dpi: 300
-#     thresholds:
-#       default:
-#         min_genes:  [100, 200]
-#         min_counts: [10, 50]
-#         max_counts: [3000, 5000]
-#         max_pct_mt: [10, 15, 20]
-#       per_sample:                      # optional, overrides default key-by-key
-#         SAMPLE_A:
-#           max_counts: [4000]
+#     thresholds:                        # global candidate lists (all samples)
+#       min_genes:  [100, 200]
+#       min_counts: [10, 50]
+#       max_counts: [3000, 5000]
+#       max_pct_mt: [10, 15, 20]
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CONTRACT = config.get("contract", {})
 _OUT = config.get("outdir", "results")
 _QC = config.get("qc_sweep", {})
-_TH = _QC.get("thresholds", {})
-
-
-def _thresholds_for(sample):
-    """Shared `default` thresholds overridden key-by-key by any `per_sample` set."""
-    merged = dict(_TH.get("default", {}))
-    merged.update(_TH.get("per_sample", {}).get(sample, {}))
-    return merged
+_TH = _QC.get("thresholds", {})     # global candidate lists, one set for all samples
 
 
 rule qc_sweep:
@@ -64,7 +54,7 @@ rule qc_sweep:
         ingest_tsv=f"{_OUT}/{{sample}}/qc_sweep/qc_ingest_removed.tsv",
     params:
         sample_id=lambda wc: wc.sample,
-        thresholds=lambda wc: _thresholds_for(wc.sample),
+        thresholds=_TH,
         mito_prefix=_CONTRACT.get("mito_prefix", ["MT-", "mt-"]),
         dpi=_QC.get("dpi", config.get("analysis", {}).get("plot_dpi", 300)),
         ingest_enabled=_QC.get("ingest_enabled", False),
