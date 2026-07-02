@@ -46,6 +46,42 @@ external_annotation:
   column: "manual_celltype"
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Core sample sheet, run mode, and contract location
+# ═══════════════════════════════════════════════════════════════════════════
+# mode:
+#   coupled   – the Visium HD head builds the contract h5ads in this same run
+#               (default; samples.csv drives the head).
+#   decoupled – the core consumes PRE-EXISTING contract h5ads from contract_dir
+#               (prepared by any head / segmentation, possibly in a separate run).
+#               The head rules are not included; validation aborts up front if any
+#               sample in core_samples is missing its contract.
+mode: "coupled"
+
+# CORE sample sheet (technology-agnostic ANCHOR). TSV; required column `sample`,
+# plus any optional experimental-design columns (e.g. subtype, batch, condition)
+# available downstream for integration / DE grouping and, via sample_colors, for
+# harmonised visualisation. Independent of samples.csv.
+# RENAMING: the `sample` value need NOT match obs["sample"] inside the h5ad —
+# samples may be renamed (e.g. for publication) during input preparation; the core
+# does not assert the two agree. Leave "" to derive the list from samples.csv.
+core_samples: ""          # e.g. "config/core_samples.tsv"
+
+# Where the CORE READS the contract h5ads. Empty = the per-sample output tree
+# ({post_processing_outdir}/Samples). In decoupled mode, point this at wherever
+# your head wrote the {sample}/{sample}_unfiltered.h5ad files.
+contract_dir: ""
+
+# Optional colour palettes for core-sheet columns (the sample column and any
+# design column), to harmonise downstream visualisation. Structure:
+#   column_name -> { value -> hex }.  Unlisted values fall back to grey.
+sample_colors: {}
+  # Populate to harmonise downstream colours, e.g.:
+  #   sample_colors:
+  #     batch:
+  #       B1: "#4C72B0"
+  #       B2: "#DD8452"
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Input contract (modular head → core hand-off)
 # ═══════════════════════════════════════════════════════════════════════════
 # prepare_input writes the UNFILTERED contract h5ad; validate_input, qc_sweep and

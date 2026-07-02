@@ -40,6 +40,9 @@ rule validate_input:
         require_region=_CONTRACT.get("require_region", False),
         require_raw_counts=_CONTRACT.get("require_raw_counts", True),
         mito_prefix=_CONTRACT.get("mito_prefix", ["MT-", "mt-"]),
+        # experimental-design columns from the CORE sample sheet (recorded in the
+        # report for downstream use); {} when no core sheet is configured
+        sample_meta=lambda wc: core_sample_meta(wc.sample),
     log:
         out=f"{_OUT}/logs/{{sample}}/validate_input.log",
         err=f"{_OUT}/logs/{{sample}}/validate_input.err",

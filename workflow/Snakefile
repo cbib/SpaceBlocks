@@ -34,24 +34,109 @@ GEOJ_DIR   = config["geojson_path"]
 SAMPLES_DIR = f"{OUTDIR_PP}/Samples"
 RANDOM_SEED = config.get("random_seed", 42)
 
+# Run mode: coupled  = the Visium HD head builds the contract h5ads in this run
+#                      (current default; samples.csv drives the head).
+#           decoupled = the core consumes PRE-EXISTING contract h5ads from
+#                      contract_dir (prepared by any head/segmentation, possibly
+#                      in a separate run); the head rules are not included and
+#                      validation aborts up front if any sample is missing its
+#                      contract.
+MODE = str(config.get("mode", "coupled")).lower()
+if MODE not in ("coupled", "decoupled"):
+    sys.exit(f"[config error] mode must be 'coupled' or 'decoupled', got '{MODE}'.")
+
 # ── Input contract (modular head → core hand-off) ────────────────────────────
 # prepare_input WRITES this unfiltered h5ad; validate_input, qc_sweep and
 # preprocess_umap READ it. Path + validation root are derived here from
 # post_processing_outdir so they follow SAMPLES_DIR automatically (set after the
 # config-schema validation above, so they don't need to be declared in the schema).
 config.setdefault("contract", {})
-config["contract"]["unfiltered_h5ad"] = f"{SAMPLES_DIR}/{{sample}}/{{sample}}_unfiltered.h5ad"
+# CONTRACT_DIR = where the CORE READS the contract h5ads. Empty → the per-sample
+# output tree (coupled: prepare_input writes there, so producer and consumers stay
+# on one key). In decoupled mode point contract_dir at wherever the head wrote the
+# {sample}/{sample}_unfiltered.h5ad files.
+CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
+config["contract"]["unfiltered_h5ad"] = f"{CONTRACT_DIR}/{{sample}}/{{sample}}_unfiltered.h5ad"
 config["outdir"] = SAMPLES_DIR     # validate_input / qc_sweep write under the per-sample tree
 
-samples_df = (
-    pd.read_csv(config["samples"])
-    .fillna("")
-    .set_index("sample_id", drop=False)
-)
-validate(samples_df, schema="schemas/samples.schema.yaml")
+# ── Sample sheets ────────────────────────────────────────────────────────────
+# CORE sample sheet (technology-agnostic ANCHOR): the authoritative list of
+# samples plus any optional experimental-design columns (subtype, batch,
+# condition, …). The CORE reads ONLY this sheet; it does NOT depend on the Visium
+# HD head sheet (samples.csv). `validate_input` anchors it downstream.
+#
+# RENAMING: the `sample` value here need NOT match obs["sample"] stored inside the
+# contract h5ad. Samples may be renamed during input preparation (e.g. anonymised
+# or relabelled for publication); the core does NOT assert that the two agree.
+#
+# If no core sheet is configured, fall back to the head samples.csv so existing
+# coupled runs keep working with no new file.
+CORE_SAMPLES = None
+_core_sheet = config.get("core_samples", "") or ""
+if _core_sheet:
+    if not os.path.isfile(_core_sheet):
+        sys.exit(f"[config error] core_samples file not found: {_core_sheet}")
+    CORE_SAMPLES = pd.read_csv(_core_sheet, sep="\t", dtype=str, comment="#").fillna("")
+    if "sample" not in CORE_SAMPLES.columns:
+        sys.exit(f"[config error] core_samples ({_core_sheet}) needs a 'sample' column.")
+    validate(CORE_SAMPLES, schema="schemas/core_samples.schema.yaml")
+    CORE_SAMPLES = CORE_SAMPLES.set_index("sample", drop=False)
+    SAMPLE_IDS = list(CORE_SAMPLES["sample"])
+    if not SAMPLE_IDS:
+        sys.exit(f"[config error] core_samples ({_core_sheet}) has no sample rows.")
 
-SAMPLES    = samples_df.to_dict(orient="index")
-SAMPLE_IDS = list(SAMPLES.keys())
+# HEAD sample sheet (Visium HD): fastq dirs / slide / area for spaceranger +
+# prepare_input. Needed only in coupled mode; guarded so a decoupled core-only run
+# needs no samples.csv on disk.
+SAMPLES = {}
+_head_sheet = config.get("samples", "") or ""
+if os.path.isfile(_head_sheet):
+    samples_df = (
+        pd.read_csv(_head_sheet)
+        .fillna("")
+        .set_index("sample_id", drop=False)
+    )
+    validate(samples_df, schema="schemas/samples.schema.yaml")
+    SAMPLES = samples_df.to_dict(orient="index")
+
+# Derive the sample list from the head sheet only when no core sheet is set.
+if CORE_SAMPLES is None:
+    if not SAMPLES:
+        sys.exit("[config error] No core_samples sheet configured and no readable "
+                 "samples.csv found — cannot determine the sample list.")
+    SAMPLE_IDS = list(SAMPLES.keys())
+
+# Optional per-column colour palettes (sample + design columns) for downstream viz.
+SAMPLE_COLORS = config.get("sample_colors", {}) or {}
+
+
+def core_sample_meta(sample):
+    """Experimental-design metadata for `sample` (design columns only, excludes the
+    `sample` key). Returns {} when no core sheet is configured."""
+    if CORE_SAMPLES is None or sample not in CORE_SAMPLES.index:
+        return {}
+    row = CORE_SAMPLES.loc[sample].to_dict()
+    row.pop("sample", None)
+    return row
+
+
+# ── Contract presence gate (decoupled mode) ──────────────────────────────────
+# In decoupled mode the core consumes PRE-EXISTING contract h5ads (the head does
+# not run here), so every sample in the core sheet must already have its contract
+# in CONTRACT_DIR. Abort early — before any job is submitted — listing all that
+# are missing. Skipped in coupled mode, where the head builds them via the DAG.
+if MODE == "decoupled":
+    _pat = config["contract"]["unfiltered_h5ad"]
+    _missing = [(s, _pat.format(sample=s)) for s in SAMPLE_IDS
+                if not os.path.isfile(_pat.format(sample=s))]
+    if _missing:
+        _lst = "\n".join(f"  - {s}: {p}" for s, p in _missing)
+        sys.exit(
+            f"[validate_input / decoupled] Missing contract h5ad for {len(_missing)} "
+            f"sample(s) in the input directory:\n{_lst}\n"
+            "Every sample in the core sheet must already have a contract present "
+            "(mode: decoupled does not build them). Fix the sheet or contract_dir, "
+            "or use mode: coupled to build inputs via the head.")
 
 def _resolution_range(rmin, rmax, step):
     n = round((rmax - rmin) / step)
@@ -126,7 +211,9 @@ def get_all_targets(wildcards):
     for sample in SAMPLE_IDS:
         targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}.h5ad")
         targets.append(f"{SAMPLES_DIR}/{sample}/metadata_{sample}.tsv")
-        targets.append(f"{SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
+        targets.append(f"{SAMPLES_DIR}/{sample}/{sample}_report.tsv")
+        if MODE == "coupled":   # HEAD output; only produced when the head runs
+            targets.append(f"{SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
         for res in RESOLUTIONS:
             targets.append(f"{SAMPLES_DIR}/{sample}/leiden_resolution_{res}")
     if SPATIAL_NICHES_ENABLED:
@@ -166,9 +253,13 @@ def get_all_targets(wildcards):
 
 
 # ── Include rules ────────────────────────────────────────────────────────────
-include: "rules/spaceranger.smk"
-include: "rules/generate_qupath_image.smk"   # HEAD: hires image for QuPath annotation
-include: "rules/prepare_input.smk"           # HEAD: builds the unfiltered contract h5ad
+# HEAD rules (Visium HD-specific) build the contract h5ad and are Space Ranger /
+# QuPath dependent, so they are included ONLY in coupled mode. In decoupled mode
+# the core consumes pre-existing contracts and needs none of them.
+if MODE == "coupled":
+    include: "rules/spaceranger.smk"
+    include: "rules/generate_qupath_image.smk"   # HEAD: hires image for QuPath annotation
+    include: "rules/prepare_input.smk"           # HEAD: builds the unfiltered contract h5ad
 include: "rules/validate_input.smk"          # CORE: input-contract gate (per sample)
 include: "rules/qc_sweep.smk"                # CORE: optional pre-filtering QC diagnostic
 include: "rules/preprocess_umap.smk"
@@ -197,6 +288,7 @@ rule run_upstream:
     input:
         expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad", sample=SAMPLE_IDS),
         expand(f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv", sample=SAMPLE_IDS),
+        expand(f"{SAMPLES_DIR}/{{sample}}/{{sample}}_report.tsv", sample=SAMPLE_IDS),
         expand(f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
                sample=SAMPLE_IDS),
         expand(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{res}}",
