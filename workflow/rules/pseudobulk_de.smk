@@ -23,6 +23,12 @@ rule pseudobulk_de:
         # Pass colors as two parallel lists for safe Python→R conversion
         region_color_names=list(ANALYSIS.get("region_colors", {}).keys()),
         region_color_values=list(ANALYSIS.get("region_colors", {}).values()),
+        # Design columns to annotate heatmaps with (chosen via config design.columns);
+        # palettes flattened into parallel lists (grey fallback applied in R).
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS,
+        extra_anno_col_names=EXTRA_ANNO_COLS,
+        extra_anno_values=EXTRA_ANNO_VALS,
+        extra_anno_colors=EXTRA_ANNO_COLORS,
     log:
         out=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.out",
         err=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.err",

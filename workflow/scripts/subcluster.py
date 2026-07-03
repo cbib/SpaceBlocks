@@ -236,7 +236,7 @@ def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
 
 def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                           n_neighbors, subcompartment, annot_col, de_n_genes, RANDOM_SEED,
-                          annotation_colors=None):
+                          annotation_colors=None, extra_annot_columns=None, sample_colors=None):
     """
     Run Leiden at multiple resolutions, produce all analysis outputs.
     """
@@ -387,6 +387,22 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                     dpi=DPI, bbox_inches="tight")
         plt.close()
 
+    # UMAPs by each design column (grey for values absent from sample_colors)
+    for _dc in (extra_annot_columns or []):
+        if _dc in adata.obs.columns:
+            try:
+                adata.obs[_dc] = adata.obs[_dc].astype(str).astype("category")
+                cats = adata.obs[_dc].cat.categories
+                pal = sample_colors.get(_dc, {}) if isinstance(sample_colors, dict) else {}
+                adata.uns[f"{_dc}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
+                sc.pl.umap(adata, color=[_dc], size=2, wspace=0.25, frameon=False,
+                           title=f"By {_dc}")
+                plt.savefig(os.path.join(umap_dir, f"UMAP_by_{_dc}.png"),
+                            dpi=DPI, bbox_inches="tight")
+                plt.close()
+            except Exception as e:
+                log.warning("    design UMAP %s failed: %s", _dc, e)
+
     # Split UMAPs (use middle resolution)
     log.info("    [%s] Split UMAPs …", branch_name)
     mid_idx = len(leiden_keys) // 2
@@ -458,6 +474,8 @@ DE_N_GENES     = int(snakemake.params.de_n_genes)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS  = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+EXTRA_ANNOT_COLUMNS = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
+SAMPLE_COLORS  = getattr(snakemake.params, "sample_colors", {}) or {}
 sub_dir        = str(snakemake.output.sub_dir)
 
 try:
@@ -516,6 +534,7 @@ try:
         adata_noharmony, "NoHarmony", noharmony_dir, resolutions,
         N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
         annotation_colors=ANNOTATION_COLORS,
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS, sample_colors=SAMPLE_COLORS,
     )
 
     log.info("  Saving NoHarmony adata …")
@@ -548,6 +567,7 @@ try:
         adata_harmony, "Harmony", harmony_dir, resolutions,
         N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
         annotation_colors=ANNOTATION_COLORS,
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS, sample_colors=SAMPLE_COLORS,
     )
 
     log.info("  Saving Harmony adata …")

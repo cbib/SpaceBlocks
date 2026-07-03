@@ -106,11 +106,14 @@ def _pick_keys(adata, niche_column=None):
     return manual, tsv, auto, niche
 
 
-def _build_page1(adata, sample_id, keys, library_id):
-    """Row 1 = UMAPs, Row 2 = spatial, for clusters / tsv / auto / niche."""
+def _build_page1(adata, sample_id, keys, library_id, has_regions=False):
+    """Row 1 = UMAPs, Row 2 = spatial, for clusters / tsv / auto / region / niche."""
     manual, tsv, auto, niche = keys
     panels = [(manual, "Clusters"), (tsv, "TSV annotation"),
-              (auto, "Auto annotation"), (niche, "Spatial niche")]
+              (auto, "Auto annotation")]
+    if has_regions:                       # region annotation UMAP + spatial
+        panels.append(("region_annotation", "Region"))
+    panels.append((niche, "Spatial niche"))
     panels = [(k, t) for k, t in panels if k]
     n = len(panels)
     fig, axes = plt.subplots(2, n, figsize=(8 * n, 14),
@@ -321,7 +324,7 @@ try:
                                and adata.obs["region_annotation"].nunique() > 1
                                and not all(adata.obs["region_annotation"] == "Unlabeled"))
 
-                fig1 = _build_page1(adata, sample_id, keys, library_id)
+                fig1 = _build_page1(adata, sample_id, keys, library_id, has_regions)
                 _rasterize_heavy_layers(fig1)
                 pdf.savefig(fig1, bbox_inches="tight", dpi=DPI); plt.close(fig1)
 

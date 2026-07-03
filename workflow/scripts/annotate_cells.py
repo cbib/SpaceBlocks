@@ -373,9 +373,10 @@ try:
                                       "cell_type_external"]
                           if c in adata.obs.columns]
 
-    # sample column (one bar per sample; here a single sample)
-    sample_col = next((c for c in ["sample", "sample_batch"]
-                       if c in adata.obs.columns), None)
+    # sample column (one bar per sample; here a single sample). Per-sample adatas
+    # carry "sample"; "sample_batch" is an integration-time concat label and does
+    # not exist here, so it is not consulted.
+    sample_col = "sample" if "sample" in adata.obs.columns else None
     if sample_col is None:
         adata.obs["sample"] = sample_id
         sample_col = "sample"

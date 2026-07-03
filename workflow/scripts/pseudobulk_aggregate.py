@@ -76,14 +76,19 @@ def _save_pseudobulk(pdata, matrices_dir, metadata_dir, prefix):
 
 
 def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir,
-                        region_colors=None, annotation_colors=None):
+                        region_colors=None, annotation_colors=None,
+                        extra_annot_columns=None, sample_colors=None):
     """
-    3-panel QC: dc.plot_psbulk_samples + 2 PCAs (by condition, by sample).
-    Legends placed outside the plot area. Config palettes (region_colors for
-    the condition PCA, annotation_colors['sample_batch'] for the sample PCA)
-    are used when available, with colormap fallbacks otherwise.
+    QC panels: dc.plot_psbulk_samples + PCA by condition + PCA by sample, plus one
+    extra PCA panel per design column (coloured from sample_colors, grey fallback).
+    Legends placed outside the plot area. Config palettes (region_colors for the
+    condition PCA, annotation_colors['sample_batch'] for the sample PCA) are used
+    when available, with colormap fallbacks otherwise.
     """
-    fig, axes = plt.subplots(1, 3, figsize=(22, 5))
+    design_present = [c for c in (extra_annot_columns or []) if c in pdata.obs.columns]
+    sample_colors = sample_colors if isinstance(sample_colors, dict) else {}
+    n_panels = 3 + len(design_present)
+    fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels + 1, 5))
     fig.suptitle(f"Pseudobulk QC — {prefix}", fontsize=14, fontweight="bold")
 
     # Panel 1: cells-vs-counts per pseudobulk sample, coloured by condition
@@ -180,9 +185,26 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir,
             axes[2].text(0.5, 0.5, "No sample column", ha="center", va="center",
                          transform=axes[2].transAxes)
 
+        # Extra PCA panels: one per design column (grey for palette-less values)
+        for _i, _dc in enumerate(design_present):
+            ax = axes[3 + _i]
+            dvals = pdata.obs[_dc].astype(str).values
+            duniq = sorted(set(dvals))
+            dpal = sample_colors.get(_dc, {}) if isinstance(sample_colors, dict) else {}
+            dcolors = {v: dpal.get(str(v), "#cccccc") for v in duniq}
+            for v in duniq:
+                m = dvals == v
+                ax.scatter(pcs[m, 0], pcs[m, 1], c=[dcolors[v]], label=v, s=60,
+                           edgecolors="black", linewidths=0.5)
+            ax.set_xlabel(f"PC1 ({var_explained[0]:.1f}%)")
+            ax.set_ylabel(f"PC2 ({var_explained[1]:.1f}%)")
+            ax.set_title(f"PCA — {_dc}")
+            ax.legend(fontsize=7, loc="center left", bbox_to_anchor=(1.02, 0.5),
+                      borderaxespad=0, frameon=False)
+
     except Exception as e:
         log.warning("  PCA plots failed: %s", e)
-        for ax_idx in [1, 2]:
+        for ax_idx in range(1, n_panels):
             axes[ax_idx].text(0.5, 0.5, f"PCA failed:\n{e}", ha="center",
                               va="center", transform=axes[ax_idx].transAxes, fontsize=8)
 
@@ -201,6 +223,8 @@ MIN_COUNTS     = int(snakemake.params.min_counts_per_pseudobulk)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+EXTRA_ANNOT_COLUMNS = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
+SAMPLE_COLORS  = getattr(snakemake.params, "sample_colors", {}) or {}
 agg_dir        = str(snakemake.output.agg_dir)
 
 try:
@@ -267,7 +291,8 @@ try:
         )
         _save_pseudobulk(pdata, matrices_dir, metadata_dir, "pooled")
         _plot_pseudobulk_qc(pdata, region_col, sample_col, "pooled", plots_dir,
-                            REGION_COLORS, ANNOTATION_COLORS)
+                            REGION_COLORS, ANNOTATION_COLORS,
+                            EXTRA_ANNOT_COLUMNS, SAMPLE_COLORS)
         manifest_rows.append({
             "prefix": "pooled", "grouping": "all_cells",
             "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,
@@ -302,7 +327,8 @@ try:
 
             _save_pseudobulk(pdata, matrices_dir, metadata_dir, safe_ct)
             _plot_pseudobulk_qc(pdata, region_col, sample_col, safe_ct, plots_dir,
-                                REGION_COLORS, ANNOTATION_COLORS)
+                                REGION_COLORS, ANNOTATION_COLORS,
+                                EXTRA_ANNOT_COLUMNS, SAMPLE_COLORS)
             manifest_rows.append({
                 "prefix": safe_ct, "grouping": ct,
                 "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,

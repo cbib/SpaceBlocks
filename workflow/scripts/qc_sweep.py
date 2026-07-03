@@ -6,11 +6,9 @@ the consequences of candidate QC thresholds explicit, so the final analysis.*
 thresholds can be chosen deliberately before run_upstream. It does NOT filter,
 NOT cluster and does NOT write an h5ad.
 
-Per-feature thresholds are GLOBAL candidate LISTS (e.g. min_genes=[100, 200])
-applied to every sample — this is a diagnostic sweep, so the same cutoffs are
-shown everywhere. For every cutoff it shows WHERE on the tissue the affected
-cells land. (Per-sample threshold tuning lives in preprocess_umap, where the
-filters are actually committed.)
+Per-feature thresholds are LISTS (e.g. min_genes=[100, 200]) resolved per sample
+upstream (shared `default` + optional `per_sample` overrides). For every cutoff
+it shows WHERE on the tissue the affected cells land.
 
 Outputs (per sample)
 --------------------
@@ -68,8 +66,7 @@ try:
     mito_prefix = tuple(snakemake.params.mito_prefix)
     DPI = int(snakemake.params.dpi)
     ingest_enabled = bool(getattr(snakemake.params, "ingest_enabled", False))
-    ingest_key  = str(getattr(snakemake.params, "ingest_key", "cell_type_ingest"))
-    cell_id_key = str(getattr(snakemake.params, "cell_id_key", "cell_id"))
+    ref_label_key  = str(getattr(snakemake.params, "ref_label_key", "cell_type"))
 
     out = snakemake.output
     out_dir = os.path.dirname(str(out.violins_png))
@@ -103,66 +100,93 @@ try:
                   if ("region_annotation" in adata.obs.columns
                       and adata.obs["region_annotation"].nunique() > 1) else None)
 
-    # One spatial conditional, reused everywhere: image when embedded, else scatter
+    # One spatial conditional, reused everywhere. Always pass an explicit spot_size
+    # (cell centroids are far smaller than the scalefactor-derived Visium spot size,
+    # so without it the dots render invisibly and only the tissue image shows); add
+    # library_id to draw the dots over the embedded image when one is present.
+    spatial_kw = {"spot_size": 20}
     if isinstance(adata.uns.get("spatial"), dict) and adata.uns["spatial"]:
-        spatial_kw = {"library_id": list(adata.uns["spatial"].keys())[0]}
-    else:
-        spatial_kw = {"spot_size": 20}
+        spatial_kw["library_id"] = list(adata.uns["spatial"].keys())[0]
     has_coords = "spatial" in adata.obsm
 
-    # Optional ingest reference (cell types of removed cells)
+    # Optional ingest overlay: transfer cell-type labels from the SAME reference the
+    # downstream ingest_ref rule uses (config: ingest_ref + ingest_ref_label_key), so
+    # the "what am I removing" panels can be broken down by cell type. Runs the same
+    # sc.tl.ingest recipe as ingest_ref; the contract X is raw counts, so a copy of the
+    # query is normalised/log1p'd on shared genes before projection. Diagnostic only —
+    # never written back to the contract.
     ingest_vals, ingest_palette = None, {}
-    ingest_path = getattr(snakemake.input, "ingest", None)
-    if ingest_enabled and ingest_path:
+    ingest_ref_path = getattr(snakemake.input, "ingest_ref", None)
+    if isinstance(ingest_ref_path, (list, tuple)):
+        ingest_ref_path = ingest_ref_path[0] if ingest_ref_path else None
+    if ingest_enabled and ingest_ref_path and os.path.exists(str(ingest_ref_path)):
         try:
-            ipath = ingest_path if isinstance(ingest_path, str) else str(ingest_path[0])
-            ing = sc.read_h5ad(ipath)
-            if ingest_key in ing.obs.columns:
-                if cell_id_key in ing.obs.columns and cell_id_key in adata.obs.columns:
-                    m = dict(zip(ing.obs[cell_id_key].astype(str), ing.obs[ingest_key].astype(str)))
-                    keys = adata.obs[cell_id_key].astype(str)
-                else:
-                    m = dict(zip(ing.obs_names.astype(str), ing.obs[ingest_key].astype(str)))
-                    keys = pd.Index(adata.obs_names).astype(str)
-                ingest_vals = pd.Series([m.get(k, "NA") for k in keys], index=adata.obs_names)
-                base = (list(matplotlib.colormaps["tab20"].colors)
-                        + list(matplotlib.colormaps["tab20b"].colors))
-                ingest_palette = {c: matplotlib.colors.to_hex(base[i % len(base)])
-                                  for i, c in enumerate(sorted(ingest_vals.unique()))}
-                log.info("  ingest labels mapped (%d types)", len(ingest_palette))
+            log.info("  ingest overlay: transferring '%s' from %s",
+                     ref_label_key, ingest_ref_path)
+            adata_ref = sc.read_h5ad(str(ingest_ref_path))
+            if ref_label_key not in adata_ref.obs.columns:
+                raise ValueError(f"label key '{ref_label_key}' not in reference obs")
+            adata_ref.obs[ref_label_key] = adata_ref.obs[ref_label_key].astype("category")
+            shared = adata.var_names.intersection(adata_ref.var_names)
+            if len(shared) < 100:
+                raise ValueError(f"only {len(shared)} shared genes — too few for ingest")
+            # normalise a query copy (contract X = raw counts) into the reference space
+            q = adata[:, shared].copy()
+            sc.pp.normalize_total(q, target_sum=1e4)
+            sc.pp.log1p(q)
+            r = adata_ref[:, shared].copy()
+            sc.pp.pca(r)
+            sc.pp.neighbors(r)
+            sc.tl.umap(r)
+            sc.tl.ingest(q, r, obs=ref_label_key)
+            ingest_vals = pd.Series(q.obs[ref_label_key].astype(str).values,
+                                    index=adata.obs_names)
+            base = (list(matplotlib.colormaps["tab20"].colors)
+                    + list(matplotlib.colormaps["tab20b"].colors))
+            ingest_palette = {c: matplotlib.colors.to_hex(base[i % len(base)])
+                              for i, c in enumerate(sorted(ingest_vals.unique()))}
+            log.info("  ingest labels transferred (%d types, %d shared genes)",
+                     len(ingest_palette), len(shared))
+            del q, r, adata_ref
         except Exception as e:
-            log.warning("  could not load ingest reference: %s", e)
+            log.warning("  ingest overlay failed (skipping): %s", e)
             ingest_vals = None
 
     tc = adata.obs["total_counts"].values
     ng = adata.obs["n_genes_by_counts"].values
     mt = adata.obs["pct_counts_mt"].values if mito_available else None
 
-    # ── 1. Violins (per region if present), strip on + rasterised ────────
+    # ── 1. Violins — composite of two rows: top WITH per-cell observations
+    #        (stripplot, rasterised), bottom WITHOUT (clean distributions). Too many
+    #        points obscure the threshold lines, so both views are shown together.
+    #        Candidate thresholds are drawn on both rows.
     vpanels = [("total_counts", "Total counts", th_clow + th_chigh),
                ("n_genes_by_counts", "Genes per cell", th_genes)]
     if mito_available:
         vpanels.append(("pct_counts_mt", "% mitochondrial", th_mt))
-    fig, axes = plt.subplots(1, len(vpanels), figsize=(6.0 * len(vpanels), 5))
-    if len(vpanels) == 1:
-        axes = [axes]
-    for ax, (col, lab, lines) in zip(axes, vpanels):
-        try:
-            sc.pl.violin(adata, col, groupby=region_key, ax=ax, show=False,
-                         stripplot=True, jitter=0.4, size=1, rotation=45)
-            for art in ax.collections:                 # rasterise the per-cell strip only
-                if isinstance(art, mcoll.PathCollection):
-                    art.set_rasterized(True)
-        except Exception as e:
-            log.warning("  violin %s failed: %s", col, e)
-        for t in lines:
-            ax.axhline(t, ls="--", lw=0.8, color="#e41a1c")
-        ax.set_title(lab)
-        ax.set_xlabel("")
+    ncols = len(vpanels)
+    fig, axes = plt.subplots(2, ncols, figsize=(6.0 * ncols, 10), squeeze=False)
+    for r, (strip, row_tag) in enumerate([(True, "with observations"),
+                                          (False, "distribution only")]):
+        for c, (col, lab, lines) in enumerate(vpanels):
+            ax = axes[r][c]
+            try:
+                sc.pl.violin(adata, col, groupby=region_key, ax=ax, show=False,
+                             stripplot=strip, jitter=0.4, size=1, rotation=45)
+                if strip:                              # rasterise the per-cell strip only
+                    for art in ax.collections:
+                        if isinstance(art, mcoll.PathCollection):
+                            art.set_rasterized(True)
+            except Exception as e:
+                log.warning("  violin %s (%s) failed: %s", col, row_tag, e)
+            for t in lines:
+                ax.axhline(t, ls="--", lw=0.8, color="#e41a1c")
+            ax.set_title(f"{lab}\n({row_tag})")
+            ax.set_xlabel("")
     fig.suptitle(f"Unfiltered QC — {sample_id}  "
                  f"({adata.n_obs:,} cells, {adata.n_vars:,} genes)"
                  + ("" if mito_available else "  [no MT- genes]"),
-                 fontsize=13, fontweight="bold", y=1.02)
+                 fontsize=13, fontweight="bold", y=1.005)
     fig.tight_layout()
     fig.savefig(str(out.violins_png), dpi=DPI, bbox_inches="tight")
     plt.close(fig)

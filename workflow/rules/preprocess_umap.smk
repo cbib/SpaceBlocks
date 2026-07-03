@@ -40,6 +40,7 @@ rule preprocess_umap:
         report=f"{SAMPLES_DIR}/{{sample}}/{{sample}}_report.tsv",
     params:
         sample_id=lambda wc: wc.sample,
+        sample_meta=lambda wc: core_sample_meta(wc.sample),   # design columns → obs + report
         # analysis.* filtering defaults; the script may override any of these
         # per sample from the optional thresholds_tsv (absent → these defaults).
         min_counts=ANALYSIS.get("min_counts", 1),

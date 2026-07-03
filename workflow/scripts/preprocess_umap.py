@@ -56,6 +56,7 @@ REGION_COLORS   = snakemake.params.region_colors
 out_adata      = str(snakemake.output.adata)
 out_metadata   = str(snakemake.output.metadata)
 out_report     = str(snakemake.output.report)
+SAMPLE_META    = dict(getattr(snakemake.params, "sample_meta", {}) or {})
 output_dir     = str(Path(out_adata).parent)
 
 # ── Optional per-sample QC threshold overrides ───────────────────────────────
@@ -130,12 +131,19 @@ try:
         adata.obs["sample"] = sample_id
     log.info("  loaded %d cells, %d genes (raw, unfiltered)", adata.n_obs, adata.n_vars)
 
+    # Stamp the core sample-sheet metadata columns into obs (one constant value
+    # per sample). These propagate through annotation, integration, and pseudobulk
+    # so downstream rules can group / colour by them (see config.extra_annotations).
+    for _dk, _dv in SAMPLE_META.items():
+        adata.obs[_dk] = pd.Categorical([str(_dv)] * adata.n_obs)
+    if SAMPLE_META:
+        log.info("  stamped sample-sheet columns into obs: %s", list(SAMPLE_META))
+
     # ── 2. QC metrics + filter ───────────────────────────────────────────
     adata.var["mt"] = adata.var_names.str.startswith("MT-")
     adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
     sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "hb"], inplace=True, log1p=False)
 
-    log.info("QC: min_counts=%d, min_cells=%d, min_genes=%d", MIN_COUNTS, MIN_CELLS, MIN_GENES)
     # Pre-filter snapshot for the per-sample report (observed feature ranges are
     # taken on the full, unfiltered dataset).
     mito_present   = bool(adata.var["mt"].any())
@@ -181,9 +189,13 @@ try:
         cats = adata.obs["region_annotation"].cat.categories
         adata.uns["region_annotation_colors"] = [REGION_COLORS.get(str(c), "#cccccc") for c in cats]
     try:
-        spatial_kw = ({"library_id": list(adata.uns["spatial"].keys())[0]}
-                      if isinstance(adata.uns.get("spatial"), dict) and adata.uns["spatial"]
-                      else {"spot_size": 20})
+        # Always pass an explicit spot_size (cell centroids are far smaller than
+        # the scalefactor-derived Visium spot size, so without this the dots render
+        # invisibly and only the tissue image shows); add library_id to draw them
+        # over the embedded image when one is present.
+        spatial_kw = {"spot_size": 20}
+        if isinstance(adata.uns.get("spatial"), dict) and adata.uns["spatial"]:
+            spatial_kw["library_id"] = list(adata.uns["spatial"].keys())[0]
         sc.pl.spatial(adata, color="region_annotation", title="Annotated Regions",
                       show=False, **spatial_kw)
         plt.savefig(os.path.join(output_dir, f"region_annotation_{sample_id}.png"),
@@ -292,6 +304,8 @@ try:
         ("cutoff_max_pct_mt",      MAX_PCT_MT if MAX_PCT_MT is not None else "NA"),
         ("thresholds_source",      THRESHOLDS_SOURCE),
     ]
+    # Record the sample-sheet metadata columns parsed for this sample.
+    report_rows += [(f"sheet:{_dk}", _dv) for _dk, _dv in SAMPLE_META.items()]
     pd.DataFrame([{"sample": sample_id, "metric": m, "value": v}
                   for m, v in report_rows]).to_csv(out_report, sep="\t", index=False)
     log.info("Wrote per-sample report → %s", out_report)

@@ -20,6 +20,8 @@ rule explore_genes_integrated:
         dpi=GENE_EXPLORATION.get("dpi", ANALYSIS.get("plot_dpi", 300)),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS,
+        sample_colors=SAMPLE_COLORS,
     log:
         out=f"{LOGDIR}/explore_genes/integrated.out",
         err=f"{LOGDIR}/explore_genes/integrated.err",

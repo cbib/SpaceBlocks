@@ -515,6 +515,8 @@ NICHE_COLUMN      = str(snakemake.params.niche_column) if snakemake.params.niche
 DPI               = int(snakemake.params.dpi)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
+SAMPLE_COLORS     = getattr(snakemake.params, "sample_colors", {}) or {}
 
 try:
     log.info("=" * 70)
@@ -538,6 +540,24 @@ try:
     log.info("Loading integrated h5ad …")
     adata = sc.read_h5ad(integrated_path)
     log.info("  %d cells, %d genes", adata.n_obs, adata.n_vars)
+
+    # Integrated UMAPs by each design column (grey for palette-less values)
+    for _dc in EXTRA_ANNOT_COLUMNS:
+        if _dc in adata.obs.columns:
+            try:
+                adata.obs[_dc] = adata.obs[_dc].astype(str).astype("category")
+                cats = adata.obs[_dc].cat.categories
+                pal = SAMPLE_COLORS.get(_dc, {}) if isinstance(SAMPLE_COLORS, dict) else {}
+                adata.uns[f"{_dc}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
+                _dd = os.path.join(base_dir, "_design")
+                os.makedirs(_dd, exist_ok=True)
+                sc.pl.umap(adata, color=[_dc], size=2, frameon=False,
+                           title=f"Integrated – by {_dc}", show=False)
+                plt.savefig(os.path.join(_dd, f"UMAP_by_{_dc}.png"),
+                            dpi=DPI, bbox_inches="tight")
+                plt.close()
+            except Exception as e:
+                log.warning("  design UMAP %s failed: %s", _dc, e)
 
     # ── 3. Validate genes ────────────────────────────────────────────────
     available_genes = set(adata.var_names)

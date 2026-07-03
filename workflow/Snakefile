@@ -34,16 +34,16 @@ GEOJ_DIR   = config["geojson_path"]
 SAMPLES_DIR = f"{OUTDIR_PP}/Samples"
 RANDOM_SEED = config.get("random_seed", 42)
 
-# Run mode: coupled  = the Visium HD head builds the contract h5ads in this run
-#                      (current default; samples.csv drives the head).
-#           decoupled = the core consumes PRE-EXISTING contract h5ads from
-#                      contract_dir (prepared by any head/segmentation, possibly
-#                      in a separate run); the head rules are not included and
-#                      validation aborts up front if any sample is missing its
-#                      contract.
-MODE = str(config.get("mode", "coupled")).lower()
-if MODE not in ("coupled", "decoupled"):
-    sys.exit(f"[config error] mode must be 'coupled' or 'decoupled', got '{MODE}'.")
+# Run mode: either a HEAD technology name (that head builds the contract h5ads in
+# this run) or "decoupled" (the core consumes PRE-EXISTING contracts from
+# contract_dir; head rules are not included and validation aborts up front if any
+# sample is missing its contract). Add new heads to KNOWN_HEADS as implemented.
+MODE = str(config.get("mode", "visiumhd")).lower()
+KNOWN_HEADS = ("visiumhd",)          # e.g. future: ("visiumhd", "xenium5k")
+if MODE != "decoupled" and MODE not in KNOWN_HEADS:
+    sys.exit(f"[config error] mode must be 'decoupled' or a head technology "
+             f"{list(KNOWN_HEADS)}, got '{MODE}'.")
+IS_DECOUPLED = (MODE == "decoupled")
 
 # ── Input contract (modular head → core hand-off) ────────────────────────────
 # prepare_input WRITES this unfiltered h5ad; validate_input, qc_sweep and
@@ -52,7 +52,7 @@ if MODE not in ("coupled", "decoupled"):
 # config-schema validation above, so they don't need to be declared in the schema).
 config.setdefault("contract", {})
 # CONTRACT_DIR = where the CORE READS the contract h5ads. Empty → the per-sample
-# output tree (coupled: prepare_input writes there, so producer and consumers stay
+# output tree (head mode: prepare_input writes there, so producer/consumers stay
 # on one key). In decoupled mode point contract_dir at wherever the head wrote the
 # {sample}/{sample}_unfiltered.h5ad files.
 CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
@@ -86,7 +86,7 @@ if _core_sheet:
         sys.exit(f"[config error] core_samples ({_core_sheet}) has no sample rows.")
 
 # HEAD sample sheet (Visium HD): fastq dirs / slide / area for spaceranger +
-# prepare_input. Needed only in coupled mode; guarded so a decoupled core-only run
+# prepare_input. Needed only in head (e.g. visiumhd) mode; guarded so a decoupled run
 # needs no samples.csv on disk.
 SAMPLES = {}
 _head_sheet = config.get("samples", "") or ""
@@ -109,6 +109,38 @@ if CORE_SAMPLES is None:
 # Optional per-column colour palettes (sample + design columns) for downstream viz.
 SAMPLE_COLORS = config.get("sample_colors", {}) or {}
 
+# Integration key: the obs column Harmony corrects on in integrate_samples
+# ("sample" = per-sample = current behaviour; e.g. "patient" to correct on that).
+INTEGRATION   = config.get("integration", {}) or {}
+INTEGRATE_KEY = str(INTEGRATION.get("integrate_key", "sample") or "sample")
+
+# Extra-annotation columns (core-sheet columns beyond `sample`) surfaced to
+# downstream plots/annotation tracks — integration & subcluster & explore_genes
+# UMAPs, pseudobulk QC PCA panels, and pseudobulk_de heatmap annotation. These are
+# NOT DE covariates. `extra_annotations.columns` overrides; otherwise all non-sample
+# core-sheet columns are used. Empty when no core sheet is configured.
+EXTRA_ANNOT = config.get("extra_annotations", {}) or {}
+if EXTRA_ANNOT.get("columns"):
+    EXTRA_ANNOT_COLUMNS = list(EXTRA_ANNOT["columns"])
+elif CORE_SAMPLES is not None:
+    EXTRA_ANNOT_COLUMNS = [c for c in CORE_SAMPLES.columns if c != "sample"]
+else:
+    EXTRA_ANNOT_COLUMNS = []
+
+
+def _extra_annot_color_triples():
+    """Flatten sample_colors for the extra-annotation columns into three parallel
+    lists (column, value, hex) for safe Python→R hand-off in pseudobulk_de."""
+    cols, vals, colors = [], [], []
+    sc_ = SAMPLE_COLORS if isinstance(SAMPLE_COLORS, dict) else {}
+    for c in EXTRA_ANNOT_COLUMNS:
+        for v, hexc in (sc_.get(c, {}) or {}).items():
+            cols.append(c); vals.append(str(v)); colors.append(str(hexc))
+    return cols, vals, colors
+
+
+EXTRA_ANNO_COLS, EXTRA_ANNO_VALS, EXTRA_ANNO_COLORS = _extra_annot_color_triples()
+
 
 def core_sample_meta(sample):
     """Experimental-design metadata for `sample` (design columns only, excludes the
@@ -124,8 +156,8 @@ def core_sample_meta(sample):
 # In decoupled mode the core consumes PRE-EXISTING contract h5ads (the head does
 # not run here), so every sample in the core sheet must already have its contract
 # in CONTRACT_DIR. Abort early — before any job is submitted — listing all that
-# are missing. Skipped in coupled mode, where the head builds them via the DAG.
-if MODE == "decoupled":
+# are missing. Skipped in head mode, where the head builds them via the DAG.
+if IS_DECOUPLED:
     _pat = config["contract"]["unfiltered_h5ad"]
     _missing = [(s, _pat.format(sample=s)) for s in SAMPLE_IDS
                 if not os.path.isfile(_pat.format(sample=s))]
@@ -136,7 +168,7 @@ if MODE == "decoupled":
             f"sample(s) in the input directory:\n{_lst}\n"
             "Every sample in the core sheet must already have a contract present "
             "(mode: decoupled does not build them). Fix the sheet or contract_dir, "
-            "or use mode: coupled to build inputs via the head.")
+            "or set mode to a head technology (e.g. visiumhd) to build inputs.")
 
 def _resolution_range(rmin, rmax, step):
     n = round((rmax - rmin) / step)
@@ -212,7 +244,7 @@ def get_all_targets(wildcards):
         targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}.h5ad")
         targets.append(f"{SAMPLES_DIR}/{sample}/metadata_{sample}.tsv")
         targets.append(f"{SAMPLES_DIR}/{sample}/{sample}_report.tsv")
-        if MODE == "coupled":   # HEAD output; only produced when the head runs
+        if MODE == "visiumhd":   # HEAD output; only produced when that head runs
             targets.append(f"{SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
         for res in RESOLUTIONS:
             targets.append(f"{SAMPLES_DIR}/{sample}/leiden_resolution_{res}")
@@ -253,10 +285,10 @@ def get_all_targets(wildcards):
 
 
 # ── Include rules ────────────────────────────────────────────────────────────
-# HEAD rules (Visium HD-specific) build the contract h5ad and are Space Ranger /
-# QuPath dependent, so they are included ONLY in coupled mode. In decoupled mode
-# the core consumes pre-existing contracts and needs none of them.
-if MODE == "coupled":
+# HEAD rules build the contract h5ad and are technology-specific, so they are
+# included only for the matching head technology. In decoupled mode the core
+# consumes pre-existing contracts and no head is included.
+if MODE == "visiumhd":
     include: "rules/spaceranger.smk"
     include: "rules/generate_qupath_image.smk"   # HEAD: hires image for QuPath annotation
     include: "rules/prepare_input.smk"           # HEAD: builds the unfiltered contract h5ad

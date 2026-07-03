@@ -46,12 +46,13 @@ properties:
 
   mode:
     type: string
-    enum: ["coupled", "decoupled"]
-    default: "coupled"
+    enum: ["visiumhd", "decoupled"]
+    default: "visiumhd"
     description: >
-      coupled = the head builds the contract h5ads in this run; decoupled = the
-      core consumes pre-existing contracts from contract_dir (head rules skipped;
-      validation aborts if any sample in core_samples is missing its contract).
+      A HEAD technology name (that head builds the contract h5ads in this run) or
+      "decoupled" (the core consumes pre-existing contracts from contract_dir; head
+      rules skipped; validation aborts if any core_samples sample is missing its
+      contract). Extend the enum as new heads are added (e.g. xenium5k).
 
   core_samples:
     type: string
@@ -75,6 +76,26 @@ properties:
       type: object
       additionalProperties:
         type: string
+
+  integration:
+    type: ["object", "null"]
+    description: Integration settings for integrate_samples.
+    properties:
+      integrate_key:
+        type: string
+        description: obs column Harmony corrects on ("sample" = per-sample).
+
+  extra_annotations:
+    type: ["object", "null"]
+    description: >
+      core_samples.tsv columns to surface downstream as UMAP colourings, pseudobulk
+      QC panels, and DE heatmap annotation tracks. Annotation-only (no DESeq2 covariate).
+    properties:
+      columns:
+        type: array
+        items:
+          type: string
+        description: Columns to plot/annotate ([] = all non-sample columns).
 
   geojson_path:
     type: string

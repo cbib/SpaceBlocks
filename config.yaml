@@ -48,14 +48,12 @@ external_annotation:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Core sample sheet, run mode, and contract location
 # ═══════════════════════════════════════════════════════════════════════════
-# mode:
-#   coupled   – the Visium HD head builds the contract h5ads in this same run
-#               (default; samples.csv drives the head).
-#   decoupled – the core consumes PRE-EXISTING contract h5ads from contract_dir
-#               (prepared by any head / segmentation, possibly in a separate run).
-#               The head rules are not included; validation aborts up front if any
-#               sample in core_samples is missing its contract.
-mode: "coupled"
+# mode: the run's HEAD technology (builds the contract h5ads in this same run) or
+#   "decoupled" (the core consumes PRE-EXISTING contract h5ads from contract_dir,
+#   prepared by any head/segmentation, possibly in a separate run; head rules are
+#   not included and validation aborts up front if a sample's contract is missing).
+#   Head technologies: visiumhd (more can be added, e.g. xenium5k).
+mode: "visiumhd"
 
 # CORE sample sheet (technology-agnostic ANCHOR). TSV; required column `sample`,
 # plus any optional experimental-design columns (e.g. subtype, batch, condition)
@@ -64,22 +62,47 @@ mode: "coupled"
 # RENAMING: the `sample` value need NOT match obs["sample"] inside the h5ad —
 # samples may be renamed (e.g. for publication) during input preparation; the core
 # does not assert the two agree. Leave "" to derive the list from samples.csv.
-core_samples: ""          # e.g. "config/core_samples.tsv"
+core_samples: "config/core_samples.tsv"
 
 # Where the CORE READS the contract h5ads. Empty = the per-sample output tree
 # ({post_processing_outdir}/Samples). In decoupled mode, point this at wherever
 # your head wrote the {sample}/{sample}_unfiltered.h5ad files.
 contract_dir: ""
 
-# Optional colour palettes for core-sheet columns (the sample column and any
-# design column), to harmonise downstream visualisation. Structure:
-#   column_name -> { value -> hex }.  Unlisted values fall back to grey.
-sample_colors: {}
-  # Populate to harmonise downstream colours, e.g.:
-  #   sample_colors:
-  #     batch:
-  #       B1: "#4C72B0"
-  #       B2: "#DD8452"
+# Optional colour palettes for core-sheet columns (the sample column and any extra
+# annotation column), to harmonise downstream visualisation. Structure:
+#   column_name -> { value -> hex }.  Unlisted values fall back to grey (#cccccc).
+# TEST NOTE: `patient` uses the supplied ordered code (Patient 1..8); `type` has no
+# palette here, so its levels render grey (fallback demo).
+sample_colors:
+  patient:
+    "Patient 1": "#000000"
+    "Patient 2": "#E69F00"
+    "Patient 3": "#56B4E9"
+    "Patient 4": "#009E73"
+    "Patient 5": "#F0E442"
+    "Patient 6": "#CC79A7"
+    "Patient 7": "#0072B2"
+    "Patient 8": "#D55E00"
+  type:
+    "malignant": "#E6001F"
+    "premalignant": "#BD7982"
+  # "both" left out for test run
+
+# Integration settings.
+integration:
+  # obs column Harmony corrects on in integrate_samples. "sample" (default) = the
+  # current per-sample correction; set to a core-sheet column (e.g. "patient") to
+  # integrate on that instead.
+  integrate_key: "sample"
+
+# Extra annotation columns from core_samples.tsv to surface downstream (these are
+# NOT DE covariates). They drive: integrated / subcluster / explore_genes UMAP
+# colourings, pseudobulk_aggregate QC PCA panels, and pseudobulk_de heatmap
+# annotation tracks — coloured via sample_colors (grey fallback for missing values).
+extra_annotations:
+  # Columns to plot/annotate. [] = all non-sample core-sheet columns.
+  columns: ["patient", "type"]
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Input contract (modular head → core hand-off)
@@ -103,9 +126,11 @@ contract:
 # never filters. Thresholds are LISTS per feature; each value is drawn as a cutoff
 # and gets its own "landing" figure (qc_remove_<feature>.png).
 qc_sweep:
-  ingest_enabled: false            # overlay ingest cell-type labels on removed cells
-  ingest_pattern: ""               # {sample} pattern, e.g.
-                                   # "/scratch/.../Samples/{sample}/adata_{sample}_ingested.h5ad"
+  # Overlay cell types on the removed-cells panels. When true, qc_sweep transfers
+  # labels via sc.tl.ingest from the SAME reference the downstream ingest_ref rule
+  # uses (top-level `ingest_ref` + `ingest_ref_label_key` above) — no separate
+  # reference to configure here. Leave false to skip the overlay.
+  ingest_enabled: true
   ingest_key: "cell_type_ingest"   # obs column carrying the cell-type label
   cell_id_key: "cell_id"           # obs column used to match ingest ↔ contract cells
   dpi: 300
@@ -156,7 +181,7 @@ analysis:
   # Regions not listed here are excluded from pseudobulk DE.
   region_levels:
     - "Healthy area"
-    - "Heatlhy over tumor"
+    - "Healthy over tumor"
     - "Dysplastic area"
     - "AK area"
     - "AK over tumor"
@@ -167,7 +192,7 @@ analysis:
   # Color code for each region level (must match region_levels names)
   region_colors:
     "Healthy area" : "#FDE725FF"
-    "Heatlhy over tumor" : "#9FDA3AFF"
+    "Healthy over tumor" : "#9FDA3AFF"
     "Dysplastic area" : "#4AC16DFF"
     "AK area" : "#1FA187FF"
     "AK over tumor" : "#277F8EFF"
@@ -236,7 +261,7 @@ spatial_niches:
   # every sample, else from the rule's own output dir, else falls back to
   # computing. It still concatenates, writes the canonical TSVs, and regenerates
   # plots — cheaply. Compute once, then set true to freeze + skip the heavy work.
-  use_precomputed: false
+  use_precomputed: true
   # External/precomputed niche TSV directory (files named niche_{sample}.tsv,
   # columns: barcode <TAB> spatial_niche). Empty = use the rule's own output dir.
   # Also lets you swap in a different niche method without changing the pipeline.
@@ -247,7 +272,7 @@ spatial_niches:
   n_iterations: 2              # Leiden iterations (igraph flavor); 2 = fast & safe (not -1)
   max_m: 1                     # azimuthal Fourier harmonics for the AGF
   nbr_weight_decay: "scaled_gaussian"
-  use_hvg: false               # false = all genes (see note: memory at scale)
+  use_hvg: true               # false = all genes (see note: memory at scale)
   n_top_genes: 2000            # only used when use_hvg: true
   # n_pcs omitted → defaults to analysis.n_pcs (the PCs used in preprocess_umap)
   niche_resolution: 0.3        # Leiden resolution that defines the niche labels

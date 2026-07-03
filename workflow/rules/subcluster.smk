@@ -28,6 +28,8 @@ rule subcluster:
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS,
+        sample_colors=SAMPLE_COLORS,
     log:
         out=f"{LOGDIR}/subcluster/{{subcompartment}}.out",
         err=f"{LOGDIR}/subcluster/{{subcompartment}}.err",

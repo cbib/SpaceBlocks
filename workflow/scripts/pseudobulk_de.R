@@ -82,6 +82,56 @@ region_colors <- tryCatch({
 })
 message("  region_colors: ", paste(names(region_colors), region_colors, sep = "=", collapse = ", "))
 
+# ── Design annotation columns + palettes (parallel lists → named vectors) ─────
+extra_annot_columns <- tryCatch(as.character(snakemake@params[["extra_annot_columns"]]),
+                           error = function(e) character(0))
+extra_annot_columns <- extra_annot_columns[nzchar(extra_annot_columns)]
+extra_palettes <- tryCatch({
+  dc <- as.character(snakemake@params[["extra_anno_col_names"]])
+  dv <- as.character(snakemake@params[["extra_anno_values"]])
+  dh <- as.character(snakemake@params[["extra_anno_colors"]])
+  pals <- list()
+  if (length(dc) > 0 && length(dc) == length(dv) && length(dv) == length(dh)) {
+    for (u in unique(dc)) {
+      idx <- which(dc == u)
+      pals[[u]] <- setNames(dh[idx], dv[idx])
+    }
+  }
+  pals
+}, error = function(e) {
+  message("  WARNING: Failed to parse design palettes: ", conditionMessage(e))
+  list()
+})
+message("  extra_annot_columns: [", paste(extra_annot_columns, collapse = ", "), "]")
+
+# Build a ComplexHeatmap top annotation: Region (existing behaviour) plus one
+# track per design column present in `meta_df`, coloured from extra_palettes with
+# a grey (#cccccc) fallback for values absent from the config palette. Design
+# columns are annotation-only — they are NOT added to the DESeq2 model.
+build_top_annotation <- function(meta_df, condition_col, region_cols) {
+  anno_args <- list(Region = meta_df[[condition_col]])
+  anno_cols <- list()
+  avail <- region_cols[names(region_cols) %in% unique(as.character(meta_df[[condition_col]]))]
+  if (length(avail) > 0) anno_cols[["Region"]] <- avail
+  for (dc in extra_annot_columns) {
+    if (dc %in% colnames(meta_df)) {
+      vals <- as.character(meta_df[[dc]])
+      anno_args[[dc]] <- vals
+      lv   <- unique(vals)
+      full <- setNames(rep("#cccccc", length(lv)), lv)
+      pal  <- extra_palettes[[dc]]
+      if (!is.null(pal)) {
+        common <- intersect(names(pal), lv)
+        if (length(common) > 0) full[common] <- pal[common]
+      }
+      anno_cols[[dc]] <- full
+    }
+  }
+  if (length(anno_cols) > 0) anno_args[["col"]] <- anno_cols
+  anno_args[["show_legend"]] <- TRUE
+  do.call(HeatmapAnnotation, anno_args)
+}
+
 message("Params parsed OK")
 
 dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
@@ -123,20 +173,8 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
   body_h   <- unit(body_mm, "mm")
   dev_h_px <- round((body_mm / 25.4 + 2.6) * res_dpi)  # +2.6in for title/anno/legend
 
-  # Color mapping for annotation
-  avail_cols <- region_cols[names(region_cols) %in% levels(split_factor)]
-  if (length(avail_cols) > 0) {
-    col_anno <- HeatmapAnnotation(
-      Region = meta_ordered[[condition_col]],
-      col = list(Region = avail_cols),
-      show_legend = TRUE
-    )
-  } else {
-    col_anno <- HeatmapAnnotation(
-      Region = meta_ordered[[condition_col]],
-      show_legend = TRUE
-    )
-  }
+  # Region + design-column annotation tracks (grey fallback for missing values)
+  col_anno <- build_top_annotation(meta_ordered, condition_col, region_cols)
 
   col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
 
@@ -682,14 +720,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
                                   levels = if (length(conditions) > 0) conditions
                                            else unique(gene_level))
 
-              avail_cols <- region_colors[names(region_colors) %in%
-                                          unique(as.character(meta_ord[[condition_col]]))]
-              col_anno <- if (length(avail_cols) > 0) {
-                HeatmapAnnotation(Region = meta_ord[[condition_col]],
-                                  col = list(Region = avail_cols), show_legend = TRUE)
-              } else {
-                HeatmapAnnotation(Region = meta_ord[[condition_col]], show_legend = TRUE)
-              }
+              col_anno <- build_top_annotation(meta_ord, condition_col, region_colors)
 
               col_fun  <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
               n_row    <- nrow(mat_scaled); n_col <- ncol(mat_scaled)
