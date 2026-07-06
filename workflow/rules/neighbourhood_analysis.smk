@@ -11,6 +11,7 @@ rule neighbourhood_analysis:
     params:
         sample_id=lambda wc: wc.sample,
         annot_type=lambda wc: wc.annot_type,
+        annotation_colors=config.get("annotation_colors", {}),
     log:
         out=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.out",
         err=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.err",

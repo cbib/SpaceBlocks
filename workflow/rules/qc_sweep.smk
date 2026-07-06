@@ -40,10 +40,9 @@ _TH = _QC.get("thresholds", {})
 
 
 def _thresholds_for(sample):
-    """Shared `default` thresholds overridden key-by-key by any `per_sample` set."""
-    merged = dict(_TH.get("default", {}))
-    merged.update(_TH.get("per_sample", {}).get(sample, {}))
-    return merged
+    """Global candidate threshold lists (flat: feature -> list of cut-offs). One set
+    is applied to every sample; per-sample QC tuning lives in preprocess_umap."""
+    return dict(_TH)
 
 
 rule qc_sweep:
@@ -72,6 +71,8 @@ rule qc_sweep:
         dpi=_QC.get("dpi", config.get("analysis", {}).get("plot_dpi", 300)),
         ingest_enabled=_QC.get("ingest_enabled", False),
         ref_label_key=config.get("ingest_ref_label_key", "cell_type"),
+        region_colors=config.get("analysis", {}).get("region_colors", {}),
+        region_levels=config.get("analysis", {}).get("region_levels", []),
     log:
         out=f"{_OUT}/logs/{{sample}}/qc_sweep.log",
         err=f"{_OUT}/logs/{{sample}}/qc_sweep.err",

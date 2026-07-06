@@ -380,7 +380,13 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
         and not all(adata.obs["region_annotation"] == "Unlabeled")
     )
     if has_regions:
-        adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
+        cats = list(pd.unique(adata.obs["region_annotation"].astype(str)))
+        ordered = [r for r in REGION_LEVELS if r in cats] + \
+                  [r for r in cats if r not in REGION_LEVELS]
+        adata.obs["region_annotation"] = pd.Categorical(
+            adata.obs["region_annotation"].astype(str), categories=ordered)
+        adata.uns["region_annotation_colors"] = [REGION_COLORS.get(str(c), "#cccccc")
+                                                 for c in ordered]
         sc.pl.umap(adata, color=["region_annotation"], size=2, wspace=0.25, frameon=False,
                    title="By region")
         plt.savefig(os.path.join(umap_dir, "UMAP_by_region.png"),
@@ -473,6 +479,7 @@ N_PCS          = int(snakemake.params.n_pcs)
 DE_N_GENES     = int(snakemake.params.de_n_genes)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS  = snakemake.params.region_colors
+REGION_LEVELS  = list(getattr(snakemake.params, "region_levels", []) or [])
 DPI          = int(getattr(snakemake.params, "dpi", 300))
 EXTRA_ANNOT_COLUMNS = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
 SAMPLE_COLORS  = getattr(snakemake.params, "sample_colors", {}) or {}

@@ -170,11 +170,11 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir,
             sc_cd = (annotation_colors.get("sample_batch", {})
                      if isinstance(annotation_colors, dict) else {})
             cmap_s = plt.cm.get_cmap("tab20", max(len(unique_samples), 1))
-            sample_colors = {s: sc_cd.get(str(s), cmap_s(i))
-                             for i, s in enumerate(unique_samples)}
+            sample_pal = {s: sc_cd.get(str(s), cmap_s(i))
+                          for i, s in enumerate(unique_samples)}
             for s in unique_samples:
                 mask = samples == s
-                axes[2].scatter(pcs[mask, 0], pcs[mask, 1], c=[sample_colors[s]],
+                axes[2].scatter(pcs[mask, 0], pcs[mask, 1], c=[sample_pal[s]],
                                 label=s, s=60, edgecolors="black", linewidths=0.5)
             axes[2].set_xlabel(f"PC1 ({var_explained[0]:.1f}%)")
             axes[2].set_ylabel(f"PC2 ({var_explained[1]:.1f}%)")

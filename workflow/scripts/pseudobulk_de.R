@@ -520,6 +520,26 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
           }, error = function(e) {
             message("    Gene groups export failed: ", conditionMessage(e))
           })
+
+          # ── Per-group heatmaps: the genes of every DEGpatterns group ─────
+          # Reuses the DE heatmap helper (unsplit + region-split, z-scored vsd),
+          # written alongside the group plots in DEGpatterns/.
+          tryCatch({
+            for (g in sort(unique(cluster_df$cluster))) {
+              genes_g <- cluster_df$genes[cluster_df$cluster == g]
+              genes_g <- genes_g[genes_g %in% rownames(assay(vsd))]
+              if (length(genes_g) >= 2) {
+                mat_g_scaled <- t(scale(t(assay(vsd)[genes_g, , drop = FALSE])))
+                draw_complex_heatmaps(
+                  mat_g_scaled, meta, condition_col, genes_g,
+                  paste0("group_", g), deg_dir, conditions, region_colors
+                )
+              }
+            }
+            message("    DEGpatterns per-group heatmaps written")
+          }, error = function(e) {
+            message("    DEGpatterns per-group heatmaps failed: ", conditionMessage(e))
+          })
         }
       } else {
         message("    Too few LRT-significant genes for DEGpatterns (", length(sig_genes), ")")

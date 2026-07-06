@@ -67,6 +67,8 @@ try:
     DPI = int(snakemake.params.dpi)
     ingest_enabled = bool(getattr(snakemake.params, "ingest_enabled", False))
     ref_label_key  = str(getattr(snakemake.params, "ref_label_key", "cell_type"))
+    region_colors  = dict(getattr(snakemake.params, "region_colors", {}) or {})
+    region_levels  = list(getattr(snakemake.params, "region_levels", []) or [])
 
     out = snakemake.output
     out_dir = os.path.dirname(str(out.violins_png))
@@ -99,6 +101,17 @@ try:
     region_key = ("region_annotation"
                   if ("region_annotation" in adata.obs.columns
                       and adata.obs["region_annotation"].nunique() > 1) else None)
+
+    # Order region categories by region_levels (present ones first) and stamp the
+    # config palette into uns so sc.pl.violin colours each region consistently.
+    if region_key is not None:
+        present = list(pd.unique(adata.obs[region_key].astype(str)))
+        ordered = [r for r in region_levels if r in present] + \
+                  [r for r in present if r not in region_levels]
+        adata.obs[region_key] = pd.Categorical(adata.obs[region_key].astype(str),
+                                                categories=ordered)
+        adata.uns[f"{region_key}_colors"] = [region_colors.get(str(c), "#cccccc")
+                                              for c in ordered]
 
     # One spatial conditional, reused everywhere. Always pass an explicit spot_size
     # (cell centroids are far smaller than the scalefactor-derived Visium spot size,

@@ -26,6 +26,7 @@ rule subcluster:
         random_seed=RANDOM_SEED,
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
+        region_levels=REGION_LEVELS,
         dpi=ANALYSIS.get("plot_dpi", 300),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,

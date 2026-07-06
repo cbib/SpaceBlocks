@@ -38,6 +38,7 @@ log = logging.getLogger("neighbourhood_analysis")
 
 sample_id   = snakemake.params.sample_id
 annot_type  = snakemake.params.annot_type
+annotation_colors = dict(getattr(snakemake.params, "annotation_colors", {}) or {})
 adata_path  = str(snakemake.input.adata)
 results_dir = str(snakemake.output.results_dir)
 
@@ -78,6 +79,16 @@ try:
         sys.exit(0)
 
     log.info("%d cells, %d cell types", adata.n_obs, adata.obs["cell_type"].nunique())
+
+    # Map the config palette onto cell_type so squidpy plots (co-occurrence lines,
+    # enrichment axes) use consistent, publication colours. Grey fallback for
+    # values absent from the palette.
+    adata.obs["cell_type"] = adata.obs["cell_type"].cat.remove_unused_categories()
+    _ct_pal_cfg = annotation_colors.get(cell_type_col, {}) if isinstance(annotation_colors, dict) else {}
+    cell_type_palette = {str(c): _ct_pal_cfg.get(str(c), "#cccccc")
+                         for c in adata.obs["cell_type"].cat.categories}
+    adata.uns["cell_type_colors"] = [cell_type_palette[str(c)]
+                                     for c in adata.obs["cell_type"].cat.categories]
 
     # Global neighbourhood analysis
     sq.gr.spatial_neighbors(adata, coord_type="generic", delaunay=True)
@@ -177,6 +188,55 @@ try:
             plt.savefig(os.path.join(results_dir, f"nhood_{region}_{sample_id}.png"),
                         dpi=300, bbox_inches="tight")
             plt.close()
+
+        # ── Co-occurrence BY AREA (composite; separate from the global figure) ──
+        # Per region, the self-co-occurrence of each cell type over distance (how
+        # spatially clustered each type is within that area), one panel per region,
+        # coloured by the shared cell-type palette.
+        region_curves = {}
+        for region in regions:
+            rdata = adata[adata.obs["region_annotation"] == region].copy()
+            rdata.obs["cell_type"] = rdata.obs["cell_type"].cat.remove_unused_categories()
+            if rdata.n_obs < 30 or rdata.obs["cell_type"].nunique() < 2:
+                continue
+            try:
+                sq.gr.co_occurrence(rdata, cluster_key="cell_type")
+                occ = rdata.uns["cell_type_co_occurrence"]["occ"]
+                interval = np.asarray(rdata.uns["cell_type_co_occurrence"]["interval"])
+                mids = (interval[:-1] + interval[1:]) / 2.0
+                cats = list(rdata.obs["cell_type"].cat.categories)
+                region_curves[region] = (mids, {ct: occ[i, i, :] for i, ct in enumerate(cats)})
+            except Exception as e:
+                log.warning("  co-occurrence failed for region %s: %s", region, e)
+
+        if region_curves:
+            nreg = len(region_curves)
+            ncol = min(3, nreg)
+            nrow = int(np.ceil(nreg / ncol))
+            fig, axes = plt.subplots(nrow, ncol, figsize=(5 * ncol, 4 * nrow), squeeze=False)
+            for ax in axes.ravel():
+                ax.set_axis_off()
+            legend_handles = {}
+            for k, (region, (mids, curves)) in enumerate(region_curves.items()):
+                ax = axes[k // ncol][k % ncol]
+                ax.set_axis_on()
+                for ct, curve in curves.items():
+                    color = cell_type_palette.get(str(ct), "#cccccc")
+                    ax.plot(mids, curve, color=color, lw=1.3)
+                    legend_handles.setdefault(
+                        str(ct), plt.Line2D([0], [0], color=color, lw=1.3))
+                ax.set_title(str(region), fontsize=9)
+                ax.set_xlabel("distance")
+                ax.set_ylabel("co-occurrence ratio")
+            if legend_handles:
+                fig.legend(list(legend_handles.values()), list(legend_handles.keys()),
+                           loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False,
+                           title="Cell type", fontsize=7, title_fontsize=8)
+            fig.suptitle(f"Self co-occurrence by area — {sample_id}", fontsize=12, y=1.02)
+            fig.tight_layout()
+            fig.savefig(os.path.join(results_dir, f"co_occurrence_by_region_{sample_id}.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close(fig)
 
     log.info("Neighbourhood analysis complete.")
 

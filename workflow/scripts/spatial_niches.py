@@ -186,6 +186,46 @@ def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
     plt.close(fig)
 
 
+def _spatial_scatter_highlight(adata, sample_key, color_key, target, out_path, dpi,
+                               hi_color="#e41a1c", bg_color="#d9d9d9"):
+    """Per-sample spatial map highlighting ONE niche (target in red, all other cells
+    grey), same one-panel-per-sample layout as _spatial_scatter."""
+    samples = list(pd.unique(adata.obs[sample_key]))
+    vals_all = adata.obs[color_key].astype(str).values
+    n = len(samples)
+    ncol = min(4, n)
+    nrow = int(np.ceil(n / ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4 * ncol, 4 * nrow), squeeze=False)
+    for ax in axes.ravel():
+        ax.set_axis_off()
+    for i, s in enumerate(samples):
+        ax = axes[i // ncol][i % ncol]
+        ax.set_axis_on()
+        m = (adata.obs[sample_key] == s).values
+        sp = np.asarray(adata.obsm["spatial"])[m]
+        v = vals_all[m]
+        bg, hi = v != str(target), v == str(target)
+        if bg.any():
+            ax.scatter(sp[bg, 0], sp[bg, 1], s=2, linewidths=0,
+                       color=bg_color, rasterized=True)
+        if hi.any():
+            ax.scatter(sp[hi, 0], sp[hi, 1], s=2, linewidths=0,
+                       color=hi_color, rasterized=True)
+        ax.set_title(str(s), fontsize=9)
+        ax.set_aspect("equal")
+        ax.invert_yaxis()
+        ax.set_xticks([]); ax.set_yticks([])
+    handles = [plt.Line2D([0], [0], marker="o", linestyle="", markersize=5,
+                          color=hi_color, label=f"niche {target}"),
+               plt.Line2D([0], [0], marker="o", linestyle="", markersize=5,
+                          color=bg_color, label="other")]
+    fig.legend(handles=handles, loc="center left", bbox_to_anchor=(1.0, 0.5),
+               frameon=False, fontsize=7)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _resolve_precomputed():
     """Return {sample: tsv_path} with a niche TSV for EVERY sample (external
     niche_dir first, else the rule's own output dir). SAFEGUARD: if any sample's
@@ -437,6 +477,13 @@ try:
         _spatial_scatter(adata, "sample", NICHE_KEY,
                          os.path.join(plots_dir, "spatial_niches_per_sample.png"),
                          DPI, niche_palette)
+        # One highlight map per niche (target red vs grey) in a subfolder.
+        ind_dir = os.path.join(plots_dir, "individual_niches")
+        os.makedirs(ind_dir, exist_ok=True)
+        for c in cats:
+            _spatial_scatter_highlight(
+                adata, "sample", NICHE_KEY, c,
+                os.path.join(ind_dir, f"spatial_niche_{c}_per_sample.png"), DPI)
     except Exception as e:
         log.warning("  spatial scatter failed: %s", e)
 
