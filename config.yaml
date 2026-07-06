@@ -84,10 +84,10 @@ sample_colors:
     "Patient 6": "#CC79A7"
     "Patient 7": "#0072B2"
     "Patient 8": "#D55E00"
-  type:
-    "malignant": "#E6001F"
-    "premalignant": "#BD7982"
-  # "both" left out for test run
+  batch:
+    "Batch 1": "#8E44AD"
+    "Batch 2": "#C0392B"
+    "Batch 3": "#7F7F7F"
 
 # Integration settings.
 integration:
@@ -102,7 +102,7 @@ integration:
 # annotation tracks — coloured via sample_colors (grey fallback for missing values).
 extra_annotations:
   # Columns to plot/annotate. [] = all non-sample core-sheet columns.
-  columns: ["patient", "type"]
+  columns: ["patient", "batch"]
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Input contract (modular head → core hand-off)

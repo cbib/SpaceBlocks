@@ -222,8 +222,9 @@ try:
 
         nrows = 2 if ingest_vals is not None else 1
         ncols = 1 + len(ths)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5.0 * ncols, 5.0 * nrows),
-                                 squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(5.6 * ncols, 5.0 * nrows),
+                                 squeeze=False,
+                                 gridspec_kw={"wspace": 0.6, "hspace": 0.35})
 
         def draw(ax, color, title, **extra):
             try:
@@ -288,7 +289,7 @@ try:
         feats.append(("pct_counts_mt", "% mitochondrial"))
     if has_coords:
         fig, axes = plt.subplots(1, len(feats), figsize=(7 * len(feats), 6),
-                                  gridspec_kw={"wspace": 0.3})
+                                  gridspec_kw={"wspace": 0.45})
         if len(feats) == 1:
             axes = [axes]
         for ax, (col, lab) in zip(axes, feats):

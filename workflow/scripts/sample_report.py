@@ -117,7 +117,7 @@ def _build_page1(adata, sample_id, keys, library_id, has_regions=False):
     panels = [(k, t) for k, t in panels if k]
     n = len(panels)
     fig, axes = plt.subplots(2, n, figsize=(8 * n, 14),
-                             gridspec_kw={"wspace": 0.5, "hspace": 0.25},
+                             gridspec_kw={"wspace": 0.75, "hspace": 0.35},
                              squeeze=False)
     fig.suptitle(f"Sample: {sample_id}", fontsize=18, fontweight="bold", y=0.99)
     for j, (key, title) in enumerate(panels):
@@ -319,6 +319,17 @@ try:
                     sample_col = "sample"
 
                 keys = _pick_keys(adata, NICHE_COLUMN)
+
+                # Order spatial-niche categories numerically (like clusters), so the
+                # page-1 legends/colours read 0,1,2,…,10 rather than lexicographically.
+                niche_key = keys[3]
+                if niche_key and niche_key in adata.obs.columns:
+                    _nv = adata.obs[niche_key].astype(str)
+                    try:
+                        _ord = [str(v) for v in sorted(_nv.unique(), key=lambda x: int(x))]
+                        adata.obs[niche_key] = pd.Categorical(_nv, categories=_ord)
+                    except (ValueError, TypeError):
+                        pass   # non-numeric niche labels — leave order as-is
 
                 has_regions = ("region_annotation" in adata.obs.columns
                                and adata.obs["region_annotation"].nunique() > 1
