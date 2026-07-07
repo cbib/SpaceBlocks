@@ -4,7 +4,7 @@
 # reads the VALIDATED unfiltered h5ad and shows where candidate QC cutoffs land
 # on the tissue, so the final analysis.* thresholds can be chosen deliberately.
 # It does NOT filter, NOT cluster and does NOT write an h5ad. Request its outputs
-# explicitly — it is not pulled in by run_upstream.
+# explicitly — it is not pulled in by run_preprocessing.
 #
 # Thresholds are LISTS per feature and may be SHARED across samples (a `default`
 # block) or UNIQUE per sample (a `per_sample` override block, merged key-by-key).
@@ -17,7 +17,7 @@
 # Expected config (in addition to the `contract` / `outdir` / `samples` blocks
 # used by validate_input.smk):
 #
-#   ingest_ref: "/path/to/reference.h5ad"    # top-level; shared with ingest_ref rule
+#   ingest_ref: "resources/reference.h5ad"   # top-level; shared with ingest_ref rule
 #   ingest_ref_label_key: "cell_type"        # top-level; obs column in the reference
 #   qc_sweep:
 #     ingest_enabled: false                  # overlay cell types on removed cells
@@ -36,13 +36,6 @@
 _CONTRACT = config.get("contract", {})
 _OUT = config.get("outdir", "results")
 _QC = config.get("qc_sweep", {})
-_TH = _QC.get("thresholds", {})
-
-
-def _thresholds_for(sample):
-    """Global candidate threshold lists (flat: feature -> list of cut-offs). One set
-    is applied to every sample; per-sample QC tuning lives in preprocess_umap."""
-    return dict(_TH)
 
 
 rule qc_sweep:

@@ -8,28 +8,6 @@
 # reading moved to rule prepare_input.)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _preprocess_inputs(wc):
-    inputs = {
-        "h5ad": config["contract"]["unfiltered_h5ad"].format(sample=wc.sample),
-        # gate: core runs only after the contract is validated
-        "validation": f"{config['outdir']}/{wc.sample}/validation/input_validation.json",
-    }
-    if USE_PRECOMPUTED:
-        precomp_dir = config.get("precomputed_metadata_dir", "")
-        if precomp_dir:
-            meta_file = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
-            if os.path.isfile(meta_file):
-                inputs["precomputed_meta"] = meta_file
-    # OPTIONAL per-sample QC threshold overrides (TSV: first column = sample name,
-    # columns = min_counts/min_genes/min_cells/max_counts/max_pct_mt). Declared as
-    # an input only when the file exists so Snakemake tracks edits to it; the
-    # script resolves the per-sample row and falls back to the analysis.* defaults.
-    th_tsv = config.get("preprocess_thresholds", "") or ""
-    if th_tsv and os.path.isfile(th_tsv):
-        inputs["thresholds_tsv"] = th_tsv
-    return inputs
-
-
 rule preprocess_umap:
     """Core QC / normalise / PCA / UMAP / multi-resolution Leiden on the contract h5ad."""
     input:
