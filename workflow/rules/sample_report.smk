@@ -7,10 +7,7 @@ rule sample_report:
     a barplot with cell proportions per region.
     """
     input:
-        annotated=expand(
-            f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
-            sample=SAMPLE_IDS,
-        ),
+        annotated=expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
     output:
         report=f"{OUTDIR_PP}/integrated_samples/samples_report.pdf",
     params:

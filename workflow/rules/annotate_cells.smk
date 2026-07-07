@@ -5,7 +5,7 @@ rule annotate_cells:
     """
     input:
         adata=_annotate_input_adata,
-        metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
+        metadata=rules.preprocess_umap.output.metadata,
         cluster_annotations=config.get("cluster_annotations", ""),
         spatial_niche=_annotate_niche_input,
     output:

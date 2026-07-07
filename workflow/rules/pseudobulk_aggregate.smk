@@ -10,7 +10,7 @@ rule pseudobulk_aggregate:
         └── manifest.tsv
     """
     input:
-        adata=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
+        adata=rules.integrate_samples.output.concatenated,
     output:
         agg_dir=directory(
             f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated"

@@ -189,10 +189,10 @@ include: "rules/spatial_niches.smk"
 
 # CORE — step 2: postprocessing.
 include: "rules/annotate_cells.smk"
+include: "rules/integrate_samples.smk"      # before pseudobulk (its input = integrated h5ad)
 include: "rules/pseudobulk_aggregate.smk"
 include: "rules/pseudobulk_de.smk"
 include: "rules/neighbourhood_analysis.smk"
-include: "rules/integrate_samples.smk"
 include: "rules/subcluster.smk"
 include: "rules/sample_report.smk"
 

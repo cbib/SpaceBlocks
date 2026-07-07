@@ -7,13 +7,13 @@ rule explore_genes_integrated:
     in per-entry subdirectories under gene_exploration/{entry}/Integrated/.
     """
     input:
-        integrated=f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
+        integrated=rules.integrate_samples.output.harmony,
         queries=GENE_EXPLORATION.get("queries", ""),
     output:
         ranges=f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
         done=touch(f"{OUTDIR_PP}/gene_exploration/.integrated_done"),
     params:
-        outdir=f"{OUTDIR_PP}/gene_exploration",
+        outdir=lambda wc, output: os.path.dirname(output.ranges),
         annot_key=GENE_EXPLORATION.get("annot_key", "cell_type_tsv"),
         aucell_fraction=GENE_EXPLORATION.get("aucell_max_rank_fraction", 0.05),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
@@ -49,13 +49,13 @@ rule explore_genes_sample:
     gene_exploration/{entry}/Dotplots/.
     """
     input:
-        adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
-        ranges=f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
+        adata=rules.annotate_cells.output.adata_annot,
+        ranges=rules.explore_genes_integrated.output.ranges,
         queries=GENE_EXPLORATION.get("queries", ""),
     output:
         done=touch(f"{OUTDIR_PP}/gene_exploration/.sentinels/{{sample}}.done"),
     params:
-        outdir=f"{OUTDIR_PP}/gene_exploration",
+        outdir=lambda wc, output: os.path.dirname(os.path.dirname(output.done)),
         sample_id=lambda wc: wc.sample,
         annot_key=GENE_EXPLORATION.get("annot_key", "cell_type_tsv"),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),

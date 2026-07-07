@@ -20,7 +20,7 @@ rule generate_qupath_image:
         qupath_image=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
     params:
         sample_id=lambda wc: wc.sample,
-        sr_outdir=f"{OUTDIR_SR}/{{sample}}",
+        sr_outdir=lambda wc, input: os.path.dirname(input.sr_done),
     log:
         out=f"{LOGDIR}/generate_qupath_image/{{sample}}.out",
         err=f"{LOGDIR}/generate_qupath_image/{{sample}}.err",

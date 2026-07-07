@@ -7,7 +7,7 @@ rule leiden_analysis:
     per resolution — the single adata from preprocess_umap has everything.
     """
     input:
-        adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
+        adata=rules.preprocess_umap.output.adata,
         cell_markers=config["snakemake_cell_markers"],
     output:
         res_dir=directory(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{resolution}}"),

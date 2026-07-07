@@ -88,7 +88,7 @@ def _preprocess_inputs(wc):
     inputs = {
         "h5ad": config["contract"]["unfiltered_h5ad"].format(sample=wc.sample),
         # gate: core runs only after the contract is validated
-        "validation": f"{config['outdir']}/{wc.sample}/validation/input_validation.json",
+        "validation": rules.validate_input.output.report.format(sample=wc.sample),
     }
     if USE_PRECOMPUTED:
         precomp_dir = config.get("precomputed_metadata_dir", "")
@@ -127,8 +127,8 @@ def _annotate_input_adata(wc):
     """annotate_cells reads the ingested adata when an ingest reference is
     configured, else the plain preprocessed adata."""
     if config.get("ingest_ref", ""):
-        return f"{SAMPLES_DIR}/{wc.sample}/adata_{wc.sample}_ingested.h5ad"
-    return f"{SAMPLES_DIR}/{wc.sample}/adata_{wc.sample}.h5ad"
+        return rules.ingest_ref.output.adata_ingested.format(sample=wc.sample)
+    return rules.preprocess_umap.output.adata.format(sample=wc.sample)
 
 
 def _annotate_niche_input(wc):

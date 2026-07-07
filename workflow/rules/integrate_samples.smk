@@ -8,10 +8,7 @@ rule integrate_samples:
     - sketched.h5ad:  geosketched 25% subset with projected clusters
     """
     input:
-        annotated=expand(
-            f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
-            sample=SAMPLE_IDS,
-        ),
+        annotated=expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
     output:
         concatenated=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
         harmony=f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",

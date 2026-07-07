@@ -10,6 +10,10 @@ rule spaceranger_count:
     as the output of this rule due to Martian restrictions. These files are
     instead tracked in downstream rules, giving Snakemake proper provenance.
     """
+    # NOTE: no conda/container directive — Space Ranger is proprietary, installed
+    # by the user, and its licence forbids redistribution in images (see docstring).
+    # Used conda environment used for downstream steps to prevent linting flag.
+    # This is an accepted `snakemake --lint` exception.
     input:
         fastqs=lambda wc: f"{SAMPLES[wc.sample]['fastq_dir']}/fastqs/",
         cytaimage=lambda wc: (
@@ -26,7 +30,9 @@ rule spaceranger_count:
     output:
         done_flag=f"{OUTDIR_SR}/{{sample}}/.done",
     params:
-        outdir=f"{OUTDIR_SR}/{{sample}}",
+        # outdir derived from the rule output (not a hardcoded prefix) so it
+        # cannot drift and is correct on non-shared filesystems.
+        outdir=lambda wc, output: os.path.dirname(output.done_flag),
         slide=lambda wc: SAMPLES[wc.sample]["slide"],
         area=lambda wc: SAMPLES[wc.sample]["area"],
         spaceranger=config["spaceranger"],
@@ -36,6 +42,8 @@ rule spaceranger_count:
         err=f"{LOGDIR}/spaceranger_count/{{sample}}.err",
     benchmark:
         f"{LOGDIR}/benchmarks/spaceranger_count/{{sample}}.tsv"
+    conda:
+        "../envs/visiumhd.yaml"
     threads:
         get_resource("spaceranger_count", "threads")
     resources:

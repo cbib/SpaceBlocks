@@ -4,7 +4,7 @@ rule pseudobulk_de:
     Region levels and colors from config control ordering and visualization.
     """
     input:
-        agg_dir=f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated",
+        agg_dir=rules.pseudobulk_aggregate.output.agg_dir,
     output:
         results_dir=directory(
             f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/de_results"

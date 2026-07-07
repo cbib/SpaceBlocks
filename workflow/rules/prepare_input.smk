@@ -19,7 +19,7 @@ rule prepare_input:
         h5ad=config["contract"]["unfiltered_h5ad"],
     params:
         sample_id=lambda wc: wc.sample,
-        sr_outdir=f"{OUTDIR_SR}/{{sample}}",
+        sr_outdir=lambda wc, input: os.path.dirname(input.sr_done),
         geojson_path=GEOJ_DIR,
     log:
         out=f"{LOGDIR}/prepare_input/{{sample}}.out",

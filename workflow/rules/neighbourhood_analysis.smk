@@ -5,7 +5,7 @@ rule neighbourhood_analysis:
     The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation'.
     """
     input:
-        adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
+        adata=rules.annotate_cells.output.adata_annot,
     output:
         results_dir=directory(f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{annot_type}}"),
     params:

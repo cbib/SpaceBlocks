@@ -8,7 +8,7 @@ rule subcluster:
     at multiple resolutions, silhouette evaluation, QC plots, and UMAPs.
     """
     input:
-        adata=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
+        adata=rules.integrate_samples.output.concatenated,
     output:
         sub_dir=directory(f"{OUTDIR_PP}/Subcompartments/{{subcompartment}}"),
     wildcard_constraints:
