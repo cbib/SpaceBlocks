@@ -38,7 +38,7 @@ rule pseudobulk_aggregate:
     threads:
         get_resource("pseudobulk_aggregate", "threads")
     resources:
-        mem_mb=get_resource("pseudobulk_aggregate", "mem_mb"),
+        mem_mb=mem_mb_attempt("pseudobulk_aggregate"),
         runtime=get_resource("pseudobulk_aggregate", "runtime"),
     script:
         "../scripts/pseudobulk_aggregate.py"

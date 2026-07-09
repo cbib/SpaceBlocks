@@ -22,7 +22,7 @@ rule neighbourhood_analysis:
     threads:
         get_resource("neighbourhood_analysis", "threads")
     resources:
-        mem_mb=get_resource("neighbourhood_analysis", "mem_mb"),
+        mem_mb=mem_mb_attempt("neighbourhood_analysis"),
         runtime=get_resource("neighbourhood_analysis", "runtime"),
     script:
         "../scripts/neighbourhood_analysis.py"

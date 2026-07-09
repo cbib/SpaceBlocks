@@ -20,6 +20,17 @@ def get_resource(rule_name, key):
     return rule_res[key]
 
 
+def mem_mb_attempt(rule_name, cap_factor=None):
+    """mem_mb that grows with the Snakemake retry attempt (base * attempt), so a job
+    killed for OOM is automatically resubmitted with more memory. Pairs with the
+    global `retries` set in the execution profile. attempt starts at 1 (= base)."""
+    base = get_resource(rule_name, "mem_mb")
+    def _mem(wildcards, attempt):
+        factor = attempt if cap_factor is None else min(attempt, cap_factor)
+        return int(base * factor)
+    return _mem
+
+
 # ── Small derivations called from the Snakefile globals block ────────────────
 def _resolution_range(rmin, rmax, step):
     """Inclusive Leiden resolution ladder from (min, max, step)."""

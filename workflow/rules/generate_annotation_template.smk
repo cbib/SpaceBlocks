@@ -21,6 +21,5 @@ rule generate_annotation_template:
         err=f"{LOGDIR}/generate_annotation_template.err",
     conda:
         "../envs/visiumhd.yaml"
-    localrule: True
     script:
         "../scripts/generate_annotation_template.py"

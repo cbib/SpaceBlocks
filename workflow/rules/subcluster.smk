@@ -41,7 +41,7 @@ rule subcluster:
     threads:
         get_resource("subcluster", "threads")
     resources:
-        mem_mb=get_resource("subcluster", "mem_mb"),
+        mem_mb=mem_mb_attempt("subcluster"),
         runtime=get_resource("subcluster", "runtime"),
     script:
         "../scripts/subcluster.py"

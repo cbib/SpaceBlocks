@@ -29,7 +29,7 @@ rule generate_qupath_image:
     threads:
         get_resource("generate_qupath_image", "threads")
     resources:
-        mem_mb=get_resource("generate_qupath_image", "mem_mb"),
+        mem_mb=mem_mb_attempt("generate_qupath_image"),
         runtime=get_resource("generate_qupath_image", "runtime"),
     script:
         "../scripts/generate_qupath_image.py"

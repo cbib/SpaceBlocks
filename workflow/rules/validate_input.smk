@@ -48,7 +48,7 @@ rule validate_input:
     threads:
         get_resource("validate_input", "threads")
     resources:
-        mem_mb=get_resource("validate_input", "mem_mb"),
+        mem_mb=mem_mb_attempt("validate_input"),
         runtime=get_resource("validate_input", "runtime"),
     script:
         "../scripts/validate_input.py"

@@ -32,7 +32,7 @@ rule annotate_cells:
     threads:
         get_resource("annotate_cells", "threads")
     resources:
-        mem_mb=get_resource("annotate_cells", "mem_mb"),
+        mem_mb=mem_mb_attempt("annotate_cells"),
         runtime=get_resource("annotate_cells", "runtime"),
     script:
         "../scripts/annotate_cells.py"

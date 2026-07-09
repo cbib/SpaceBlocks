@@ -52,7 +52,7 @@ rule spatial_niches:
     threads:
         get_resource("spatial_niches", "threads")
     resources:
-        mem_mb=get_resource("spatial_niches", "mem_mb"),
+        mem_mb=mem_mb_attempt("spatial_niches"),
         runtime=get_resource("spatial_niches", "runtime"),
     script:
         "../scripts/spatial_niches.py"

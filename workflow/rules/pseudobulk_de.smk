@@ -39,7 +39,7 @@ rule pseudobulk_de:
     threads:
         get_resource("pseudobulk_de", "threads")
     resources:
-        mem_mb=get_resource("pseudobulk_de", "mem_mb"),
+        mem_mb=mem_mb_attempt("pseudobulk_de"),
         runtime=get_resource("pseudobulk_de", "runtime"),
     script:
         "../scripts/pseudobulk_de.R"

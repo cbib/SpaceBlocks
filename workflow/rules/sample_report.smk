@@ -26,7 +26,7 @@ rule sample_report:
     threads:
         get_resource("sample_report", "threads")
     resources:
-        mem_mb=get_resource("sample_report", "mem_mb"),
+        mem_mb=mem_mb_attempt("sample_report"),
         runtime=get_resource("sample_report", "runtime"),
     script:
         "../scripts/sample_report.py"

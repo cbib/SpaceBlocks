@@ -45,7 +45,7 @@ rule preprocess_umap:
     threads:
         get_resource("preprocess_umap", "threads")
     resources:
-        mem_mb=get_resource("preprocess_umap", "mem_mb"),
+        mem_mb=mem_mb_attempt("preprocess_umap"),
         runtime=get_resource("preprocess_umap", "runtime"),
     script:
         "../scripts/preprocess_umap.py"

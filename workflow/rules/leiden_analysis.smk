@@ -30,7 +30,7 @@ rule leiden_analysis:
     threads:
         get_resource("leiden_analysis", "threads")
     resources:
-        mem_mb=get_resource("leiden_analysis", "mem_mb"),
+        mem_mb=mem_mb_attempt("leiden_analysis"),
         runtime=get_resource("leiden_analysis", "runtime"),
     script:
         "../scripts/leiden_analysis.py"

@@ -74,7 +74,7 @@ rule qc_sweep:
     threads:
         get_resource("qc_sweep", "threads")
     resources:
-        mem_mb=get_resource("qc_sweep", "mem_mb"),
+        mem_mb=mem_mb_attempt("qc_sweep"),
         runtime=get_resource("qc_sweep", "runtime"),
     script:
         "../scripts/qc_sweep.py"

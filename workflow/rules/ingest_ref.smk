@@ -32,7 +32,7 @@ rule ingest_ref:
     threads:
         get_resource("ingest_ref", "threads")
     resources:
-        mem_mb=get_resource("ingest_ref", "mem_mb"),
+        mem_mb=mem_mb_attempt("ingest_ref"),
         runtime=get_resource("ingest_ref", "runtime"),
     script:
         "../scripts/ingest_ref.py"

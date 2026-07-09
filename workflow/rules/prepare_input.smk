@@ -31,7 +31,7 @@ rule prepare_input:
     threads:
         get_resource("prepare_input", "threads")
     resources:
-        mem_mb=get_resource("prepare_input", "mem_mb"),
+        mem_mb=mem_mb_attempt("prepare_input"),
         runtime=get_resource("prepare_input", "runtime"),
     script:
         "../scripts/prepare_input.py"

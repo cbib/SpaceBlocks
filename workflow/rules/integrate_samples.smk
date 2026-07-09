@@ -35,7 +35,7 @@ rule integrate_samples:
     threads:
         get_resource("integrate_samples", "threads")
     resources:
-        mem_mb=get_resource("integrate_samples", "mem_mb"),
+        mem_mb=mem_mb_attempt("integrate_samples"),
         runtime=get_resource("integrate_samples", "runtime"),
     script:
         "../scripts/integrate_samples.py"

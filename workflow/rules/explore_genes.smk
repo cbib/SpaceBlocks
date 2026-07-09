@@ -32,7 +32,7 @@ rule explore_genes_integrated:
     threads:
         get_resource("explore_genes_integrated", "threads")
     resources:
-        mem_mb=get_resource("explore_genes_integrated", "mem_mb"),
+        mem_mb=mem_mb_attempt("explore_genes_integrated"),
         runtime=get_resource("explore_genes_integrated", "runtime"),
     script:
         "../scripts/explore_genes_integrated.py"
@@ -73,7 +73,7 @@ rule explore_genes_sample:
     threads:
         get_resource("explore_genes_sample", "threads")
     resources:
-        mem_mb=get_resource("explore_genes_sample", "mem_mb"),
+        mem_mb=mem_mb_attempt("explore_genes_sample"),
         runtime=get_resource("explore_genes_sample", "runtime"),
     script:
         "../scripts/explore_genes_sample.py"
