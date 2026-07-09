@@ -1,8 +1,8 @@
 """
-SpaceCore — modular spatial-transcriptomics Snakemake pipeline
-==============================================================
-A technology-specific HEAD builds a standardized unfiltered contract h5ad; a
-technology-agnostic CORE consumes it in three steps (preprocessing →
+SpaceBlocks — modular spatial-transcriptomics Snakemake pipeline
+================================================================
+A technology-specific Headblock builds a standardized unfiltered contract h5ad; a
+technology-agnostic Coreblock consumes it in three steps (preprocessing →
 postprocessing → exploration). Rules are split across rules/*.smk and included
 directly below; helper functions live in rules/common.smk.
 """
@@ -168,17 +168,17 @@ SPATIAL_NICHES_ENABLED = bool(SPATIAL_NICHES.get("enabled", False))
 SUBCOMPARTMENTS = list(config.get("subcompartments", {}).keys())
 
 # ── Rules ────────────────────────────────────────────────────────────────────
-# Rule files are included directly (grouped by phase for readability). The HEAD is
-# technology-specific and included only for the matching head; the CORE is the same
+# Rule files are included directly (grouped by phase for readability). The Headblock is
+# technology-specific and included only for the matching head; the Coreblock is the same
 # for every technology.
 
-# HEAD (technology-specific): builds the contract h5ad.
+# Headblock (technology-specific): builds the contract h5ad.
 if MODE == "visiumhd":
     include: "rules/spaceranger.smk"
     include: "rules/generate_qupath_image.smk"
     include: "rules/prepare_input.smk"
 
-# CORE — step 1: preprocessing.
+# Coreblock — step 1: preprocessing.
 include: "rules/validate_input.smk"
 include: "rules/qc_sweep.smk"
 include: "rules/preprocess_umap.smk"
@@ -187,7 +187,7 @@ include: "rules/generate_annotation_template.smk"
 include: "rules/ingest_ref.smk"
 include: "rules/spatial_niches.smk"
 
-# CORE — step 2: postprocessing.
+# Coreblock — step 2: postprocessing.
 include: "rules/annotate_cells.smk"
 include: "rules/integrate_samples.smk"      # before pseudobulk (its input = integrated h5ad)
 include: "rules/pseudobulk_aggregate.smk"
@@ -196,7 +196,7 @@ include: "rules/neighbourhood_analysis.smk"
 include: "rules/subcluster.smk"
 include: "rules/sample_report.smk"
 
-# CORE — step 3: exploration.
+# Coreblock — step 3: exploration.
 include: "rules/explore_genes.smk"
 
 
