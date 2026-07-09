@@ -1,0 +1,21 @@
+# pseudobulk_aggregate — FIXED test environment (SpaceBlocks .tests/).
+# conda deps pinned to the exact versions in envs/pseudobulk_aggregate_linux-64.lock so the
+# release test is reproducible regardless of when it is run. pip deps cannot be
+# read from a conda lock — pin them from `pip freeze` in the tested env for a
+# fully-fixed test (or install from the committed .lock directly).
+name: pseudobulk_aggregate
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10.20
+  - pip
+  - anndata=0.11.4
+  - scanpy=1.11.5
+  - numpy=1.26.4
+  - scipy=1.15.2
+  - pandas=2.3.3
+  - h5py=3.16.0
+  - pyarrow=24.0.0
+  - matplotlib-base=3.10.9
+  - pip:
+      - decoupler>=1.9.2,<2.0   # TODO: pin exact (pip freeze)

@@ -1,6 +1,10 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
-description: Configuration schema for the Visium HD Snakemake pipeline
+description: Configuration schema for the SpaceBlocks spatial-transcriptomics pipeline
 type: object
+# Strict: unknown top-level keys are rejected (catches typos). The Snakefile injects
+# `contract.unfiltered_h5ad` and top-level `outdir` AFTER validation, so those two are
+# intentionally absent here.
+additionalProperties: false
 
 required:
   - samples
@@ -149,19 +153,166 @@ properties:
       resolution_scan_min:
         type: number
         exclusiveMinimum: 0
-        default: 0.2
+        default: 0.8
       resolution_scan_max:
         type: number
         exclusiveMinimum: 0
-        default: 0.8
+        default: 1.2
       resolution_scan_step:
         type: number
         exclusiveMinimum: 0
-        default: 0.1
+        default: 0.2
       de_n_genes:
         type: integer
         minimum: 1
         default: 10
+      run_pseudobulk_de:
+        type: boolean
+        default: false
+        description: Gate the optional R/DESeq2 pseudobulk_de step.
+      analysis_levels:
+        type: array
+        items:
+          type: string
+        description: Pseudobulk analysis levels (e.g. by_region, by_celltype_region).
+      region_levels:
+        type: array
+        items:
+          type: string
+        description: Ordered region names (must match region_annotation values in the data).
+      region_colors:
+        type: object
+        additionalProperties:
+          type: string
+        description: region name -> hex colour.
+      plot_dpi:
+        type: integer
+        minimum: 1
+        description: Default figure DPI.
+
+  annotation_markers:
+    type: string
+    description: Optional marker TSV for scaled-expression annotation refinement.
+
+  ingest_ref:
+    type: string
+    description: >
+      Optional reference h5ad for scanpy label transfer (ingest_ref rule) and the
+      qc_sweep cell-type overlay. Empty string disables ingest.
+
+  ingest_ref_label_key:
+    type: string
+    description: obs column in the ingest reference holding the cell-type label.
+
+  annotation_types:
+    type: array
+    items:
+      type: string
+    description: >
+      Annotation types analysed downstream (neighbourhood, pseudobulk). Defaults to
+      ["tsv_annotation"] when omitted.
+
+  random_seed:
+    type: integer
+    description: Global RNG seed.
+
+  use_precomputed_clusters:
+    type: boolean
+    description: Reuse precomputed cluster metadata when available.
+
+  precomputed_metadata_dir:
+    type: string
+    description: Directory of precomputed metadata_{sample}.tsv (with use_precomputed_clusters).
+
+  external_annotation:
+    type: ["object", "null"]
+    description: Optional external cell-type annotation source.
+    properties:
+      enabled:
+        type: boolean
+
+  contract:
+    type: ["object", "null"]
+    description: >
+      Semantic HEAD->CORE contract keys. `unfiltered_h5ad` and `outdir` are injected by
+      the Snakefile after validation and are intentionally not defined here.
+    properties:
+      sample_key:
+        type: string
+      spatial_key:
+        type: string
+      require_region:
+        type: boolean
+      require_raw_counts:
+        type: boolean
+      mito_prefix:
+        type: array
+        items:
+          type: string
+
+  qc_sweep:
+    type: ["object", "null"]
+    description: OPTIONAL pre-filtering QC diagnostic (target qc_sweep_all).
+    properties:
+      ingest_enabled:
+        type: boolean
+      dpi:
+        type: integer
+        minimum: 1
+      thresholds:
+        type: object
+        description: Candidate cut-off LISTS per feature (min_genes/min_counts/max_counts/max_pct_mt).
+        additionalProperties:
+          type: array
+          items:
+            type: number
+      ingest_key:
+        type: string
+        description: (Legacy; unused — qc_sweep reuses the top-level ingest_ref.)
+      cell_id_key:
+        type: string
+        description: (Legacy; unused.)
+
+  annotation_colors:
+    type: ["object", "null"]
+    description: Cell-type colour palettes — annotation column -> {value -> hex}.
+    additionalProperties:
+      type: object
+      additionalProperties:
+        type: string
+
+  gene_exploration:
+    type: ["object", "null"]
+    description: Gene/signature exploration settings (target explore_genes).
+    properties:
+      queries:
+        type: string
+      annot_key:
+        type: string
+      niche_column:
+        type: string
+      aucell_max_rank_fraction:
+        type: number
+      dpi:
+        type: integer
+        minimum: 1
+
+  spatial_niches:
+    type: ["object", "null"]
+    description: OPTIONAL cross-sample spatial-niche identification.
+    properties:
+      enabled:
+        type: boolean
+      use_precomputed:
+        type: boolean
+      niche_dir:
+        type: string
+
+  subcompartments:
+    type: ["object", "null"]
+    description: >
+      Subcompartment definitions for the subcluster rule (name -> settings). Keys are
+      the subcompartment names.
 
   resources:
     type: object

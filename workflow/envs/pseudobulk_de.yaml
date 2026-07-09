@@ -4,11 +4,12 @@ channels:
   - bioconda
 dependencies:
   - r-base>=4.3
-  - r-tidyverse
-  - r-rcolorbrewer
-  - r-ggrepel
+  # CRAN
+  - r-tidyverse>=2.0
+  - r-rcolorbrewer>=1.1
+  - r-ggrepel>=0.9
+  - r-circlize>=0.4
   - bioconductor-deseq2>=1.40
-  - bioconductor-degreport
-  - bioconductor-summarizedexperiment
-  - bioconductor-complexheatmap
-  - r-circlize
+  - bioconductor-degreport>=1.46
+  - bioconductor-summarizedexperiment>=1.40
+  - bioconductor-complexheatmap>=2.26

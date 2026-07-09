@@ -7,6 +7,11 @@ description: >
   Extra columns are allowed and validated only as strings.
 type: object
 
+# Extra (design) columns beyond `sample` are allowed and validated as strings
+# (the sheet is read with dtype=str), so a stray numeric/boolean is caught.
+additionalProperties:
+  type: string
+
 properties:
   sample:
     type: string
