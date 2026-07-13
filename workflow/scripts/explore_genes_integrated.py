@@ -514,6 +514,13 @@ AUCELL_FRACTION   = float(snakemake.params.aucell_fraction)
 NICHE_COLUMN      = str(snakemake.params.niche_column) if snakemake.params.niche_column else ""
 DPI               = int(snakemake.params.dpi)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
+# Cell-type annotation columns inherit the cell_type_tsv palette when not given their
+# own, so external / ingest / refined labels stay colour-coherent with the tsv
+# annotation across every rule (override by defining the column's own palette).
+if isinstance(ANNOTATION_COLORS, dict) and ANNOTATION_COLORS.get("cell_type_tsv"):
+    ANNOTATION_COLORS = dict(ANNOTATION_COLORS)
+    for _k in ("cell_type_external", "cell_type_ingest", "cell_type_refined"):
+        ANNOTATION_COLORS.setdefault(_k, ANNOTATION_COLORS["cell_type_tsv"])
 REGION_COLORS     = snakemake.params.region_colors
 EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
 SAMPLE_COLORS     = getattr(snakemake.params, "sample_colors", {}) or {}

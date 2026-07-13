@@ -47,6 +47,7 @@ log = logging.getLogger("pseudobulk_aggregate")
 ANNOT_COL_MAP = {
     "tsv_annotation": "cell_type_tsv",
     "ingest_annotation": "cell_type_ingest",
+    "external_annotation": "cell_type_external",
 }
 
 

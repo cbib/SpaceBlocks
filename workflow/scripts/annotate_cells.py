@@ -264,30 +264,40 @@ try:
     log.info("TSV annotation distribution:\n%s", tsv_counts.to_string())
 
     # ── 2. External annotation (from metadata TSV column) ────────────────
+    # When enabled the pipeline MUST find the column for this sample — a missing
+    # source or column is a hard error (fail loudly rather than silently skipping),
+    # so a run only proceeds when the external labels are in place for every sample.
     ext_enabled = False
     if isinstance(EXT_ANNOT_CFG, dict) and EXT_ANNOT_CFG.get("enabled", False):
         ext_col = EXT_ANNOT_CFG.get("column", "")
-        if ext_col:
-            # Resolve metadata source for external annotation
-            _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
-            if _ext_meta and os.path.isfile(_ext_meta):
-                _ext_source = _ext_meta
-            elif os.path.isfile(metadata_path):
-                _ext_source = metadata_path
-            else:
-                _ext_source = None
+        if not ext_col:
+            raise ValueError("external_annotation.enabled is true but no 'column' is set in config.")
+        # Resolve metadata source for external annotation
+        _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
+        if _ext_meta and os.path.isfile(_ext_meta):
+            _ext_source = _ext_meta
+        elif os.path.isfile(metadata_path):
+            _ext_source = metadata_path
+        else:
+            _ext_source = None
 
-            if _ext_source:
-                log.info("Loading external annotation from '%s' in %s …", ext_col, _ext_source)
-                saved = pd.read_csv(_ext_source, sep="\t", index_col=0, comment="#")
-                if ext_col in saved.columns:
-                    adata.obs["cell_type_external"] = (
-                        saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
-                    ext_enabled = True
-                    log.info("  External annotation: %d types",
-                             adata.obs["cell_type_external"].nunique())
-                else:
-                    log.warning("  External column '%s' not in metadata. Skipping.", ext_col)
+        if _ext_source is None:
+            raise FileNotFoundError(
+                f"external_annotation enabled but no metadata found for sample "
+                f"'{sample_id}' (looked in precomputed_metadata_dir and {metadata_path}).")
+
+        log.info("Loading external annotation from '%s' in %s …", ext_col, _ext_source)
+        saved = pd.read_csv(_ext_source, sep="\t", index_col=0, comment="#")
+        if ext_col not in saved.columns:
+            raise ValueError(
+                f"external_annotation column '{ext_col}' not found in {_ext_source} "
+                f"(sample '{sample_id}'). Available columns: {list(saved.columns)}")
+        adata.obs["cell_type_external"] = (
+            saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
+        ext_enabled = True
+        log.info("  External annotation: %d types (%d cells unmatched → Unannotated)",
+                 adata.obs["cell_type_external"].nunique(),
+                 int((adata.obs["cell_type_external"] == "Unannotated").sum()))
 
     # ── 2b. Spatial niche labels (from spatial_niches rule / external) ───
     _ni = getattr(snakemake.input, "spatial_niche", "")

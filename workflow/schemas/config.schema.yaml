@@ -1,5 +1,5 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
-description: Configuration schema for the SpaceBlocks spatial-transcriptomics pipeline
+description: Configuration schema for the SpaceCore spatial-transcriptomics pipeline
 type: object
 # Strict: unknown top-level keys are rejected (catches typos). The Snakefile injects
 # `contract.unfiltered_h5ad` and top-level `outdir` AFTER validation, so those two are
@@ -170,6 +170,13 @@ properties:
         type: boolean
         default: false
         description: Gate the optional R/DESeq2 pseudobulk_de step.
+      run_leiden_analysis:
+        type: boolean
+        default: true
+        description: >
+          Produce the per-resolution Leiden diagnostic plots. Optional (clustering
+          itself happens in preprocess_umap); set false to skip, e.g. when overlaying
+          external annotation.
       analysis_levels:
         type: array
         items:

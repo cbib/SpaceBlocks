@@ -39,12 +39,17 @@ log = logging.getLogger("neighbourhood_analysis")
 sample_id   = snakemake.params.sample_id
 annot_type  = snakemake.params.annot_type
 annotation_colors = dict(getattr(snakemake.params, "annotation_colors", {}) or {})
+# Cell-type annotation columns inherit cell_type_tsv (coherence for external/ingest/refined).
+if annotation_colors.get("cell_type_tsv"):
+    for _k in ("cell_type_external", "cell_type_ingest", "cell_type_refined"):
+        annotation_colors.setdefault(_k, annotation_colors["cell_type_tsv"])
 adata_path  = str(snakemake.input.adata)
 results_dir = str(snakemake.output.results_dir)
 
 ANNOT_COL_MAP = {
     "tsv_annotation": "cell_type_tsv",
     "refined_annotation": "cell_type_refined",
+    "external_annotation": "cell_type_external",
 }
 
 try:

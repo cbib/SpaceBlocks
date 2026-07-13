@@ -32,6 +32,43 @@ def mem_mb_attempt(rule_name, cap_factor=None):
 
 
 # ── Small derivations called from the Snakefile globals block ────────────────
+def check_external_annotation():
+    """Fail fast (at parse time, before any job) when external_annotation is enabled
+    but not fully in place: the annotation column must be present in the metadata for
+    EVERY sample. External labels can only come from precomputed_metadata_dir (the
+    pipeline's own metadata does not carry them), so that dir is required."""
+    cfg = config.get("external_annotation", {}) or {}
+    if not cfg.get("enabled", False):
+        return
+    col = cfg.get("column", "")
+    if not col:
+        sys.exit("[config error] external_annotation.enabled is true but 'column' is empty.")
+    meta_dir = config.get("precomputed_metadata_dir", "") or ""
+    if not meta_dir:
+        sys.exit("[config error] external_annotation.enabled requires 'precomputed_metadata_dir' "
+                 f"to point at a directory of metadata_{{sample}}.tsv files carrying the '{col}' "
+                 "column (the pipeline's own metadata does not contain external labels).")
+    missing_file, missing_col = [], []
+    for s in SAMPLE_IDS:
+        f = os.path.join(meta_dir, f"metadata_{s}.tsv")
+        if not os.path.isfile(f):
+            missing_file.append(f)
+            continue
+        try:
+            header = pd.read_csv(f, sep="\t", nrows=0, comment="#").columns
+        except Exception as e:
+            sys.exit(f"[config error] could not read external metadata {f}: {e}")
+        if col not in header:
+            missing_col.append(f)
+    if missing_file or missing_col:
+        msg = [f"[config error] external_annotation enabled (column '{col}') but not in place:"]
+        if missing_file:
+            msg.append("  missing metadata file(s):\n    " + "\n    ".join(missing_file))
+        if missing_col:
+            msg.append(f"  column '{col}' absent in:\n    " + "\n    ".join(missing_col))
+        sys.exit("\n".join(msg))
+
+
 def _resolution_range(rmin, rmax, step):
     """Inclusive Leiden resolution ladder from (min, max, step)."""
     n = round((rmax - rmin) / step)
@@ -164,8 +201,9 @@ def get_all_targets(wildcards):
     targets += expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS)
     if MODE == "visiumhd":   # HEAD output; only produced when that head runs
         targets += expand(rules.generate_qupath_image.output.qupath_image, sample=SAMPLE_IDS)
-    targets += expand(rules.leiden_analysis.output.res_dir,
-                      sample=SAMPLE_IDS, resolution=RESOLUTIONS)
+    if RUN_LEIDEN_ANALYSIS:
+        targets += expand(rules.leiden_analysis.output.res_dir,
+                          sample=SAMPLE_IDS, resolution=RESOLUTIONS)
     if SPATIAL_NICHES_ENABLED:
         targets.append(rules.spatial_niches.output.concatenated)
         targets.append(rules.spatial_niches.output.plots_dir)

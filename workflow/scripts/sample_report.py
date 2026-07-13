@@ -282,6 +282,13 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
 annotated_paths   = [str(p) for p in snakemake.input.annotated]
 sample_ids        = list(snakemake.params.sample_ids)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
+# Cell-type annotation columns inherit the cell_type_tsv palette when not given their
+# own, so external / ingest / refined labels stay colour-coherent with the tsv
+# annotation across every rule (override by defining the column's own palette).
+if isinstance(ANNOTATION_COLORS, dict) and ANNOTATION_COLORS.get("cell_type_tsv"):
+    ANNOTATION_COLORS = dict(ANNOTATION_COLORS)
+    for _k in ("cell_type_external", "cell_type_ingest", "cell_type_refined"):
+        ANNOTATION_COLORS.setdefault(_k, ANNOTATION_COLORS["cell_type_tsv"])
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
 NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")

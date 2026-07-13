@@ -206,6 +206,9 @@ analysis:
 # Any obs column can be specified — leiden, cell_type_refined, etc.
 # Categories not listed get #cccccc (light grey)
 annotation_colors:
+  # Cell-type annotation columns (cell_type_external / _ingest / _refined) inherit the
+  # cell_type_tsv palette automatically, so external labels stay colour-coherent with
+  # the tsv annotation in every rule. Define a column's own palette here to override.
   cell_type_tsv:
     # red, brown and black for keratinocytes
     "Keratinocytes": "#d62728"
