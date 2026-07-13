@@ -40,6 +40,9 @@ rule validate_input:
         require_region=_CONTRACT.get("require_region", False),
         require_raw_counts=_CONTRACT.get("require_raw_counts", True),
         mito_prefix=_CONTRACT.get("mito_prefix", ["MT-", "mt-"]),
+        external_enabled=EXTERNAL_ENABLED,
+        external_column=(config.get("external_annotation", {}) or {}).get("column", ""),
+        external_meta_dir=config.get("precomputed_metadata_dir", ""),
     log:
         out=f"{_OUT}/logs/{{sample}}/validate_input.log",
         err=f"{_OUT}/logs/{{sample}}/validate_input.err",

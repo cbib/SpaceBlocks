@@ -237,6 +237,15 @@ properties:
     properties:
       enabled:
         type: boolean
+      column:
+        type: string
+        description: obs/metadata column holding the external label.
+      keep_unannotated:
+        type: boolean
+        default: true
+        description: >
+          false → keep only externally-annotated cells and skip pipeline QC (external
+          labels drive QC); true → normal QC, labels overlaid at annotation.
 
   contract:
     type: ["object", "null"]

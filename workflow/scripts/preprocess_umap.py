@@ -53,6 +53,14 @@ USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
 PRECOMPUTED_DIR = str(snakemake.params.precomputed_metadata_dir)
 REGION_COLORS   = snakemake.params.region_colors
 
+# External-annotation cell mask: when enabled with keep_unannotated=false, keep ONLY
+# externally-annotated cells and skip the pipeline QC thresholds (external labels drive QC).
+EXTERNAL_ENABLED = bool(getattr(snakemake.params, "external_enabled", False))
+EXTERNAL_COLUMN  = str(getattr(snakemake.params, "external_column", "") or "")
+KEEP_UNANNOTATED = bool(getattr(snakemake.params, "keep_unannotated", True))
+_ext_meta_in     = getattr(snakemake.input, "external_meta", None)
+EXTERNAL_MASK    = bool(EXTERNAL_ENABLED and not KEEP_UNANNOTATED and _ext_meta_in)
+
 out_adata      = str(snakemake.output.adata)
 out_metadata   = str(snakemake.output.metadata)
 out_report     = str(snakemake.output.report)
@@ -161,22 +169,47 @@ try:
     rng_ncells = (_range(adata.var["n_cells_by_counts"])
                   if "n_cells_by_counts" in adata.var.columns else (float("nan"), float("nan")))
 
-    log.info("QC (source: %s): min_counts=%s min_cells=%s min_genes=%s "
-             "max_counts=%s max_pct_mt=%s", THRESHOLDS_SOURCE,
-             MIN_COUNTS, MIN_CELLS, MIN_GENES, MAX_COUNTS, MAX_PCT_MT)
-    sc.pp.filter_cells(adata, min_counts=MIN_COUNTS)
-    if MAX_COUNTS is not None:
-        sc.pp.filter_cells(adata, max_counts=MAX_COUNTS)
-    sc.pp.filter_genes(adata, min_cells=MIN_CELLS)
-    sc.pp.filter_cells(adata, min_genes=MIN_GENES)
-    if MAX_PCT_MT is not None:
-        if mito_present:
-            _n_pre = int(adata.n_obs)
-            adata = adata[adata.obs["pct_counts_mt"] <= MAX_PCT_MT].copy()
-            log.info("  max_pct_mt=%.3f removed %d cells", MAX_PCT_MT, _n_pre - adata.n_obs)
-        else:
-            log.warning("  max_pct_mt set but no MT- genes present; mito filter skipped")
-    log.info("After QC: %d cells, %d genes", adata.n_obs, adata.n_vars)
+    if EXTERNAL_MASK:
+        # External annotation drives the cell set: keep ONLY externally-annotated cells
+        # and SKIP the pipeline QC thresholds (the user's external labels ARE the QC
+        # decision). Genes expressed in no kept cell are dropped (data hygiene, not a
+        # cell-QC threshold, so PCA/normalisation stay well-behaved).
+        ext_path = str(_ext_meta_in if isinstance(_ext_meta_in, str) else _ext_meta_in[0])
+        _saved = pd.read_csv(ext_path, sep="\t", index_col=0, comment="#")
+        if EXTERNAL_COLUMN not in _saved.columns:
+            raise ValueError(f"external_annotation column '{EXTERNAL_COLUMN}' not in {ext_path}")
+        _lab = _saved[EXTERNAL_COLUMN].dropna().astype(str).str.strip()
+        _annot_bc = set(_lab[(_lab != "") & (_lab.str.lower() != "nan")
+                             & (_lab.str.lower() != "unannotated")].index.astype(str))
+        _keep = adata.obs_names.astype(str).isin(_annot_bc)
+        adata = adata[_keep].copy()
+        sc.pp.filter_genes(adata, min_cells=1)
+        THRESHOLDS_SOURCE = "external_annotation (keep_unannotated=false; pipeline QC skipped)"
+        MIN_COUNTS = MAX_COUNTS = MIN_GENES = MIN_CELLS = MAX_PCT_MT = None
+        log.info("External-driven cell set for %s: kept %d / %d cells (%d externally "
+                 "annotated); pipeline QC thresholds SKIPPED.",
+                 sample_id, adata.n_obs, n_cells_before, len(_annot_bc))
+        if adata.n_obs == 0:
+            raise ValueError(
+                f"No externally-annotated cells matched the contract barcodes for "
+                f"'{sample_id}'. Check that {ext_path} barcodes match adata.obs_names.")
+    else:
+        log.info("QC (source: %s): min_counts=%s min_cells=%s min_genes=%s "
+                 "max_counts=%s max_pct_mt=%s", THRESHOLDS_SOURCE,
+                 MIN_COUNTS, MIN_CELLS, MIN_GENES, MAX_COUNTS, MAX_PCT_MT)
+        sc.pp.filter_cells(adata, min_counts=MIN_COUNTS)
+        if MAX_COUNTS is not None:
+            sc.pp.filter_cells(adata, max_counts=MAX_COUNTS)
+        sc.pp.filter_genes(adata, min_cells=MIN_CELLS)
+        sc.pp.filter_cells(adata, min_genes=MIN_GENES)
+        if MAX_PCT_MT is not None:
+            if mito_present:
+                _n_pre = int(adata.n_obs)
+                adata = adata[adata.obs["pct_counts_mt"] <= MAX_PCT_MT].copy()
+                log.info("  max_pct_mt=%.3f removed %d cells", MAX_PCT_MT, _n_pre - adata.n_obs)
+            else:
+                log.warning("  max_pct_mt set but no MT- genes present; mito filter skipped")
+    log.info("After filtering: %d cells, %d genes", adata.n_obs, adata.n_vars)
 
     n_cells_after = int(adata.n_obs)
     n_genes_after = int(adata.n_vars)

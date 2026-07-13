@@ -44,6 +44,10 @@ precomputed_metadata_dir: "/scratch/CBiB/soterino/metadata_visiumhd/"
 external_annotation:
   enabled: false
   column: "manual_celltype"
+  keep_unannotated: true   # false → keep ONLY externally-annotated cells and SKIP the
+                           #   pipeline QC thresholds entirely (the external labels are
+                           #   the QC decision). true → normal QC; labels overlaid at
+                           #   annotation (unmatched cells → "Unannotated").
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Core sample sheet, run mode, and contract location
@@ -164,6 +168,9 @@ analysis:
                                  # pseudobulk_aggregate matrices + PCA QC still
                                  # run — only the DE step is gated. Set true to
                                  # request the de_results/ outputs.
+  run_leiden_analysis: true     # per-resolution Leiden diagnostic plots. Clustering
+                                 # itself happens in preprocess_umap; set false to skip
+                                 # the plots (e.g. when overlaying external annotation).
   # Grouping levels for pseudobulk aggregation + (optional) DE. Each listed level
   # is built (and DE-tested when run_pseudobulk_de is true). "by_niche_region" is
   # available but intentionally NOT included by default: with a high spatial-niche
@@ -206,9 +213,9 @@ analysis:
 # Any obs column can be specified — leiden, cell_type_refined, etc.
 # Categories not listed get #cccccc (light grey)
 annotation_colors:
-  # Cell-type annotation columns (cell_type_external / _ingest / _refined) inherit the
-  # cell_type_tsv palette automatically, so external labels stay colour-coherent with
-  # the tsv annotation in every rule. Define a column's own palette here to override.
+  # Per-annotation-column palettes: column -> {cell type -> hex}. Declare each column
+  # explicitly (external labels are NOT inherited from cell_type_tsv), so a differing
+  # external vocabulary is coloured correctly rather than greyed out.
   cell_type_tsv:
     # red, brown and black for keratinocytes
     "Keratinocytes": "#d62728"
@@ -233,6 +240,28 @@ annotation_colors:
     # grey for muscle
     "Smooth_muscle": "#d9d9d9"
     "Skeletal_muscle": "#b9b9c9"
+  # External-annotation palette (starts as a copy of cell_type_tsv — edit the names/
+  # colours here to match YOUR external cell-type vocabulary).
+  cell_type_external:
+    "Keratinocytes": "#d62728"
+    "Keratinocytes_Basal": "#8c564b"
+    "Keratinocytes_Suprabasal": "#a0522d"
+    "Keratinocytes_Mal": "#000000"
+    "Tcells": "#1f77b4"
+    "Plasma_cells": "#9467bd"
+    "Mono_Macro": "#08519c"
+    "Macro_Tcells": "#756bb1"
+    "Macro_Plasma": "#9e9ac8"
+    "Fibroblasts": "#2ca02c"
+    "Fibroblasts_Macro": "#bcbd22"
+    "Fibroblasts_Endothelial": "#17becf"
+    "Fibroblasts_Keratinocytes": "#ffbb78"
+    "Fibroblasts_Plasma": "#fdae6b"
+    "Endothelial": "#98df8a"
+    "Adipocytes": "#dbdb8d"
+    "Gland_cells": "#ff7f0e"
+    "Smooth_muscle": "#d9d9d9"
+    "Skeletal_muscle": "#b9b9c9"
   # cell_type_ingest:
   #   "T_cells": "#d62728"
   #   "B_cells": "#9467bd"
@@ -245,7 +274,8 @@ annotation_colors:
 # to enable the gene exploration rules.  Leave empty or omit to skip.
 gene_exploration:
   queries: "config/gene_queries.tsv"
-  annot_key: "cell_type_tsv"              # obs column shown alongside expression
+  # annot_key: "cell_type_tsv"   # column explore_genes colours by; unset →
+  #   cell_type_tsv normally, cell_type_external when external_annotation is enabled
   aucell_max_rank_fraction: 0.05          # top 5% of genes for AUCell recovery
   niche_column: "spatial_niche"           # obs column written by the spatial_niches rule
   dpi: 300

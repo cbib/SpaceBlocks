@@ -158,12 +158,17 @@ RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 # preprocess_umap); optional so a run using external annotation can skip them.
 RUN_LEIDEN_ANALYSIS = bool(ANALYSIS.get("run_leiden_analysis", True))
 
+# External annotation: when enabled, explore_genes and subcluster default to the
+# external cell-type column (unless the user pins one explicitly in config).
+EXTERNAL_ENABLED  = bool((config.get("external_annotation", {}) or {}).get("enabled", False))
+DEFAULT_ANNOT_COL = "cell_type_external" if EXTERNAL_ENABLED else "cell_type_tsv"
+
 # Fail fast if external_annotation is enabled but the column is not present in every
 # sample's metadata (runs only when the external labels are fully in place).
 check_external_annotation()
 
 # Consistency: analysing the external annotation downstream requires it to be produced.
-if "external_annotation" in ANNOT_TYPES and not (config.get("external_annotation", {}) or {}).get("enabled", False):
+if "external_annotation" in ANNOT_TYPES and not EXTERNAL_ENABLED:
     sys.exit("[config error] annotation_types includes 'external_annotation' but "
              "external_annotation.enabled is false — cell_type_external would be absent "
              "downstream. Enable external_annotation or drop it from annotation_types.")

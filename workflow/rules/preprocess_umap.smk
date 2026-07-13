@@ -34,6 +34,9 @@ rule preprocess_umap:
         random_seed=RANDOM_SEED,
         use_precomputed=USE_PRECOMPUTED,
         precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
+        external_enabled=EXTERNAL_ENABLED,
+        external_column=(config.get("external_annotation", {}) or {}).get("column", ""),
+        keep_unannotated=(config.get("external_annotation", {}) or {}).get("keep_unannotated", True),
         region_colors=ANALYSIS.get("region_colors", {}),
     log:
         out=f"{LOGDIR}/preprocess_umap/{{sample}}.out",

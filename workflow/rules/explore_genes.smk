@@ -14,7 +14,7 @@ rule explore_genes_integrated:
         done=touch(f"{OUTDIR_PP}/gene_exploration/.integrated_done"),
     params:
         outdir=lambda wc, output: os.path.dirname(output.ranges),
-        annot_key=GENE_EXPLORATION.get("annot_key", "cell_type_tsv"),
+        annot_key=GENE_EXPLORATION.get("annot_key") or DEFAULT_ANNOT_COL,
         aucell_fraction=GENE_EXPLORATION.get("aucell_max_rank_fraction", 0.05),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
         dpi=GENE_EXPLORATION.get("dpi", ANALYSIS.get("plot_dpi", 300)),
@@ -57,7 +57,7 @@ rule explore_genes_sample:
     params:
         outdir=lambda wc, output: os.path.dirname(os.path.dirname(output.done)),
         sample_id=lambda wc: wc.sample,
-        annot_key=GENE_EXPLORATION.get("annot_key", "cell_type_tsv"),
+        annot_key=GENE_EXPLORATION.get("annot_key") or DEFAULT_ANNOT_COL,
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
         aucell_fraction=GENE_EXPLORATION.get("aucell_max_rank_fraction", 0.05),
         dpi=GENE_EXPLORATION.get("dpi", ANALYSIS.get("plot_dpi", 300)),

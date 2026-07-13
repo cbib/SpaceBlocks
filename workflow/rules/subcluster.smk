@@ -16,7 +16,7 @@ rule subcluster:
     params:
         subcompartment=lambda wc: wc.subcompartment,
         strings=lambda wc: config["subcompartments"][wc.subcompartment]["strings"],
-        annot_col=config.get("subcompartment_annot_col", "cell_type_tsv"),
+        annot_col=config.get("subcompartment_annot_col") or DEFAULT_ANNOT_COL,
         resolution_min=lambda wc: config["subcompartments"][wc.subcompartment].get("resolution_min", 0.2),
         resolution_max=lambda wc: config["subcompartments"][wc.subcompartment].get("resolution_max", 1.0),
         resolution_step=lambda wc: config["subcompartments"][wc.subcompartment].get("resolution_step", 0.2),

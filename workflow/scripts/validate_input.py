@@ -28,11 +28,13 @@ SOFT : region_annotation absent (regions are optional); no mito genes (pct_mt
 """
 import json
 import logging
+import os
 import sys
 import traceback
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import scanpy as sc
 import scipy.sparse as sp
 
@@ -87,6 +89,9 @@ try:
     require_region = bool(snakemake.params.require_region)
     require_raw    = bool(snakemake.params.require_raw_counts)
     mito_prefix = tuple(snakemake.params.mito_prefix)
+    ext_enabled  = bool(getattr(snakemake.params, "external_enabled", False))
+    ext_column   = str(getattr(snakemake.params, "external_column", "") or "")
+    ext_meta_dir = str(getattr(snakemake.params, "external_meta_dir", "") or "")
     out_report  = str(snakemake.output.report)
 
     log.info("=" * 70)
@@ -164,6 +169,37 @@ try:
         warnings.append("no embedded image — spatial plots will scatter on "
                         f"obsm['{spatial_key}'] (scatter mode)")
 
+    # ── External-annotation barcode overlap (when configured) ────────────
+    # Catch a barcode-format mismatch here rather than silently producing all-
+    # "Unannotated" downstream (or 0 cells when keep_unannotated=false).
+    ext_overlap = None
+    if ext_enabled and ext_column and ext_meta_dir:
+        ext_path = os.path.join(ext_meta_dir, f"metadata_{sample_id}.tsv")
+        if not os.path.isfile(ext_path):
+            errors.append(f"external_annotation enabled but metadata missing: {ext_path}")
+        else:
+            try:
+                _sv = pd.read_csv(ext_path, sep="\t", index_col=0, comment="#")
+                if ext_column not in _sv.columns:
+                    errors.append(f"external_annotation column '{ext_column}' not in {ext_path}")
+                else:
+                    _lab = _sv[ext_column].dropna().astype(str).str.strip()
+                    _bc = set(_lab[(_lab != "") & (_lab.str.lower() != "nan")
+                                   & (_lab.str.lower() != "unannotated")].index.astype(str))
+                    _match = len(_bc & set(adata.obs_names.astype(str)))
+                    frac = round(_match / len(_bc), 4) if _bc else 0.0
+                    ext_overlap = {"annotated_barcodes": len(_bc),
+                                   "matched_obs_names": _match,
+                                   "fraction_matched": frac}
+                    if _bc and _match == 0:
+                        errors.append(f"external_annotation: 0 of {len(_bc)} annotated "
+                                      f"barcodes match obs_names — check barcode formatting")
+                    elif _bc and frac < 0.5:
+                        warnings.append(f"external_annotation: only {_match}/{len(_bc)} "
+                                        f"annotated barcodes match obs_names ({frac:.0%})")
+            except Exception as e:
+                warnings.append(f"external_annotation overlap check failed: {e}")
+
     # ── Verdict ──────────────────────────────────────────────────────────
     for w in warnings:
         log.warning("  %s", w)
@@ -183,6 +219,7 @@ try:
         "sample_key": sample_key,
         "region_annotation_present": region_present,
         "mito_available": mito_available,
+        "external_annotation_overlap": ext_overlap,
         "errors": errors,
         "warnings": warnings,
     }

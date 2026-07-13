@@ -147,6 +147,13 @@ def _preprocess_inputs(wc):
     th_tsv = config.get("preprocess_thresholds", "") or ""
     if th_tsv and os.path.isfile(th_tsv):
         inputs["thresholds_tsv"] = th_tsv
+    # External-annotation mask (keep_unannotated=false): the external metadata drives
+    # the cell set, so it is a tracked input of preprocessing.
+    _ext = config.get("external_annotation", {}) or {}
+    if _ext.get("enabled") and not _ext.get("keep_unannotated", True):
+        _meta_dir = config.get("precomputed_metadata_dir", "") or ""
+        if _meta_dir:
+            inputs["external_meta"] = os.path.join(_meta_dir, f"metadata_{wc.sample}.tsv")
     return inputs
 
 
