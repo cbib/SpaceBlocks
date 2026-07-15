@@ -1,5 +1,5 @@
 """
-convert_to_zarr.py — Convert Xenium output bundle to SpatialData zarr.
+convert_zarr_x5k.py — Convert Xenium output bundle to SpatialData zarr.
 
 Uses spatialdata_io.xenium() exactly as in the 10x 5k analysis notebook.
 The zarr store becomes the canonical data object containing:

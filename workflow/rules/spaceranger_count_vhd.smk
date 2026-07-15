@@ -1,4 +1,4 @@
-rule spaceranger_count:
+rule spaceranger_count_vhd:
     """
     Run Space Ranger ``count`` on a single Visium HD sample.
 
@@ -39,15 +39,15 @@ rule spaceranger_count:
     conda:
         "../envs/visiumhd.yaml"
     log:
-        out=f"{LOGDIR}/spaceranger_count/{{sample}}.out",
-        err=f"{LOGDIR}/spaceranger_count/{{sample}}.err",
+        out=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.out",
+        err=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.err",
     benchmark:
-        f"{LOGDIR}/benchmarks/spaceranger_count/{{sample}}.tsv"
+        f"{LOGDIR}/benchmarks/spaceranger_count_vhd/{{sample}}.tsv"
     threads:
-        get_resource("spaceranger_count", "threads")
+        get_resource("spaceranger_count_vhd", "threads")
     resources:
-        mem_mb=mem_mb_attempt("spaceranger_count"),
-        runtime=get_resource("spaceranger_count", "runtime"),
+        mem_mb=mem_mb_attempt("spaceranger_count_vhd"),
+        runtime=get_resource("spaceranger_count_vhd", "runtime"),
     shell:
         """
         (

@@ -1,18 +1,18 @@
-# workflow/rules/generate_qupath_image.smk
+# workflow/rules/generate_qupath_vhd.smk
 # ─────────────────────────────────────────────────────────────────────────────
 # Visium HD HEAD (step 2). Copies the Space Ranger hires tissue image out of the
 # (version-varying) SR tree to a stable path, so it can be opened and annotated
 # in QuPath. The exported "{sample}_tissue_hires_image.geojson" (placed in
-# GEOJ_DIR) is later consumed by prepare_input.
+# GEOJ_DIR) is later consumed by prepare_input_vhd.
 #
-# Kept SEPARATE from prepare_input on purpose: it is a cheap file copy (low
+# Kept SEPARATE from prepare_input_vhd on purpose: it is a cheap file copy (low
 # resources) and is meant to be grouped into a single DAG job together with
-# spaceranger — the geojson annotation must exist BEFORE prepare_input runs.
+# spaceranger — the geojson annotation must exist BEFORE prepare_input_vhd runs.
 # (DAG grouping will be wired in a later revision.)
 # Globals used (defined in the Snakefile): OUTDIR_SR, SAMPLES_DIR, LOGDIR, get_resource.
 # ─────────────────────────────────────────────────────────────────────────────
 
-rule generate_qupath_image:
+rule generate_qupath_vhd:
     """Copy the Space Ranger hires tissue image out for QuPath annotation."""
     input:
         sr_done=f"{OUTDIR_SR}/{{sample}}/.done",
@@ -22,14 +22,14 @@ rule generate_qupath_image:
         sample_id=lambda wc: wc.sample,
         sr_outdir=lambda wc, input: os.path.dirname(input.sr_done),
     log:
-        out=f"{LOGDIR}/generate_qupath_image/{{sample}}.out",
-        err=f"{LOGDIR}/generate_qupath_image/{{sample}}.err",
+        out=f"{LOGDIR}/generate_qupath_vhd/{{sample}}.out",
+        err=f"{LOGDIR}/generate_qupath_vhd/{{sample}}.err",
     conda:
         "../envs/visiumhd.yaml"
     threads:
-        get_resource("generate_qupath_image", "threads")
+        get_resource("generate_qupath_vhd", "threads")
     resources:
-        mem_mb=mem_mb_attempt("generate_qupath_image"),
-        runtime=get_resource("generate_qupath_image", "runtime"),
+        mem_mb=mem_mb_attempt("generate_qupath_vhd"),
+        runtime=get_resource("generate_qupath_vhd", "runtime"),
     script:
-        "../scripts/generate_qupath_image.py"
+        "../scripts/generate_qupath_vhd.py"

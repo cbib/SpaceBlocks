@@ -376,23 +376,23 @@ subcompartments:
 # ═══════════════════════════════════════════════════════════════════════════
 
 resources:
-  spaceranger_count:
+  spaceranger_count_vhd:
     mem_mb: 65536
     runtime: 1200
     threads: 16
-  generate_qupath_image:        # HEAD: pure file copy → very light
+  generate_qupath_vhd:        # HEAD: pure file copy → very light
     mem_mb: 4096
     runtime: 30
     threads: 1
-  prepare_input:                # HEAD: raw 10x read + centroid groupby over many 2µm bins
+  prepare_input_vhd:                # HEAD: raw 10x read + centroid groupby over many 2µm bins
     mem_mb: 32768
     runtime: 240
     threads: 4
-  convert_to_zarr:             # HEAD (xenium5k): heavy Xenium bundle → SpatialData zarr
+  convert_zarr_x5k:             # HEAD (xenium5k): heavy Xenium bundle → SpatialData zarr
     mem_mb: 65536
     runtime: 240
     threads: 4
-  export_qupath_x5k:           # HEAD (xenium5k): morphology composite TIFF for QuPath
+  generate_qupath_x5k:           # HEAD (xenium5k): morphology composite TIFF for QuPath
     mem_mb: 32768
     runtime: 60
     threads: 2

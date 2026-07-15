@@ -1,5 +1,5 @@
 """
-prepare_input.py — Visium HD HEAD (step 3).
+prepare_input_vhd.py — Visium HD HEAD (step 3).
 ===========================================
 Builds the UNFILTERED contract h5ad that the common core consumes. All
 technology-specific work lives here:

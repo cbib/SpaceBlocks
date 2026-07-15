@@ -49,13 +49,13 @@ if MODE != "decoupled" and MODE not in KNOWN_HEADS:
 IS_DECOUPLED = (MODE == "decoupled")
 
 # ── Input contract (modular head → core hand-off) ────────────────────────────
-# prepare_input WRITES this unfiltered h5ad; validate_input, qc_sweep and
+# prepare_input_vhd WRITES this unfiltered h5ad; validate_input, qc_sweep and
 # preprocess_umap READ it. Path + validation root are derived here from
 # post_processing_outdir so they follow SAMPLES_DIR automatically (set after the
 # config-schema validation above, so they don't need to be declared in the schema).
 config.setdefault("contract", {})
 # CONTRACT_DIR = where the CORE READS the contract h5ads. Empty → the per-sample
-# output tree (head mode: prepare_input writes there, so producer/consumers stay
+# output tree (head mode: prepare_input_vhd writes there, so producer/consumers stay
 # on one key). In decoupled mode point contract_dir at wherever the head wrote the
 # {sample}/{sample}_unfiltered.h5ad files.
 CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
@@ -82,7 +82,7 @@ if _core_sheet:
         sys.exit(f"[config error] core_samples ({_core_sheet}) has no sample rows.")
 
 # HEAD sample sheet (Visium HD): fastq dirs / slide / area for spaceranger +
-# prepare_input. Needed only in head mode; guarded so a decoupled run needs no
+# prepare_input_vhd. Needed only in head mode; guarded so a decoupled run needs no
 # samples.csv on disk.
 SAMPLES = {}
 _head_sheet = config.get("samples", "") or ""
@@ -205,12 +205,12 @@ SUBCOMPARTMENTS = list(config.get("subcompartments", {}).keys())
 
 # Headblock (technology-specific): builds the contract h5ad.
 if MODE == "visiumhd":
-    include: "rules/spaceranger.smk"
-    include: "rules/generate_qupath_image.smk"
-    include: "rules/prepare_input.smk"
+    include: "rules/spaceranger_count_vhd.smk"
+    include: "rules/generate_qupath_vhd.smk"
+    include: "rules/prepare_input_vhd.smk"
 elif MODE == "xenium5k":
-    include: "rules/convert_zarr.smk"
-    include: "rules/export_qupath_x5k.smk"
+    include: "rules/convert_zarr_x5k.smk"
+    include: "rules/generate_qupath_x5k.smk"
     include: "rules/prepare_input_x5k.smk"
 
 # Coreblock — step 1: preprocessing.
@@ -239,9 +239,9 @@ include: "rules/explore_genes.smk"
 # Head-specific "QuPath annotation image" per sample, resolved by mode so the CORE
 # targets stay technology-agnostic (Visium HD hires PNG / Xenium morphology TIFF).
 if MODE == "visiumhd":
-    QUPATH_IMAGES = expand(rules.generate_qupath_image.output.qupath_image, sample=SAMPLE_IDS)
+    QUPATH_IMAGES = expand(rules.generate_qupath_vhd.output.qupath_image, sample=SAMPLE_IDS)
 elif MODE == "xenium5k":
-    QUPATH_IMAGES = expand(rules.export_qupath_x5k.output.qupath_image, sample=SAMPLE_IDS)
+    QUPATH_IMAGES = expand(rules.generate_qupath_x5k.output.qupath_image, sample=SAMPLE_IDS)
 else:
     QUPATH_IMAGES = []
 

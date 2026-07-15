@@ -1,5 +1,5 @@
 """
-export_qupath_image.py — Extract composite TIFF from zarr for QuPath.
+generate_qupath_x5k.py — Extract composite TIFF from zarr for QuPath.
 
 Reads morphology channels at a configurable pyramid level, composites
 into an RGB TIFF, and saves a scale-factor JSON for coordinate mapping
@@ -65,29 +65,12 @@ log.info("  Level %d: shape %s, channels: %s", level_idx, arr.shape, ch_names)
 ds0 = img[scales[0]]
 full_shape = ds0[list(ds0.data_vars)[0]].shape  # (C, H, W)
 
-# Composite RGB
-n_ch, h, w = arr.shape
-rgb = np.zeros((h, w, 3), dtype=np.float32)
-
-for i in range(n_ch):
-    ch = arr[i].astype(np.float32)
-    if ch.max() > 0:
-        p1, p99 = np.percentile(ch[ch > 0], [1, 99])
-        ch = np.clip((ch - p1) / max(p99 - p1, 1), 0, 1)
-    else:
-        ch[:] = 0
-    if i == 0:      # DAPI → blue
-        rgb[:, :, 2] += ch
-    elif i == 1:    # Interior protein → green
-        rgb[:, :, 1] += ch * 0.8
-    elif i == 2:    # Boundary → magenta
-        rgb[:, :, 0] += ch * 0.95
-        rgb[:, :, 2] += ch * 0.4
-    elif i == 3:    # Interior RNA → yellow
-        rgb[:, :, 0] += ch * 0.6
-        rgb[:, :, 1] += ch * 0.6
-
-rgb = (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
+# Name-aware RGB composite (robust to channel count/order; see xenium_image.py)
+from xenium_image import normalize_channels, composite_rgb, rgb_uint8
+h, w = arr.shape[1], arr.shape[2]
+norm = normalize_channels(arr)
+rgb_f, _mapping = composite_rgb(norm, ch_names)
+rgb = rgb_uint8(rgb_f)
 
 Path(out_tiff).parent.mkdir(parents=True, exist_ok=True)
 tifffile.imwrite(out_tiff, rgb, compression="jpeg")
