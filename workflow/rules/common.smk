@@ -120,6 +120,17 @@ def fastq_dirs_comma_separated(wc):
     return ",".join(dirs)
 
 
+# ── HEAD (Xenium 5K) input helper ────────────────────────────────────────────
+def xenium_dir_for(sample):
+    """Xenium output bundle directory for a sample, from the xenium5k.xenium_dir
+    {sample} pattern (e.g. '/data/xenium/{sample}')."""
+    pat = (config.get("xenium5k", {}) or {}).get("xenium_dir", "")
+    if not pat:
+        sys.exit("[config error] mode 'xenium5k' requires xenium5k.xenium_dir "
+                 "(a {sample} pattern to each Xenium output bundle).")
+    return pat.format(sample=sample)
+
+
 # ── CORE per-rule input functions ────────────────────────────────────────────
 def _thresholds_for(sample):
     """Global candidate threshold lists for qc_sweep (flat: feature -> list of
@@ -206,8 +217,7 @@ def get_all_targets(wildcards):
     targets += expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS)
-    if MODE == "visiumhd":   # HEAD output; only produced when that head runs
-        targets += expand(rules.generate_qupath_image.output.qupath_image, sample=SAMPLE_IDS)
+    targets += list(QUPATH_IMAGES)   # head QuPath image(s) for the active mode (or [])
     if RUN_LEIDEN_ANALYSIS:
         targets += expand(rules.leiden_analysis.output.res_dir,
                           sample=SAMPLE_IDS, resolution=RESOLUTIONS)

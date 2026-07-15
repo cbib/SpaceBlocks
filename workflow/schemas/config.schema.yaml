@@ -31,6 +31,26 @@ properties:
     type: string
     description: Path to the locally installed spaceranger executable
 
+  xenium5k:
+    type: ["object", "null"]
+    description: Xenium 5K head settings (used only when mode == "xenium5k").
+    properties:
+      xenium_dir:
+        type: string
+        description: "{sample} pattern to each Xenium output bundle."
+      zarr_dir:
+        type: string
+        description: Where {sample}.zarr stores are written ("" → spaceranger_processing_outdir).
+      qupath_pyramid_level:
+        type: integer
+        minimum: 0
+      hires_pyramid_level:
+        type: integer
+        minimum: 0
+      pixel_size_um:
+        type: number
+        exclusiveMinimum: 0
+
   cluster_annotations:
     type: string
     description: >
@@ -50,7 +70,7 @@ properties:
 
   mode:
     type: string
-    enum: ["visiumhd", "decoupled"]
+    enum: ["visiumhd", "xenium5k", "decoupled"]
     default: "visiumhd"
     description: >
       A HEAD technology name (that head builds the contract h5ads in this run) or
@@ -328,7 +348,26 @@ properties:
     type: ["object", "null"]
     description: >
       Subcompartment definitions for the subcluster rule (name -> settings). Keys are
-      the subcompartment names.
+      the subcompartment names; each needs a non-empty `strings` list of cell types.
+    additionalProperties:
+      type: object
+      required:
+        - strings
+      properties:
+        strings:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        resolution_min:
+          type: number
+          exclusiveMinimum: 0
+        resolution_max:
+          type: number
+          exclusiveMinimum: 0
+        resolution_step:
+          type: number
+          exclusiveMinimum: 0
 
   resources:
     type: object

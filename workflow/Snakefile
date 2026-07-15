@@ -32,12 +32,17 @@ GEOJ_DIR   = config["geojson_path"]
 SAMPLES_DIR = f"{OUTDIR_PP}/Samples"
 RANDOM_SEED = config.get("random_seed", 42)
 
+# Xenium 5K head: config block + where the SpatialData zarr stores are written
+# (defaults to the shared head-processing outdir).
+XENIUM5K        = config.get("xenium5k", {}) or {}
+XENIUM_ZARR_DIR = XENIUM5K.get("zarr_dir", "") or OUTDIR_SR
+
 # Run mode: either a HEAD technology name (that head builds the contract h5ads in
 # this run) or "decoupled" (the core consumes PRE-EXISTING contracts from
 # contract_dir; head rules are not included and validation aborts up front if any
 # sample is missing its contract). Add new heads to KNOWN_HEADS as implemented.
 MODE = str(config.get("mode", "visiumhd")).lower()
-KNOWN_HEADS = ("visiumhd",)          # e.g. future: ("visiumhd", "xenium5k")
+KNOWN_HEADS = ("visiumhd", "xenium5k")
 if MODE != "decoupled" and MODE not in KNOWN_HEADS:
     sys.exit(f"[config error] mode must be 'decoupled' or a head technology "
              f"{list(KNOWN_HEADS)}, got '{MODE}'.")
@@ -143,10 +148,22 @@ RESOLUTIONS = [
     )
 ]
 
-# Annotation types analysed downstream (neighbourhood, pseudobulk). Configurable;
-# defaults to the TSV cluster mapping. To add refined/external/ingest annotations,
-# list them here in config (e.g. annotation_types: ["tsv_annotation", "ingest_annotation"]).
-ANNOT_TYPES = list(config.get("annotation_types", ["tsv_annotation"]))
+# Primary annotation drives EVERY downstream rule consistently: the annotation TYPE
+# (neighbourhood / pseudobulk, via ANNOT_TYPES) and its obs COLUMN (explore_genes /
+# subcluster, via DEFAULT_ANNOT_COL) both derive from PRIMARY_ANNOT_TYPE. External takes
+# over when enabled — so cells the external tool left unannotated cannot leak (as
+# tsv-cluster-labelled noise) into downstream analyses. Set annotation_types explicitly
+# to compare, e.g. ["tsv_annotation", "external_annotation"].
+EXTERNAL_ENABLED   = bool((config.get("external_annotation", {}) or {}).get("enabled", False))
+PRIMARY_ANNOT_TYPE = "external_annotation" if EXTERNAL_ENABLED else "tsv_annotation"
+_ANNOT_TYPE_TO_COL = {
+    "tsv_annotation":      "cell_type_tsv",
+    "external_annotation": "cell_type_external",
+    "ingest_annotation":   "cell_type_ingest",
+    "refined_annotation":  "cell_type_refined",
+}
+DEFAULT_ANNOT_COL = _ANNOT_TYPE_TO_COL.get(PRIMARY_ANNOT_TYPE, "cell_type_tsv")
+ANNOT_TYPES = list(config.get("annotation_types") or [PRIMARY_ANNOT_TYPE])
 
 ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"])
 
@@ -158,12 +175,7 @@ RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 # preprocess_umap); optional so a run using external annotation can skip them.
 RUN_LEIDEN_ANALYSIS = bool(ANALYSIS.get("run_leiden_analysis", True))
 
-# External annotation: when enabled, explore_genes and subcluster default to the
-# external cell-type column (unless the user pins one explicitly in config).
-EXTERNAL_ENABLED  = bool((config.get("external_annotation", {}) or {}).get("enabled", False))
-DEFAULT_ANNOT_COL = "cell_type_external" if EXTERNAL_ENABLED else "cell_type_tsv"
-
-# Fail fast if external_annotation is enabled but the column is not present in every
+# External annotation: fail fast if enabled but the column is not present in every
 # sample's metadata (runs only when the external labels are fully in place).
 check_external_annotation()
 
@@ -196,6 +208,10 @@ if MODE == "visiumhd":
     include: "rules/spaceranger.smk"
     include: "rules/generate_qupath_image.smk"
     include: "rules/prepare_input.smk"
+elif MODE == "xenium5k":
+    include: "rules/convert_zarr.smk"
+    include: "rules/export_qupath_x5k.smk"
+    include: "rules/prepare_input_x5k.smk"
 
 # Coreblock — step 1: preprocessing.
 include: "rules/validate_input.smk"
@@ -220,6 +236,15 @@ include: "rules/explore_genes.smk"
 
 
 # ── Targets ──────────────────────────────────────────────────────────────────
+# Head-specific "QuPath annotation image" per sample, resolved by mode so the CORE
+# targets stay technology-agnostic (Visium HD hires PNG / Xenium morphology TIFF).
+if MODE == "visiumhd":
+    QUPATH_IMAGES = expand(rules.generate_qupath_image.output.qupath_image, sample=SAMPLE_IDS)
+elif MODE == "xenium5k":
+    QUPATH_IMAGES = expand(rules.export_qupath_x5k.output.qupath_image, sample=SAMPLE_IDS)
+else:
+    QUPATH_IMAGES = []
+
 # Target input lists reference producing rules by name (rules.<rule>.output.<name>)
 # rather than repeating literal paths, so a path change in a rule propagates here.
 
@@ -234,8 +259,7 @@ rule run_preprocessing:
         expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS),
-        *(expand(rules.generate_qupath_image.output.qupath_image, sample=SAMPLE_IDS)
-          if MODE == "visiumhd" else []),
+        *QUPATH_IMAGES,
         *(expand(rules.leiden_analysis.output.res_dir, sample=SAMPLE_IDS, resolution=RESOLUTIONS)
           if RUN_LEIDEN_ANALYSIS else []),
         rules.generate_annotation_template.output.template,
@@ -273,7 +297,7 @@ rule qupath_images:
     """HEAD: generate the hires images to annotate in QuPath (run FIRST, annotate,
     export each {sample}_tissue_hires_image.geojson into geojson_path, then continue)."""
     input:
-        expand(rules.generate_qupath_image.output.qupath_image, sample=SAMPLE_IDS),
+        QUPATH_IMAGES,
 
 rule qc_sweep_all:
     """Optional pre-filtering QC diagnostic for every sample (no filtering)."""

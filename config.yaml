@@ -22,6 +22,16 @@ preprocess_thresholds: ""   # e.g. "config/preprocess_thresholds.tsv"
 
 spaceranger: "/home/soterinosogo/spaceranger-4.0.1/spaceranger"
 
+# ── Xenium 5K head (mode: xenium5k) ──────────────────────────────────────────
+# Used only when mode == "xenium5k". Sample list still comes from core_samples.tsv;
+# xenium_dir is the {sample} pattern to each Xenium output bundle.
+xenium5k:
+  xenium_dir: "/scratch/CBiB/soterino/xenium/{sample}"   # {sample} pattern → Xenium bundle
+  zarr_dir: ""                    # where {sample}.zarr is written ("" → spaceranger_processing_outdir)
+  qupath_pyramid_level: 3         # pyramid level for the QuPath morphology composite TIFF
+  hires_pyramid_level: 3          # pyramid level for the embedded uns['spatial'] image
+  pixel_size_um: 0.2125           # Xenium default (µm/px)
+
 geojson_path: "/scratch/CBiB/soterino/geojson"
 
 spaceranger_processing_outdir: "/scratch/CBiB/soterino/smk_spaceranger_results"
@@ -48,6 +58,15 @@ external_annotation:
                            #   pipeline QC thresholds entirely (the external labels are
                            #   the QC decision). true → normal QC; labels overlaid at
                            #   annotation (unmatched cells → "Unannotated").
+
+# annotation_types: which annotations are analysed downstream (neighbourhood, pseudobulk),
+#   and — via the same primary — which column explore_genes / subcluster colour by.
+#   Defaults to the PRIMARY annotation: cell_type_external when external_annotation is
+#   enabled, else cell_type_tsv. When external annotation is enabled it deliberately
+#   TAKES OVER (tsv is NOT analysed by default): otherwise cells the external tool left
+#   unannotated would be re-labelled by the tsv cluster mapping and leak as noise into
+#   downstream analyses (e.g. subcompartments). To compare both, set explicitly:
+# annotation_types: ["tsv_annotation", "external_annotation"]
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Core sample sheet, run mode, and contract location
@@ -368,6 +387,18 @@ resources:
   prepare_input:                # HEAD: raw 10x read + centroid groupby over many 2µm bins
     mem_mb: 32768
     runtime: 240
+    threads: 4
+  convert_to_zarr:             # HEAD (xenium5k): heavy Xenium bundle → SpatialData zarr
+    mem_mb: 65536
+    runtime: 240
+    threads: 4
+  export_qupath_x5k:           # HEAD (xenium5k): morphology composite TIFF for QuPath
+    mem_mb: 32768
+    runtime: 60
+    threads: 2
+  prepare_input_x5k:           # HEAD (xenium5k): zarr + geojson → unfiltered contract h5ad
+    mem_mb: 49152
+    runtime: 120
     threads: 4
   validate_input:              # CORE gate: loads the full unfiltered h5ad to check it
     mem_mb: 32768

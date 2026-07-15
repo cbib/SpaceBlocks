@@ -1,0 +1,27 @@
+# xenium5k — Xenium 5K Headblock environment (SpatialData I/O → contract h5ad).
+# Only the head needs the spatialdata stack; the Coreblock keeps using visiumhd.yaml.
+# Lower bounds only (consistent with the other envs); commit a lock for a release
+# (see docs/environments.md).
+name: xenium5k
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - anndata>=0.10
+  - scanpy>=1.10
+  # SpatialData stack (zarr conversion + reading)
+  - spatialdata>=0.2
+  - spatialdata-io>=0.1
+  # Spatial handling / annotation
+  - geopandas>=0.14
+  - shapely>=2.0
+  # Imaging / I/O
+  - tifffile>=2023.0
+  - h5py>=3.8
+  # Numerical / viz
+  - numpy>=1.24,<2
+  - scipy>=1.10
+  - pandas>=2.0
+  - matplotlib-base>=3.7
+  - pip

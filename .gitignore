@@ -35,6 +35,7 @@ config/cluster_annotations_FIXED_OLD.tsv
 config/cluster_annotations_OLD.tsv
 config/cluster_annotations_SPECIFIC.tsv
 config/core_samples_EXAMPLE.tsv
+config_EXT_ann.yaml
 
 # Results (these live on scratch, not in the repo)
 # Adjust if you prefer to track them
