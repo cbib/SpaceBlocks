@@ -83,6 +83,26 @@ def _apply_design_palette(ad, col):
     ad.uns[f"{col}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
     return True
 
+
+def _niche_umap(ad, title, out_path):
+    """UMAP coloured by spatial niche (config/deterministic niche palette), if the niche
+    column is present. Skipped silently when spatial niches were not identified."""
+    niche_col = find_niche_column(ad, NICHE_COLUMN)
+    if not niche_col or niche_col not in ad.obs.columns:
+        return
+    try:
+        ad.obs[niche_col] = ad.obs[niche_col].astype(str).astype("category")
+        cats = list(ad.obs[niche_col].cat.categories)
+        niche_cfg = (ANNOTATION_COLORS.get("spatial_niche", {})
+                     if isinstance(ANNOTATION_COLORS, dict) else {})
+        pal = build_niche_palette(cats, niche_cfg)
+        ad.uns[f"{niche_col}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
+        sc.pl.umap(ad, color=[niche_col], size=2, frameon=False, title=title)
+        plt.savefig(out_path, dpi=DPI, bbox_inches="tight")
+        plt.close()
+    except Exception as e:
+        log.warning("  niche UMAP failed (%s): %s", out_path, e)
+
 out_concat     = str(snakemake.output.concatenated)
 out_harmony    = str(snakemake.output.harmony)
 out_sketched   = str(snakemake.output.sketched)
@@ -166,6 +186,9 @@ try:
             except Exception as e:
                 log.warning("  design UMAP (uncorrected) %s failed: %s", _dc, e)
 
+    _niche_umap(adata, "Uncorrected – by spatial niche",
+                os.path.join(output_dir, "UMAP_uncorrected_by_spatial_niche.png"))
+
     # ── 3. Harmony integration ───────────────────────────────────────────
     log.info("Harmony integration …")
     adata_harmony = adata.copy()
@@ -219,6 +242,9 @@ try:
                 plt.close()
             except Exception as e:
                 log.warning("  design UMAP (harmony) %s failed: %s", _dc, e)
+
+    _niche_umap(adata_harmony, "Harmony – by spatial niche",
+                os.path.join(output_dir, "UMAP_harmony_by_spatial_niche.png"))
 
     # ── Composition barplots (sample / region / niche) ───────────────────
     log.info("Composition barplots …")

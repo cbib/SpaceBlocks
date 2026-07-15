@@ -39,10 +39,6 @@ log = logging.getLogger("neighbourhood_analysis")
 sample_id   = snakemake.params.sample_id
 annot_type  = snakemake.params.annot_type
 annotation_colors = dict(getattr(snakemake.params, "annotation_colors", {}) or {})
-# Cell-type annotation columns inherit cell_type_tsv (coherence for external/ingest/refined).
-if annotation_colors.get("cell_type_tsv"):
-    for _k in ("cell_type_external", "cell_type_ingest", "cell_type_refined"):
-        annotation_colors.setdefault(_k, annotation_colors["cell_type_tsv"])
 adata_path  = str(snakemake.input.adata)
 results_dir = str(snakemake.output.results_dir)
 
@@ -181,7 +177,9 @@ try:
     )
     if has_regions:
         regions = [r for r in adata.obs["region_annotation"].unique()
-                   if r not in ("Unlabeled", "Bubble")]
+                   if not pd.isna(r) and str(r).strip()
+                   and str(r).strip().lower() not in ("nan", "none")
+                   and r not in ("Unlabeled", "Bubble")]
         for region in regions:
             rdata = adata[adata.obs["region_annotation"] == region].copy()
             if rdata.n_obs < 30 or rdata.obs["cell_type"].nunique() < 2:
@@ -194,11 +192,18 @@ try:
                         dpi=300, bbox_inches="tight")
             plt.close()
 
-        # ── Co-occurrence BY AREA (composite; separate from the global figure) ──
-        # Per region, the self-co-occurrence of each cell type over distance (how
-        # spatially clustered each type is within that area), one panel per region,
-        # coloured by the shared cell-type palette.
-        region_curves = {}
+        # ── Co-occurrence BY REGION ──────────────────────────────────────
+        # Per region, and separately from the global sample figure:
+        #   (c) the full sq.pl.co_occurrence figure — the SAME pairwise view as the
+        #       global one (one panel per cell type, co-occurrence vs distance), but
+        #       restricted to the region — saved individually; this is the honest,
+        #       directly-comparable "which cell types co-occur here" plot.
+        #   (b) a compact pairwise cell-type × cell-type heatmap (co-occurrence averaged
+        #       over distance), saved individually AND as a by-region composite.
+        # (Replaces the earlier self-/diagonal-co-occurrence composite, which showed a
+        #  different quantity — each type's self-clustering — and could be misread as
+        #  pairwise.) Regions with too few cells/types are skipped.
+        heatmaps = {}   # region -> DataFrame(cell_type × cell_type), distance-averaged
         for region in regions:
             rdata = adata[adata.obs["region_annotation"] == region].copy()
             rdata.obs["cell_type"] = rdata.obs["cell_type"].cat.remove_unused_categories()
@@ -206,40 +211,77 @@ try:
                 continue
             try:
                 sq.gr.co_occurrence(rdata, cluster_key="cell_type")
-                occ = rdata.uns["cell_type_co_occurrence"]["occ"]
-                interval = np.asarray(rdata.uns["cell_type_co_occurrence"]["interval"])
-                mids = (interval[:-1] + interval[1:]) / 2.0
-                cats = list(rdata.obs["cell_type"].cat.categories)
-                region_curves[region] = (mids, {ct: occ[i, i, :] for i, ct in enumerate(cats)})
             except Exception as e:
                 log.warning("  co-occurrence failed for region %s: %s", region, e)
+                continue
+            cats = list(rdata.obs["cell_type"].cat.categories)
+            occ = np.asarray(rdata.uns["cell_type_co_occurrence"]["occ"])   # (n, n, dist)
 
-        if region_curves:
-            nreg = len(region_curves)
+            # (c) full per-region co-occurrence figure (pairwise, one panel per type)
+            try:
+                nt = len(cats)
+                sq.pl.co_occurrence(rdata, cluster_key="cell_type",
+                                    figsize=(min(max(nt * 2.5, 8), 60), max(4, nt * 0.6)))
+                _f = plt.gcf()
+                for ax in _f.get_axes():
+                    lg = ax.get_legend()
+                    if lg is not None:
+                        lg.remove()
+                    ax.tick_params(axis="x", labelrotation=45)
+                _f.suptitle(f"Co-occurrence — {region} ({sample_id})", fontsize=12, y=1.02)
+                _f.tight_layout()
+                _f.savefig(os.path.join(results_dir,
+                           f"co_occurrence_{region}_{sample_id}.png"),
+                           dpi=300, bbox_inches="tight")
+                plt.close(_f)
+            except Exception as e:
+                log.warning("  co-occurrence figure failed for region %s: %s", region, e)
+
+            # (b) distance-averaged pairwise matrix for the heatmaps
+            heatmaps[region] = pd.DataFrame(occ.mean(axis=2), index=cats, columns=cats)
+
+        if heatmaps:
+            _vmax = max(float(df.values.max()) for df in heatmaps.values())
+            _vmin = min(float(df.values.min()) for df in heatmaps.values())
+
+            def _draw_heatmap(ax, df, title):
+                im = ax.imshow(df.values, cmap="viridis", vmin=_vmin, vmax=_vmax, aspect="auto")
+                ax.set_xticks(range(df.shape[1]))
+                ax.set_yticks(range(df.shape[0]))
+                ax.set_xticklabels(df.columns, rotation=90, fontsize=6)
+                ax.set_yticklabels(df.index, fontsize=6)
+                ax.set_title(title, fontsize=9)
+                return im
+
+            # individual per-region heatmaps
+            for region, df in heatmaps.items():
+                fig, ax = plt.subplots(figsize=(0.5 * df.shape[1] + 3, 0.5 * df.shape[0] + 2))
+                im = _draw_heatmap(ax, df, f"Co-occurrence (dist-averaged) — {region}")
+                fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="co-occurrence ratio")
+                fig.tight_layout()
+                fig.savefig(os.path.join(results_dir,
+                            f"co_occurrence_heatmap_{region}_{sample_id}.png"),
+                            dpi=300, bbox_inches="tight")
+                plt.close(fig)
+
+            # composite of all region heatmaps (shared colour scale for comparability)
+            nreg = len(heatmaps)
             ncol = min(3, nreg)
             nrow = int(np.ceil(nreg / ncol))
-            fig, axes = plt.subplots(nrow, ncol, figsize=(5 * ncol, 4 * nrow), squeeze=False)
+            fig, axes = plt.subplots(nrow, ncol, figsize=(5 * ncol, 4.5 * nrow), squeeze=False)
             for ax in axes.ravel():
                 ax.set_axis_off()
-            legend_handles = {}
-            for k, (region, (mids, curves)) in enumerate(region_curves.items()):
+            im = None
+            for k, (region, df) in enumerate(heatmaps.items()):
                 ax = axes[k // ncol][k % ncol]
                 ax.set_axis_on()
-                for ct, curve in curves.items():
-                    color = cell_type_palette.get(str(ct), "#cccccc")
-                    ax.plot(mids, curve, color=color, lw=1.3)
-                    legend_handles.setdefault(
-                        str(ct), plt.Line2D([0], [0], color=color, lw=1.3))
-                ax.set_title(str(region), fontsize=9)
-                ax.set_xlabel("distance")
-                ax.set_ylabel("co-occurrence ratio")
-            if legend_handles:
-                fig.legend(list(legend_handles.values()), list(legend_handles.keys()),
-                           loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False,
-                           title="Cell type", fontsize=7, title_fontsize=8)
-            fig.suptitle(f"Self co-occurrence by area — {sample_id}", fontsize=12, y=1.02)
-            fig.tight_layout()
-            fig.savefig(os.path.join(results_dir, f"co_occurrence_by_region_{sample_id}.png"),
+                im = _draw_heatmap(ax, df, str(region))
+            if im is not None:
+                fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.02, pad=0.02,
+                             label="co-occurrence ratio")
+            fig.suptitle(f"Pairwise co-occurrence by region — {sample_id}", fontsize=12, y=1.0)
+            fig.savefig(os.path.join(results_dir,
+                        f"co_occurrence_heatmap_by_region_{sample_id}.png"),
                         dpi=300, bbox_inches="tight")
             plt.close(fig)
 

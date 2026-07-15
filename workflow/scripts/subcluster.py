@@ -34,7 +34,7 @@ try:
 except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
-from composition_barplots import save_stacked_composition
+from composition_barplots import save_stacked_composition, find_niche_column, build_niche_palette
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -409,6 +409,24 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
             except Exception as e:
                 log.warning("    design UMAP %s failed: %s", _dc, e)
 
+    # UMAP by spatial niche (if niches were identified upstream)
+    _niche_col = find_niche_column(adata)
+    if _niche_col:
+        try:
+            adata.obs[_niche_col] = adata.obs[_niche_col].astype(str).astype("category")
+            _ncats = list(adata.obs[_niche_col].cat.categories)
+            _ncfg = (ANNOTATION_COLORS.get("spatial_niche", {})
+                     if isinstance(ANNOTATION_COLORS, dict) else {})
+            _npal = build_niche_palette(_ncats, _ncfg)
+            adata.uns[f"{_niche_col}_colors"] = [_npal.get(str(c), "#cccccc") for c in _ncats]
+            sc.pl.umap(adata, color=[_niche_col], size=2, wspace=0.25, frameon=False,
+                       title="By spatial niche")
+            plt.savefig(os.path.join(umap_dir, "UMAP_by_spatial_niche.png"),
+                        dpi=DPI, bbox_inches="tight")
+            plt.close()
+        except Exception as e:
+            log.warning("    niche UMAP failed: %s", e)
+
     # Split UMAPs (use middle resolution)
     log.info("    [%s] Split UMAPs …", branch_name)
     mid_idx = len(leiden_keys) // 2
@@ -478,13 +496,6 @@ N_NEIGHBORS    = int(snakemake.params.n_neighbors)
 N_PCS          = int(snakemake.params.n_pcs)
 DE_N_GENES     = int(snakemake.params.de_n_genes)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
-# Cell-type annotation columns inherit the cell_type_tsv palette when not given their
-# own, so external / ingest / refined labels stay colour-coherent with the tsv
-# annotation across every rule (override by defining the column's own palette).
-if isinstance(ANNOTATION_COLORS, dict) and ANNOTATION_COLORS.get("cell_type_tsv"):
-    ANNOTATION_COLORS = dict(ANNOTATION_COLORS)
-    for _k in ("cell_type_external", "cell_type_ingest", "cell_type_refined"):
-        ANNOTATION_COLORS.setdefault(_k, ANNOTATION_COLORS["cell_type_tsv"])
 REGION_COLORS  = snakemake.params.region_colors
 REGION_LEVELS  = list(getattr(snakemake.params, "region_levels", []) or [])
 DPI          = int(getattr(snakemake.params, "dpi", 300))
