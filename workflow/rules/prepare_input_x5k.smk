@@ -5,13 +5,13 @@
 # for Visium HD; writes the same single contract path every core consumer reads.
 rule prepare_input_x5k:
     input:
-        zarr=rules.convert_to_zarr.output.zarr,
+        done=rules.convert_to_zarr.output.done,                   # zarr completion marker
         qupath_meta=rules.export_qupath_x5k.output.qupath_meta,   # geojson px→µm scale
     output:
         h5ad=config["contract"]["unfiltered_h5ad"],
     params:
         sample_id=lambda wc: wc.sample,
-        zarr_path=lambda wc, input: str(input.zarr),
+        zarr_path=lambda wc, input: str(input.done)[:-len(".done")],
         geojson_dir=GEOJ_DIR,
         hires_pyramid_level=XENIUM5K.get("hires_pyramid_level", 3),
         pixel_size_um=XENIUM5K.get("pixel_size_um", 0.2125),

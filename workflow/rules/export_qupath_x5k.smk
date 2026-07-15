@@ -5,13 +5,13 @@
 # then continue to prepare_input_x5k.
 rule export_qupath_x5k:
     input:
-        zarr=rules.convert_to_zarr.output.zarr,
+        done=rules.convert_to_zarr.output.done,
     output:
         qupath_image=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_morphology.tiff",
         qupath_meta=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_morphology_scalefactors.json",
     params:
         sample_id=lambda wc: wc.sample,
-        zarr_path=lambda wc, input: str(input.zarr),
+        zarr_path=lambda wc, input: str(input.done)[:-len(".done")],
         qupath_pyramid_level=XENIUM5K.get("qupath_pyramid_level", 3),
     log:
         out=f"{LOGDIR}/export_qupath_x5k/{{sample}}.out",

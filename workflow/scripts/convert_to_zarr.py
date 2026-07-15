@@ -67,3 +67,8 @@ if zarr_path_obj.exists():
 sdata.write(zarr_path)
 
 log.info("Zarr written to %s", zarr_path)
+
+# Completion marker — Snakemake tracks THIS (touched only after a successful write),
+# so a job that dies mid-write leaves no marker and is correctly re-run.
+Path(snakemake.output.done).touch()
+log.info("Wrote completion marker %s", snakemake.output.done)

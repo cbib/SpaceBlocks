@@ -6,10 +6,13 @@ rule convert_to_zarr:
     input:
         xenium_dir=lambda wc: xenium_dir_for(wc.sample),
     output:
-        zarr=directory(f"{XENIUM_ZARR_DIR}/{{sample}}/{{sample}}.zarr"),
+        # A .done marker (touched by the script only after sdata.write() succeeds) is the
+        # tracked output — the zarr store itself is a directory the script manages (it
+        # cleans a partial one on re-run), so completion is precise and version-agnostic.
+        done=f"{XENIUM_ZARR_DIR}/{{sample}}/{{sample}}.zarr.done",
     params:
         sample_id=lambda wc: wc.sample,
-        zarr_path=lambda wc, output: str(output.zarr),
+        zarr_path=lambda wc, output: str(output.done)[:-len(".done")],
     log:
         out=f"{LOGDIR}/convert_to_zarr/{{sample}}.out",
         err=f"{LOGDIR}/convert_to_zarr/{{sample}}.err",
