@@ -66,7 +66,7 @@ config["outdir"] = SAMPLES_DIR     # validate_input / qc_sweep write under the p
 # CORE sample sheet (technology-agnostic ANCHOR): the authoritative list of
 # samples plus any optional experimental-design columns. The CORE reads ONLY this
 # sheet; the `sample` value need NOT match obs["sample"] inside the contract h5ad.
-# Falls back to the head samples.csv if no core sheet is configured.
+# Falls back to the head visiumhd_samples.csv if no core sheet is configured.
 CORE_SAMPLES = None
 _core_sheet = config.get("core_samples", "") or ""
 if _core_sheet:
@@ -83,7 +83,7 @@ if _core_sheet:
 
 # HEAD sample sheet (Visium HD): fastq dirs / slide / area for spaceranger +
 # prepare_input_vhd. Needed only in head mode; guarded so a decoupled run needs no
-# samples.csv on disk.
+# visiumhd_samples.csv on disk.
 SAMPLES = {}
 _head_sheet = config.get("samples", "") or ""
 if os.path.isfile(_head_sheet):
@@ -99,7 +99,7 @@ if os.path.isfile(_head_sheet):
 if CORE_SAMPLES is None:
     if not SAMPLES:
         sys.exit("[config error] No core_samples sheet configured and no readable "
-                 "samples.csv found — cannot determine the sample list.")
+                 "visiumhd_samples.csv found — cannot determine the sample list.")
     SAMPLE_IDS = list(SAMPLES.keys())
 
 # Optional per-column colour palettes (sample + design columns) for downstream viz.

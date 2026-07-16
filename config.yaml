@@ -2,7 +2,7 @@
 #  Visium HD Pipeline – main configuration
 # ═══════════════════════════════════════════════════════════════════════════
 
-samples: "config/samples.csv"
+samples: "config/visiumhd_samples.csv"
 snakemake_cell_markers: "config/snakemake_cell_markers.tsv"
 probe_set: "/scratch/CBiB/soterino/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv"
 transcriptome: "/mnt/cbib/bank/cellranger/refdata-gex-GRCh38-2024-A"
@@ -11,7 +11,6 @@ ingest_ref: "/scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_
 ingest_ref_label_key: "04_celltypes"   # obs column in the reference
 
 cluster_annotations: "config/cluster_annotations.tsv"
-annotation_markers: "config/annotation_markers.tsv"
 
 # OPTIONAL per-sample QC filtering thresholds for preprocess_umap.
 # TSV: first column = sample name; remaining columns any of min_counts, min_genes,
@@ -289,7 +288,7 @@ annotation_colors:
 # ═══════════════════════════════════════════════════════════════════════════
 #  Gene / signature exploration
 # ═══════════════════════════════════════════════════════════════════════════
-# Set queries to a TSV file (same column format as annotation_markers.tsv)
+# Set queries to a TSV file of genes / gene sets (see config/gene_queries.tsv)
 # to enable the gene exploration rules.  Leave empty or omit to skip.
 gene_exploration:
   queries: "config/gene_queries.tsv"

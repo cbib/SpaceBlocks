@@ -83,7 +83,7 @@ properties:
     description: >
       Optional path to the CORE sample sheet (TSV; required column `sample` plus
       optional experimental-design columns). Authoritative sample list for the
-      core; empty = derive from the head samples.csv. The `sample` value need not
+      core; empty = derive from the head visiumhd_samples.csv. The `sample` value need not
       match obs["sample"] in the h5ad (samples may be renamed during preparation).
 
   contract_dir:
@@ -216,10 +216,6 @@ properties:
         type: integer
         minimum: 1
         description: Default figure DPI.
-
-  annotation_markers:
-    type: string
-    description: Optional marker TSV for scaled-expression annotation refinement.
 
   ingest_ref:
     type: string
