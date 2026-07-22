@@ -14,7 +14,12 @@ from snakemake.utils import validate, min_version
 
 min_version("8.0")
 
-configfile: "config.yaml"
+# configfile: "config/config.yaml"
+# --- Public-data examples (mode: decoupled) -------------------------------------
+# To run a worked example instead of your own data, comment the line above and
+# uncomment ONE of these (see docs -> Reproduce & examples):
+configfile: "reproduction/xenium5k/xenium5k_config.yaml"
+# configfile: "reproduction/visiumhd/config.yaml"
 validate(config, schema="schemas/config.schema.yaml")
 
 # Helper functions (kept out of this file and the rule files per the Snakemake
@@ -88,7 +93,7 @@ SAMPLES = {}
 _head_sheet = config.get("samples", "") or ""
 if os.path.isfile(_head_sheet):
     samples_df = (
-        pd.read_csv(_head_sheet)
+        pd.read_csv(_head_sheet, dtype=str)   # keep numeric sample_ids as strings
         .fillna("")
         .set_index("sample_id", drop=False)
     )

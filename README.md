@@ -60,9 +60,10 @@ On SLURM, add `--profile profiles/default`. Full configuration reference: [`conf
 
 Full, searchable documentation lives at **https://cbib.github.io/SpaceBlocks/**:
 
-- **Pipeline & architecture** — HeadBlock/CoreBlock details, validation contract and output tree
+- **Design & architecture** — HeadBlock/CoreBlock split, the contract, and output tree
 - **Rule reference** — every rule explained briefly, grouped by phase
 - **Configuration** — explanation of all config keys and sample sheets
+- **QuPath annotation** — draw and export the region annotations
 - **Environments** — the Conda environments and how to lock them
 - **Get started: recommendations for a full run** — [how to streamline a full run](docs/getting-started.md)
 - **[Reproduce example run](docs/reproduction.md)** — example use on public data

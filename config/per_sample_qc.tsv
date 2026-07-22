@@ -1,5 +1,5 @@
 # Optional per-sample QC filtering thresholds for preprocess_umap.
-# Enable by setting `preprocess_thresholds: "config/preprocess_thresholds.tsv"` in config.yaml.
+# Enable by setting `per_sample_qc: "config/per_sample_qc.tsv"` in config.yaml.
 # First column = sample name (matched against samples.csv sample_id).
 # Any of the remaining columns may be present; a blank cell OR a sample absent from
 # this file falls back to the analysis.* config default for that key.

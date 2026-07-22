@@ -79,28 +79,15 @@ try:
         full_shape = ds0[list(ds0.data_vars)[0]].shape           # (C, H, W)
 
         n_ch, h, w = arr.shape
-        rgb = np.zeros((h, w, 3), dtype=np.float32)
-        for i in range(n_ch):
-            ch = arr[i].astype(np.float32)
-            if ch.max() > 0:
-                p1, p99 = np.percentile(ch[ch > 0], [1, 99])
-                ch = np.clip((ch - p1) / max(p99 - p1, 1), 0, 1)
-            else:
-                ch = np.zeros_like(ch)
-            if i == 0:      # DAPI → blue
-                rgb[:, :, 2] += ch
-            elif i == 1:    # Interior protein → green
-                rgb[:, :, 1] += ch * 0.8
-            elif i == 2:    # Boundary → magenta
-                rgb[:, :, 0] += ch * 0.95
-                rgb[:, :, 2] += ch * 0.4
-            elif i == 3:    # Interior RNA → yellow
-                rgb[:, :, 0] += ch * 0.6
-                rgb[:, :, 1] += ch * 0.6
-        rgb = np.clip(rgb, 0, 1)
-        grey = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
-        grey_rgb = (np.stack([grey, grey, grey], axis=-1) * 255).astype(np.uint8)
-        hires_scalef = h / full_shape[1]
+        # Channel-AGNOSTIC greyscale morphology (mean projection of normalised channels);
+        # robust to channel identity/order — see xenium_image.py. The multi-colour version
+        # is only produced for the QuPath TIFF, not the data-bearing contract.
+        from xenium_image import normalize_channels, grey_projection_uint8
+        grey_rgb = grey_projection_uint8(normalize_channels(arr))
+        # obsm['spatial'] is in MICRONS, so the scalefactor must convert micron -> level pixel:
+        #   level_px = micron / pixel_size_um * (level_H / full_H)
+        # (using only the pyramid factor would shrink the cells onto a corner of the image).
+        hires_scalef = (h / full_shape[1]) / pixel_size_um
 
         adata.uns["spatial"] = {
             sample_id: {
@@ -115,7 +102,7 @@ try:
         adata.uns["morphology_channels"] = list(ch_names)
         log.info("Embedded greyscale morphology image (%s, scalef=%.6f)",
                  grey_rgb.shape, hires_scalef)
-        del arr, rgb, grey, grey_rgb
+        del arr, grey_rgb
     else:
         log.warning("No morphology_focus in zarr — contract will have no embedded image "
                     "(the Coreblock will scatter on obsm['spatial']).")

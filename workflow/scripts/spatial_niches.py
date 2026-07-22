@@ -299,7 +299,9 @@ try:
         labels = pd.Series(index=adata.obs_names, dtype=object)
         uncovered = {}
         for sid, src in niche_source.items():
-            ndf = pd.read_csv(src, sep="\t", index_col=0)
+            ndf = pd.read_csv(src, sep="\t", index_col=0, dtype=str)
+            ndf.index = ndf.index.astype(str)   # obs_names are str; numeric cell ids would
+                                                # be inferred as int and silently misalign
             col = NICHE_KEY if NICHE_KEY in ndf.columns else (
                 ndf.columns[0] if len(ndf.columns) else None)
             m = (adata.obs["sample"] == sid).values

@@ -1,5 +1,5 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
-description: Configuration schema for the SpaceCore spatial-transcriptomics pipeline
+description: Configuration schema for the SpaceBlocks spatial-transcriptomics workflow
 type: object
 # Strict: unknown top-level keys are rejected (catches typos). The Snakefile injects
 # `contract.unfiltered_h5ad` and top-level `outdir` AFTER validation, so those two are
@@ -7,26 +7,25 @@ type: object
 additionalProperties: false
 
 required:
-  - samples
-  - snakemake_cell_markers
-  - probe_set
-  - transcriptome
-  - spaceranger
-  - geojson_path
-  - spaceranger_processing_outdir
-  - post_processing_outdir
-  - logdir
-  - resources
-
+- snakemake_cell_markers
+- geojson_path
+- spaceranger_processing_outdir
+- post_processing_outdir
+- logdir
+- resources
 properties:
   samples:
     type: string
+    description: Path to the Visium HD head sample sheet (fastq dirs / slide / area per sample; mode visiumhd).
   snakemake_cell_markers:
     type: string
+    description: TSV of canonical marker genes drawn on the Leiden diagnostic plots to guide manual annotation.
   probe_set:
     type: string
+    description: Path to the 10x probe-set CSV needed to run Space Ranger (mode visiumhd).
   transcriptome:
     type: string
+    description: Path to the Space Ranger reference transcriptome (mode visiumhd).
   spaceranger:
     type: string
     description: Path to the locally installed spaceranger executable
@@ -44,13 +43,19 @@ properties:
       qupath_pyramid_level:
         type: integer
         minimum: 0
+        description: Pyramid level of the morphology image used for the QuPath composite TIFF.
+        default: 3
       hires_pyramid_level:
         type: integer
         minimum: 0
+        description: Pyramid level embedded as the uns['spatial'] background image.
+        default: 3
       pixel_size_um:
         type: number
         exclusiveMinimum: 0
 
+        description: Xenium pixel size in microns.
+        default: 0.2125
   cluster_annotations:
     type: string
     description: >
@@ -59,7 +64,7 @@ properties:
       cell-type labels.  If missing or empty, DE and neighbourhood
       analyses are skipped.
 
-  preprocess_thresholds:
+  per_sample_qc:
     type: string
     description: >
       Optional path to a TSV of per-sample QC filtering thresholds for
@@ -123,13 +128,17 @@ properties:
 
   geojson_path:
     type: string
+    description: Directory of per-sample QuPath region-annotation GeoJSONs.
   spaceranger_processing_outdir:
     type: string
+    description: Directory where the head writes heavy intermediates (Space Ranger tree / SpatialData zarr).
   post_processing_outdir:
     type: string
+    description: Analysis output root; holds the result folders for the run.
   logdir:
     type: string
 
+    description: Directory for per-rule logs and benchmarks.
   analysis:
     type: object
     properties:
@@ -137,14 +146,17 @@ properties:
         type: integer
         minimum: 1
         default: 1
+        description: Minimum total counts per cell (QC filter).
       min_cells:
         type: integer
         minimum: 1
         default: 3
+        description: Minimum number of cells a gene must be detected in (QC filter).
       min_genes:
         type: integer
         minimum: 1
         default: 100
+        description: Minimum number of genes per cell (QC filter).
       max_counts:
         type: integer
         minimum: 1
@@ -158,34 +170,42 @@ properties:
         type: integer
         minimum: 100
         default: 5000
+        description: Number of highly variable genes to select.
       n_neighbors:
         type: integer
         minimum: 2
         default: 10
+        description: Number of neighbours for the kNN graph.
       n_pcs:
         type: integer
         minimum: 2
         default: 30
+        description: Number of principal components used to build the neighbours graph.
       leiden_resolution:
         type: number
         exclusiveMinimum: 0
         default: 0.6
+        description: Single Leiden resolution used when not scanning a range.
       resolution_scan_min:
         type: number
         exclusiveMinimum: 0
         default: 0.8
+        description: Lowest Leiden resolution in the multi-resolution scan.
       resolution_scan_max:
         type: number
         exclusiveMinimum: 0
         default: 1.2
+        description: Highest Leiden resolution in the multi-resolution scan.
       resolution_scan_step:
         type: number
         exclusiveMinimum: 0
         default: 0.2
+        description: Step between Leiden resolutions in the scan.
       de_n_genes:
         type: integer
         minimum: 1
         default: 10
+        description: Number of top differential-expression marker genes reported per group.
       run_pseudobulk_de:
         type: boolean
         default: false
@@ -253,6 +273,8 @@ properties:
     properties:
       enabled:
         type: boolean
+        description: Enable overlaying external cell-type labels.
+        default: false
       column:
         type: string
         description: obs/metadata column holding the external label.
@@ -271,26 +293,39 @@ properties:
     properties:
       sample_key:
         type: string
+        description: obs column holding the sample id.
+        default: sample
       spatial_key:
         type: string
+        description: obsm key holding the spatial coordinates.
+        default: spatial
       require_region:
         type: boolean
+        description: If true, a missing region_annotation is a hard validation failure.
+        default: false
       require_raw_counts:
         type: boolean
+        description: If true, validate that X holds non-negative integer raw counts.
+        default: true
       mito_prefix:
         type: array
         items:
           type: string
 
+        description: Gene-name prefixes used to flag mitochondrial genes.
   qc_sweep:
     type: ["object", "null"]
     description: OPTIONAL pre-filtering QC diagnostic (target qc_sweep_all).
     properties:
       ingest_enabled:
         type: boolean
+        description: Overlay ingest-reference cell types on the QC-sweep plots.
+        default: false
       dpi:
         type: integer
         minimum: 1
+        description: Figure resolution (DPI) for the QC-sweep plots.
+        default: 300
       thresholds:
         type: object
         description: Candidate cut-off LISTS per feature (min_genes/min_counts/max_counts/max_pct_mt).
@@ -319,27 +354,37 @@ properties:
     properties:
       queries:
         type: string
+        description: TSV of genes / gene sets to score (AUCell) and plot.
       annot_key:
         type: string
+        description: Annotation column used to colour the exploration plots.
       niche_column:
         type: string
+        description: obs column holding the spatial-niche label.
       aucell_max_rank_fraction:
         type: number
+        description: AUCell max rank, as a fraction of the ranked genes.
       dpi:
         type: integer
         minimum: 1
 
+        description: Figure resolution (DPI) for the exploration plots.
+        default: 300
   spatial_niches:
     type: ["object", "null"]
     description: OPTIONAL cross-sample spatial-niche identification.
     properties:
       enabled:
         type: boolean
+        description: Enable BANKSY spatial-niche detection.
+        default: false
       use_precomputed:
         type: boolean
+        description: Reuse precomputed niche assignments from niche_dir instead of recomputing.
       niche_dir:
         type: string
 
+        description: Directory of precomputed per-sample niche TSVs.
   subcompartments:
     type: ["object", "null"]
     description: >
@@ -348,43 +393,70 @@ properties:
     additionalProperties:
       type: object
       required:
-        - strings
+      - strings
       properties:
         strings:
           type: array
           items:
             type: string
           minItems: 1
+          description: Cell-type labels that make up this subcompartment.
         resolution_min:
           type: number
           exclusiveMinimum: 0
+          description: Lowest Leiden resolution when re-clustering this subcompartment.
         resolution_max:
           type: number
           exclusiveMinimum: 0
+          description: Highest Leiden resolution when re-clustering this subcompartment.
         resolution_step:
           type: number
           exclusiveMinimum: 0
 
+          description: Step between Leiden resolutions for this subcompartment.
   resources:
     type: object
     required:
-      - spaceranger_count_vhd
-      - preprocess_umap
-      - leiden_analysis
-      - default
+    - spaceranger_count_vhd
+    - preprocess_umap
+    - leiden_analysis
+    - default
     additionalProperties:
       type: object
       required:
-        - mem_mb
-        - runtime
-        - threads
+      - mem_mb
+      - runtime
+      - threads
       properties:
         mem_mb:
           type: integer
           minimum: 1024
+          description: Memory request in MB (scaled by the retry attempt).
         runtime:
           type: integer
           minimum: 1
+          description: Wall-clock limit in minutes.
         threads:
           type: integer
           minimum: 1
+          description: Number of CPU threads.
+allOf:
+- if:
+    properties:
+      mode:
+        const: visiumhd
+  then:
+    required:
+    - samples
+    - probe_set
+    - transcriptome
+    - spaceranger
+- if:
+    properties:
+      mode:
+        const: xenium5k
+    required:
+    - mode
+  then:
+    required:
+    - xenium5k

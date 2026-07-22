@@ -1,0 +1,6 @@
+# Public datasets are downloaded manually; contracts + run outputs are generated.
+*/data/
+*/contracts/
+*/results/
+*/logs/
+*/_unused/

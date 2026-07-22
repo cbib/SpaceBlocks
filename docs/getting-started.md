@@ -2,20 +2,29 @@
 
 This page walks through a complete SpaceBlocks run and the recommendations to make it smooth. For the exhaustive key reference see [Configuration](configuration.md); for what each rule does, [Rule reference](rules.md).
 
-If you want to see an example run of public data, refer to #TODO Visium HD example and Xenium 5K example.
+If you want to see an example run on public data, see the [reproducibility runs](reproduction.md) page — Visium HD and Xenium 5K worked examples can be found there.
 
 > [!TIP]
 > A run is defined almost entirely by two things: your **experimental design**
 > (`core_samples.tsv`) and your **cell-type annotations**. Everything else has sensible
 > defaults. Keep those two under version control and your run will be reproducible end-to-end.
 
-##TODO INCLUDE NUMBERED INDEX
+## Contents
+
+0. [Prerequisites](#0-prerequisites)
+1. [Configure](#1-configure)
+2. [Region annotation](#2-region-annotation-optional-but-recommended)
+3. [Preprocess, then look before you filter](#3-preprocess-then-look-before-you-filter)
+4. [Annotate cell types](#4-annotate-cell-types)
+5. [Postprocessing and report](#5-postprocessing-and-report)
+6. [Explore genes and signatures](#6-explore-genes-and-signatures)
+7. [Reproducibility](#7-reproducibility)
 
 ## 0. Prerequisites
 
 - [Snakemake](https://snakemake.readthedocs.io) ≥ 8 and Conda/Mamba.
 - For the **Visium HD** head only: an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1.
-- [QuPath](https://qupath.github.io/) (desktop), recommended to include manual region annotations for the downstream analyses (see [QuPath annotation tutorial](rules.md#qupath-annotation-tutorial)).
+- [QuPath](https://qupath.github.io/) (desktop), recommended to include manual region annotations for the downstream analyses (see [QuPath annotation tutorial](qupath_tutorial.md)).
 - Configure your Snakemake profile in `--profile profiles/default`. An example for HPCs with slurm scheduler is provided.
 
 We recommend to always run snakemake with `--sdm conda`, so each rule gets its pinned environment.
@@ -45,11 +54,13 @@ snakemake qupath_images --sdm conda
 ```
 You may then manually annotate spatial regions in QuPath, export GeoJSONs and make them available for SpaceBlocks via `geojson_path` in `config/config.yaml`.
 
-Then follow the [QuPath annotation tutorial](rules.md#qupath-annotation-tutorial), saving each file as `{sample}_tissue_hires_image.geojson` (Visium HD) or `{sample}_morphology.geojson` (Xenium 5K) into `config["geojson_path"]`. This step is optional —  Without it, regions are `Unlabeled`.
+Then follow the [QuPath annotation tutorial](qupath_tutorial.md), saving each file as `{sample}_tissue_hires_image.geojson` (Visium HD) or `{sample}_morphology.geojson` (Xenium 5K) into `config["geojson_path"]`. This step is optional —  Without it, regions are `Unlabeled`.
 
-### 2.1. Region annotation in uncoupled mode
+### 2.1. Region annotation in decoupled mode
 
-If you are using `mode : "uncoupled"`... #TODO
+In `mode: decoupled` there is no Headblock, so `qupath_images` produces nothing and the pipeline never joins a GeoJSON.
+
+Your provided contract h5ads should therefore already carry `obs["region_annotation"]`; otherwise every cell is `Unlabeled`.
 
 > [!WARNING]
 > Make sure that the pixel size and coordinates of the images used to annotate your spatial regions are the same. This is automatically managed inside `qupath_images`, but may vary if you have a different output.
@@ -77,7 +88,7 @@ Next, you may run the preprocessing CoreBlock:
 ```bash
 snakemake run_preprocessing --sdm conda   # validate → QC → normalise → cluster
 ```
-The output (see [SpaceBlocks outputs](outputs.md) for details) will show spatial plots and UMAPs containing clustering metrics (clustree, Silhouette scores) for each resolution in the range, predefined markers (*optional*), QC plots to diagnose potentially noisy clusters. Then, you may proceed to the annotation step.
+The output (see [the output structure](design.md#output-structure) for details) will show spatial plots and UMAPs containing clustering metrics (clustree, Silhouette scores) for each resolution in the range, predefined markers (*optional*), QC plots to diagnose potentially noisy clusters. Then, you may proceed to the annotation step.
 
 ## 4. Annotate cell types
 

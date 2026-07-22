@@ -17,7 +17,6 @@ Inputs/outputs are summarised; the `.smk` files and `config["resources"]` are th
   - [Coreblock 2 — postprocessing](#coreblock-2--postprocessing)
   - [Coreblock 3 — exploration](#coreblock-3--exploration)
 - [Resources & retries](#resources--retries)
-- [QuPath annotation tutorial](#qupath-annotation-tutorial)
 
 ---
 
@@ -52,7 +51,7 @@ Output is a `.done` sentinel; the real SR files are tracked by the rules that co
 ### Visium HD: `generate_qupath_vhd`
 A cheap file copy: finds `tissue_hires_image.png` in the version-varying Space Ranger tree and copies it to `Samples/{sample}/QuPath_image/`.
 
-This image is meant to be annotated in QuPath to generate a GeoJSON with the region-annotation polygons — see the [QuPath annotation tutorial](#qupath-annotation-tutorial).
+This image is meant to be annotated in QuPath to generate a GeoJSON with the region-annotation polygons — see the [QuPath annotation tutorial](qupath_tutorial.md).
 The GeoJSON files follow the naming convention `{sample}_tissue_hires_image.geojson` and are read from the folder in `config["geojson_path"]`.
 
 ### Visium HD: `prepare_input_vhd`
@@ -192,20 +191,3 @@ No rule uses `localrule`, so nothing runs on the scheduler's head node.
 Every compute rule draws `mem_mb` / `runtime` / `threads` from `config["resources"]` (with a `default` fallback).
 
 Memory is wrapped so it **grows with the retry attempt** (`mem_mb = base × attempt`); combined with `retries: 3` in the SLURM profile, an OOM-killed job is automatically resubmitted with more RAM.
-
----
-
-## QuPath annotation tutorial
-
-Choosing QuPath as the spatial-annotation tool lets anatomopathologists and researchers without bioinformatics skills annotate the histology from spatial experiments, while keeping the annotations easy to fold back into the AnnData objects.
-
-While [Napari](https://napari.org/) is a possible alternative, it is a Python application aimed at programmers, and its OpenGL (vispy) rendering benefits from GPU acceleration for large whole-slide images — it does *not* strictly require a GPU (it falls back to CPU/software rendering, just more slowly). The practical advantage of QuPath is its purpose-built pathology interface, which histology experts can use directly.
-
-To annotate images in QuPath and export the GeoJSON files for SpaceBlocks:
-1. Open the `qupath_image` in the QuPath desktop application.
-2. Open the `Annotations` tab.
-3. Select a region on the tissue image (we recommend the **polygon** tool).
-4. Right-click on the polygon > Set classification > select the desired level.
-5. Repeat until the slide is fully annotated.
-6. **Select all annotations** > File > Export objects as GeoJSON > Export as feature collection.
-7. Save the file. **Mind the naming convention**: `{sample}_tissue_hires_image.geojson` for Visium HD and `{sample}_morphology.geojson` for Xenium 5K, placed in the folder referenced by `config["geojson_path"]`.

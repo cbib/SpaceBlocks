@@ -49,8 +49,9 @@ plugins:
 nav:
   - Home: index.md
   - Get started: getting-started.md
-  - Pipeline & architecture: pipeline.md
+  - Design & architecture: design.md
   - Rule reference: rules.md
   - Configuration: configuration.md
+  - QuPath annotation: qupath_tutorial.md
   - Environments: environments.md
   - Reproduce the paper run: reproduction.md

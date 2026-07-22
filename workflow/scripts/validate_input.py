@@ -148,6 +148,20 @@ try:
         warnings.append("obs['region_annotation'] absent — regions optional, "
                         "region-based plots will be skipped downstream")
 
+    # ── cell_id convention (soft) ────────────────────────────────────────
+    # The contract defines obs['cell_id'] as the string form of obs_names. Several
+    # downstream joins (niche TSVs, precomputed metadata, external annotation) key on
+    # that, so a mismatch here would silently strand labels as "Unassigned".
+    cell_id_matches = None
+    if "cell_id" in adata.obs.columns:
+        cell_id_matches = bool(
+            (adata.obs["cell_id"].astype(str).values
+             == np.asarray(adata.obs_names, dtype=str)).all())
+        if not cell_id_matches:
+            warnings.append("obs['cell_id'] differs from obs_names — the contract defines "
+                            "them as equal, and downstream joins key on obs_names, so "
+                            "niche/annotation labels may not attach")
+
     # ── Mito genes (optional metric) ─────────────────────────────────────
     mito_available = bool(adata.var_names.str.startswith(mito_prefix).any())
     if not mito_available:
@@ -218,6 +232,7 @@ try:
         "image_library_ids": image_library_ids,  # "scatter"  → scatter on coords
         "sample_key": sample_key,
         "region_annotation_present": region_present,
+        "cell_id_matches_obs_names": cell_id_matches,
         "mito_available": mito_available,
         "external_annotation_overlap": ext_overlap,
         "errors": errors,

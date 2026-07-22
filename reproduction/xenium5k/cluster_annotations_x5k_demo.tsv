@@ -1,0 +1,10 @@
+cluster	sample1_0.6	sample2_0.6	sample3_0.6
+0	Melanoma	Melanoma	Melanoma
+1	Melanoma (proliferating)	Melanoma	Melanoma (proliferating)
+2	Melanoma (neural-like)	Melanoma (neural-like)	Melanoma (proliferating)
+3	Melanoma	Macrophages	Macrophages
+4	Fibroblasts	Melanoma (proliferating)	Fibroblasts
+5	Macrophages	Fibroblasts	Melanoma (neural-like)
+6	Keratinocytes	Melanoma (neural-like)	Keratinocytes
+7	Melanoma	Keratinocytes	Fibroblasts
+8		Fibroblasts	

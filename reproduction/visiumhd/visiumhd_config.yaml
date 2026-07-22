@@ -1,14 +1,16 @@
-# CI smoke-test config (mode: decoupled). Tiny synthetic contracts in ../data.
+# Ready-to-run config for the visiumhd public-data example (mode: decoupled).
+# Build the contracts first (reproduction/visiumhd/format_visiumhd*.py),
+# then point the Snakefile at this file. Resources are deliberately low (tiny test).
 mode: decoupled
-post_processing_outdir: .tests/integration/output
-logdir: .tests/integration/logs
-spaceranger_processing_outdir: .tests/integration/sr
-geojson_path: .tests/integration/geojson
-contract_dir: .tests/integration/data
+post_processing_outdir: reproduction/visiumhd/results
+logdir: reproduction/visiumhd/logs
+spaceranger_processing_outdir: reproduction/visiumhd/_unused
+geojson_path: reproduction/visiumhd/_unused
+contract_dir: reproduction/visiumhd/contracts
 random_seed: 0
 use_precomputed_clusters: false
 precomputed_metadata_dir: ''
-core_samples: .tests/integration/config/core_samples.tsv
+core_samples: reproduction/visiumhd/contracts/core_samples.tsv
 xenium5k:
   xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
   zarr_dir: ''
@@ -48,23 +50,15 @@ analysis:
   padj_threshold: 0.05
   lfc_threshold: 0.25
   region_levels:
-  - Healthy area
-  - Healthy over tumor
-  - Dysplastic area
-  - AK area
-  - AK over tumor
-  - In situ area
-  - Tumor area
-  - Invasive area
+  - Region 1
+  - Region 2
+  - Region 3
+  - Region 4
   region_colors:
-    Healthy area: '#FDE725FF'
-    Healthy over tumor: '#9FDA3AFF'
-    Dysplastic area: '#4AC16DFF'
-    AK area: '#1FA187FF'
-    AK over tumor: '#277F8EFF'
-    In situ area: '#365C8DFF'
-    Tumor area: '#46337EFF'
-    Invasive area: '#440154FF'
+    Region 1: '#440154'
+    Region 2: '#31688e'
+    Region 3: '#35b779'
+    Region 4: '#fde725'
 qc_sweep:
   ingest_enabled: false
   ingest_key: cell_type_ingest
@@ -86,8 +80,8 @@ qc_sweep:
     - 10
     - 15
     - 20
-cluster_annotations: .tests/integration/config/cluster_annotations.tsv
-snakemake_cell_markers: .tests/integration/config/snakemake_cell_markers.tsv
+cluster_annotations: config/cluster_annotations.tsv
+snakemake_cell_markers: config/snakemake_cell_markers.tsv
 external_annotation:
   enabled: false
   column: manual_celltype
@@ -97,9 +91,7 @@ ingest_ref_label_key: 04_celltypes
 integration:
   integrate_key: sample
 extra_annotations:
-  columns:
-  - patient
-  - batch
+  columns: []
 spatial_niches:
   enabled: true
   use_precomputed: false
@@ -120,24 +112,11 @@ spatial_niches:
   compute_umap: false
 subcompartments: {}
 gene_exploration:
-  queries: .tests/integration/config/gene_queries.tsv
+  queries: config/gene_queries.tsv
   aucell_max_rank_fraction: 0.05
   niche_column: spatial_niche
   dpi: 300
-sample_colors:
-  patient:
-    Patient 1: '#000000'
-    Patient 2: '#E69F00'
-    Patient 3: '#56B4E9'
-    Patient 4: '#009E73'
-    Patient 5: '#F0E442'
-    Patient 6: '#CC79A7'
-    Patient 7: '#0072B2'
-    Patient 8: '#D55E00'
-  batch:
-    Batch 1: '#8E44AD'
-    Batch 2: '#C0392B'
-    Batch 3: '#7F7F7F'
+sample_colors: {}
 annotation_colors:
   cell_type_tsv:
     Keratinocytes: '#d62728'
@@ -181,90 +160,90 @@ annotation_colors:
     Skeletal_muscle: '#b9b9c9'
 resources:
   spaceranger_count_vhd:
-    mem_mb: 65536
-    runtime: 1200
-    threads: 16
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   generate_qupath_vhd:
-    mem_mb: 4096
-    runtime: 30
-    threads: 1
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   prepare_input_vhd:
-    mem_mb: 32768
-    runtime: 240
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   convert_zarr_x5k:
-    mem_mb: 65536
-    runtime: 240
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   generate_qupath_x5k:
-    mem_mb: 32768
+    mem_mb: 8000
     runtime: 60
-    threads: 2
+    threads: 4
   prepare_input_x5k:
-    mem_mb: 49152
-    runtime: 120
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   validate_input:
-    mem_mb: 32768
-    runtime: 30
-    threads: 2
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   qc_sweep:
-    mem_mb: 49152
-    runtime: 180
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   preprocess_umap:
-    mem_mb: 32768
-    runtime: 240
-    threads: 8
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   ingest_ref:
-    mem_mb: 32768
-    runtime: 240
-    threads: 8
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   leiden_analysis:
-    mem_mb: 16384
-    runtime: 120
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   pseudobulk_aggregate:
-    mem_mb: 124768
+    mem_mb: 8000
     runtime: 60
     threads: 4
   pseudobulk_de:
-    mem_mb: 24384
-    runtime: 120
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   neighbourhood_analysis:
-    mem_mb: 32768
-    runtime: 120
-    threads: 8
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   annotate_cells:
-    mem_mb: 32768
+    mem_mb: 8000
     runtime: 60
     threads: 4
   integrate_samples:
-    mem_mb: 65536
-    runtime: 360
-    threads: 8
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   spatial_niches:
-    mem_mb: 124768
-    runtime: 720
-    threads: 16
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   subcluster:
-    mem_mb: 120768
-    runtime: 1440
-    threads: 16
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
   sample_report:
-    mem_mb: 32768
+    mem_mb: 8000
     runtime: 60
     threads: 4
   explore_genes_integrated:
-    mem_mb: 65536
-    runtime: 240
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   explore_genes_spatial:
-    mem_mb: 32768
-    runtime: 360
+    mem_mb: 8000
+    runtime: 60
     threads: 4
   default:
-    mem_mb: 8192
+    mem_mb: 8000
     runtime: 60
-    threads: 1
+    threads: 4

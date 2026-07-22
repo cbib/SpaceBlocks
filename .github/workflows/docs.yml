@@ -1,0 +1,46 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:        # lets you publish manually once ready
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Runs on every push/PR: fails fast on broken links or nav (--strict). Does NOT publish.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install mkdocs-material pymdown-extensions
+      - run: mkdocs build --strict
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    # GATED: only publishes to GitHub Pages once you opt in by setting the repository
+    # variable PUBLISH_DOCS=true (Settings → Secrets and variables → Actions → Variables).
+    # Until then the site is built and validated but never goes live — safe while the repo
+    # is private / pre-publication. After transferring ownership, set the variable to flip it on.
+    if: github.ref == 'refs/heads/main' && vars.PUBLISH_DOCS == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

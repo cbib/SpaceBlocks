@@ -155,7 +155,7 @@ def _preprocess_inputs(wc):
             meta_file = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
             if os.path.isfile(meta_file):
                 inputs["precomputed_meta"] = meta_file
-    th_tsv = config.get("preprocess_thresholds", "") or ""
+    th_tsv = config.get("per_sample_qc", "") or ""
     if th_tsv and os.path.isfile(th_tsv):
         inputs["thresholds_tsv"] = th_tsv
     # External-annotation mask (keep_unannotated=false): the external metadata drives

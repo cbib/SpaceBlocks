@@ -76,16 +76,26 @@ def apply_palette(adata, obs_key, colors_cfg):
     """Apply annotation_colors palette to an obs column."""
     if not isinstance(colors_cfg, dict):
         return
+    if obs_key not in adata.obs.columns:
+        return
     cd = colors_cfg.get(obs_key, {})
-    if cd and obs_key in adata.obs.columns:
-        adata.obs[obs_key] = adata.obs[obs_key].astype("category")
-        cats = adata.obs[obs_key].cat.categories
-        adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
+    if not cd:
+        # No palette configured for this column: behave like annotate_cells and leave the
+        # colours to scanpy. Any stale/incomplete *_colors carried in the h5ad is dropped,
+        # otherwise it would be reused here and can render every category grey.
+        adata.uns.pop(f"{obs_key}_colors", None)
+        return
+    adata.obs[obs_key] = adata.obs[obs_key].astype("category")
+    cats = adata.obs[obs_key].cat.categories
+    adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
 
 def apply_region_palette(adata, region_colors):
     """Apply region_colors palette to region_annotation."""
-    if region_colors and "region_annotation" in adata.obs.columns:
+    if not region_colors:
+        adata.uns.pop("region_annotation_colors", None)
+        return
+    if "region_annotation" in adata.obs.columns:
         adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
         cats = adata.obs["region_annotation"].cat.categories
         adata.uns["region_annotation_colors"] = [
@@ -282,13 +292,6 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
 annotated_paths   = [str(p) for p in snakemake.input.annotated]
 sample_ids        = list(snakemake.params.sample_ids)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
-# Cell-type annotation columns inherit the cell_type_tsv palette when not given their
-# own, so external / ingest / refined labels stay colour-coherent with the tsv
-# annotation across every rule (override by defining the column's own palette).
-if isinstance(ANNOTATION_COLORS, dict) and ANNOTATION_COLORS.get("cell_type_tsv"):
-    ANNOTATION_COLORS = dict(ANNOTATION_COLORS)
-    for _k in ("cell_type_external", "cell_type_ingest", "cell_type_refined"):
-        ANNOTATION_COLORS.setdefault(_k, ANNOTATION_COLORS["cell_type_tsv"])
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
 NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")

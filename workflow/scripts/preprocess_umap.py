@@ -275,15 +275,31 @@ try:
 
         if meta_source:
             saved_meta = pd.read_csv(meta_source, sep="\t", index_col=0, comment="#")
+            # obs_names are strings; an all-numeric cell-id index (e.g. Xenium) is inferred as
+            # int by read_csv and would misalign on reindex -> force str (as the external path
+            # above does) so the saved clusters line up with the current cells.
+            saved_meta.index = saved_meta.index.astype(str)
+            saved_res = [c for c in saved_meta.columns if c.startswith("leiden_")]
             for key in leiden_keys:
-                if key in saved_meta.columns:
-                    adata.obs[key] = pd.Categorical(
-                        saved_meta[key].reindex(adata.obs_names).astype(int))
-                    log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
-                else:
-                    log.warning("  %s not in saved metadata, computing …", key)
-                    res = float(key.replace("leiden_", "").replace("_", "."))
-                    sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
+                if key not in saved_meta.columns:
+                    raise ValueError(
+                        f"use_precomputed_clusters is set but resolution '{key}' is not in the "
+                        f"precomputed metadata {meta_source} (has: {saved_res}). Regenerate the "
+                        f"metadata or set analysis.resolution_scan_* to match it — clusters are "
+                        f"not recomputed here, since precomputed metadata was requested.")
+                col = saved_meta[key].reindex(adata.obs_names)
+                n_missing = int(col.isna().sum())
+                if n_missing:
+                    raise ValueError(
+                        f"use_precomputed_clusters is set but the precomputed metadata for "
+                        f"'{sample_id}' ({meta_source}) is missing {n_missing}/{adata.n_obs} of "
+                        f"the cells kept after QC (column '{key}'). The cell set changed since the "
+                        f"metadata was written — usually the QC thresholds (analysis.min_counts / "
+                        f"min_genes / …) or the contract itself differ from that run. Regenerate "
+                        f"the metadata with the current config (or align the thresholds), then "
+                        f"retry — clusters are not recomputed here, since precomputed was requested.")
+                adata.obs[key] = pd.Categorical(col.astype(int).astype(str))
+                log.info("  Loaded %s: %d clusters", key, adata.obs[key].nunique())
         else:
             _compute_all()
     else:

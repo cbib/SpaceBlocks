@@ -55,6 +55,15 @@ log = logging.getLogger("annotate_cells")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _niche_sort_key(label):
+    """Sort niche labels numerically when they are numbers, else alphabetically, so
+    legends read 0,1,2,…,10 instead of the lexicographic 1,10,2."""
+    try:
+        return (0, float(label), "")
+    except (TypeError, ValueError):
+        return (1, 0.0, str(label))
+
+
 def read_tsv_to_dict(tsv_path):
     with open(tsv_path) as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -211,6 +220,8 @@ try:
         if _meta_source:
             log.info("Reloading clusters from metadata: %s", _meta_source)
             saved = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
+            saved.index = saved.index.astype(str)   # obs_names are str; numeric cell ids
+                                                    # would be inferred as int and misalign
             leiden_cols = [c for c in saved.columns if c.startswith("leiden_")]
             for col in leiden_cols:
                 if col not in adata.obs.columns:
@@ -288,6 +299,7 @@ try:
 
         log.info("Loading external annotation from '%s' in %s …", ext_col, _ext_source)
         saved = pd.read_csv(_ext_source, sep="\t", index_col=0, comment="#")
+        saved.index = saved.index.astype(str)       # see note above
         if ext_col not in saved.columns:
             raise ValueError(
                 f"external_annotation column '{ext_col}' not found in {_ext_source} "
@@ -307,12 +319,27 @@ try:
         niche_tsv = str(_ni) if _ni else ""
     if niche_tsv and os.path.isfile(niche_tsv):
         log.info("Merging spatial niche labels from %s …", niche_tsv)
-        ndf = pd.read_csv(niche_tsv, sep="\t", index_col=0)
+        # dtype=str: labels are written as text and must stay text — pandas would otherwise
+        # re-infer them as numbers, and any NaN then upcasts the column to float ("1" -> "1.0").
+        ndf = pd.read_csv(niche_tsv, sep="\t", index_col=0, dtype=str)
+        ndf.index = ndf.index.astype(str)           # see note above
         col = "spatial_niche" if "spatial_niche" in ndf.columns else ndf.columns[0]
-        mapped = ndf[col].reindex(adata.obs_names)
+        # Keyed by obs_names: the contract defines obs['cell_id'] == obs_names, and
+        # validate_input checks it, so there is exactly one join key here.
+        mapped = ndf[col].reindex(np.asarray(adata.obs_names, dtype=str))
+        mapped = pd.Series(np.asarray(mapped), index=adata.obs_names)
         n_assigned = int(mapped.notna().sum())
+        if n_assigned < adata.n_obs:
+            log.warning("  %d/%d cells have no niche label -> 'Unassigned' "
+                        "(do the niche TSV keys match obs_names?)",
+                        adata.n_obs - n_assigned, adata.n_obs)
         mapped = mapped.fillna("Unassigned").astype(str)
-        adata.obs["spatial_niche"] = pd.Categorical(mapped)
+        # Order numerically when the labels are numbers, so legends read 0,1,2,…,10 rather
+        # than the lexicographic 1,10,2 (matching the spatial_niches plots).
+        cats = sorted({c for c in mapped if c != "Unassigned"}, key=_niche_sort_key)
+        if (mapped == "Unassigned").any():
+            cats.append("Unassigned")
+        adata.obs["spatial_niche"] = pd.Categorical(mapped, categories=cats, ordered=True)
         log.info("  spatial_niche: %d/%d cells assigned, %d niches",
                  n_assigned, adata.n_obs, adata.obs["spatial_niche"].nunique())
 
