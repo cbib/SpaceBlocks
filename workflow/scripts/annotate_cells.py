@@ -55,6 +55,15 @@ log = logging.getLogger("annotate_cells")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _niche_sort_key(label):
+    """Sort niche labels numerically when they are numbers, else alphabetically, so
+    legends read 0,1,2,…,10 instead of the lexicographic 1,10,2."""
+    try:
+        return (0, float(label), "")
+    except (TypeError, ValueError):
+        return (1, 0.0, str(label))
+
+
 def read_tsv_to_dict(tsv_path):
     with open(tsv_path) as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -211,6 +220,8 @@ try:
         if _meta_source:
             log.info("Reloading clusters from metadata: %s", _meta_source)
             saved = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
+            saved.index = saved.index.astype(str)   # obs_names are str; numeric cell ids
+                                                    # would be inferred as int and misalign
             leiden_cols = [c for c in saved.columns if c.startswith("leiden_")]
             for col in leiden_cols:
                 if col not in adata.obs.columns:
@@ -264,30 +275,41 @@ try:
     log.info("TSV annotation distribution:\n%s", tsv_counts.to_string())
 
     # ── 2. External annotation (from metadata TSV column) ────────────────
+    # When enabled the pipeline MUST find the column for this sample — a missing
+    # source or column is a hard error (fail loudly rather than silently skipping),
+    # so a run only proceeds when the external labels are in place for every sample.
     ext_enabled = False
     if isinstance(EXT_ANNOT_CFG, dict) and EXT_ANNOT_CFG.get("enabled", False):
         ext_col = EXT_ANNOT_CFG.get("column", "")
-        if ext_col:
-            # Resolve metadata source for external annotation
-            _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
-            if _ext_meta and os.path.isfile(_ext_meta):
-                _ext_source = _ext_meta
-            elif os.path.isfile(metadata_path):
-                _ext_source = metadata_path
-            else:
-                _ext_source = None
+        if not ext_col:
+            raise ValueError("external_annotation.enabled is true but no 'column' is set in config.")
+        # Resolve metadata source for external annotation
+        _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
+        if _ext_meta and os.path.isfile(_ext_meta):
+            _ext_source = _ext_meta
+        elif os.path.isfile(metadata_path):
+            _ext_source = metadata_path
+        else:
+            _ext_source = None
 
-            if _ext_source:
-                log.info("Loading external annotation from '%s' in %s …", ext_col, _ext_source)
-                saved = pd.read_csv(_ext_source, sep="\t", index_col=0, comment="#")
-                if ext_col in saved.columns:
-                    adata.obs["cell_type_external"] = (
-                        saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
-                    ext_enabled = True
-                    log.info("  External annotation: %d types",
-                             adata.obs["cell_type_external"].nunique())
-                else:
-                    log.warning("  External column '%s' not in metadata. Skipping.", ext_col)
+        if _ext_source is None:
+            raise FileNotFoundError(
+                f"external_annotation enabled but no metadata found for sample "
+                f"'{sample_id}' (looked in precomputed_metadata_dir and {metadata_path}).")
+
+        log.info("Loading external annotation from '%s' in %s …", ext_col, _ext_source)
+        saved = pd.read_csv(_ext_source, sep="\t", index_col=0, comment="#")
+        saved.index = saved.index.astype(str)       # see note above
+        if ext_col not in saved.columns:
+            raise ValueError(
+                f"external_annotation column '{ext_col}' not found in {_ext_source} "
+                f"(sample '{sample_id}'). Available columns: {list(saved.columns)}")
+        adata.obs["cell_type_external"] = (
+            saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
+        ext_enabled = True
+        log.info("  External annotation: %d types (%d cells unmatched → Unannotated)",
+                 adata.obs["cell_type_external"].nunique(),
+                 int((adata.obs["cell_type_external"] == "Unannotated").sum()))
 
     # ── 2b. Spatial niche labels (from spatial_niches rule / external) ───
     _ni = getattr(snakemake.input, "spatial_niche", "")
@@ -297,12 +319,27 @@ try:
         niche_tsv = str(_ni) if _ni else ""
     if niche_tsv and os.path.isfile(niche_tsv):
         log.info("Merging spatial niche labels from %s …", niche_tsv)
-        ndf = pd.read_csv(niche_tsv, sep="\t", index_col=0)
+        # dtype=str: labels are written as text and must stay text — pandas would otherwise
+        # re-infer them as numbers, and any NaN then upcasts the column to float ("1" -> "1.0").
+        ndf = pd.read_csv(niche_tsv, sep="\t", index_col=0, dtype=str)
+        ndf.index = ndf.index.astype(str)           # see note above
         col = "spatial_niche" if "spatial_niche" in ndf.columns else ndf.columns[0]
-        mapped = ndf[col].reindex(adata.obs_names)
+        # Keyed by obs_names: the contract defines obs['cell_id'] == obs_names, and
+        # validate_input checks it, so there is exactly one join key here.
+        mapped = ndf[col].reindex(np.asarray(adata.obs_names, dtype=str))
+        mapped = pd.Series(np.asarray(mapped), index=adata.obs_names)
         n_assigned = int(mapped.notna().sum())
+        if n_assigned < adata.n_obs:
+            log.warning("  %d/%d cells have no niche label -> 'Unassigned' "
+                        "(do the niche TSV keys match obs_names?)",
+                        adata.n_obs - n_assigned, adata.n_obs)
         mapped = mapped.fillna("Unassigned").astype(str)
-        adata.obs["spatial_niche"] = pd.Categorical(mapped)
+        # Order numerically when the labels are numbers, so legends read 0,1,2,…,10 rather
+        # than the lexicographic 1,10,2 (matching the spatial_niches plots).
+        cats = sorted({c for c in mapped if c != "Unassigned"}, key=_niche_sort_key)
+        if (mapped == "Unassigned").any():
+            cats.append("Unassigned")
+        adata.obs["spatial_niche"] = pd.Categorical(mapped, categories=cats, ordered=True)
         log.info("  spatial_niche: %d/%d cells assigned, %d niches",
                  n_assigned, adata.n_obs, adata.obs["spatial_niche"].nunique())
 
@@ -373,9 +410,10 @@ try:
                                       "cell_type_external"]
                           if c in adata.obs.columns]
 
-    # sample column (one bar per sample; here a single sample)
-    sample_col = next((c for c in ["sample", "sample_batch"]
-                       if c in adata.obs.columns), None)
+    # sample column (one bar per sample; here a single sample). Per-sample adatas
+    # carry "sample"; "sample_batch" is an integration-time concat label and does
+    # not exist here, so it is not consulted.
+    sample_col = "sample" if "sample" in adata.obs.columns else None
     if sample_col is None:
         adata.obs["sample"] = sample_id
         sample_col = "sample"

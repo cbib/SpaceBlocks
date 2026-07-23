@@ -1,17 +1,10 @@
 """
-Visium HD end-to-end Snakemake pipeline
-========================================
-    spaceranger_count
-         ↓
-    preprocess_umap → leiden_analysis (per sample × resolution)
-         ↓
-    ingest_ref (optional)
-         ↓
-    annotate_cells (TSV + marker refinement + external)
-         ↓
-    pseudobulk_aggregate → pseudobulk_de (R)
-    neighbourhood_analysis
-    integrate_samples → subcluster
+SpaceBlocks — modular spatial-transcriptomics Snakemake pipeline
+================================================================
+A technology-specific Headblock builds a standardized unfiltered contract h5ad; a
+technology-agnostic Coreblock consumes it in three steps (preprocessing →
+postprocessing → exploration). Rules are split across rules/*.smk and included
+directly below; helper functions live in rules/common.smk.
 """
 
 import os
@@ -21,9 +14,19 @@ from snakemake.utils import validate, min_version
 
 min_version("8.0")
 
-configfile: "config.yaml"
+# configfile: "config/config.yaml"
+# --- Public-data examples (mode: decoupled) -------------------------------------
+# To run a worked example instead of your own data, comment the line above and
+# uncomment ONE of these (see docs -> Reproduce & examples):
+configfile: "reproduction/xenium5k/xenium5k_config.yaml"
+# configfile: "reproduction/visiumhd/config.yaml"
 validate(config, schema="schemas/config.schema.yaml")
 
+# Helper functions (kept out of this file and the rule files per the Snakemake
+# modularization guideline). Included first so they are visible everywhere below.
+include: "rules/common.smk"
+
+# ── Globals ──────────────────────────────────────────────────────────────────
 ANALYSIS   = config.get("analysis", {})
 _region_colors = ANALYSIS.get("region_colors", {})
 REGION_LEVELS  = ANALYSIS.get("region_levels", list(_region_colors.keys()))
@@ -34,35 +37,138 @@ GEOJ_DIR   = config["geojson_path"]
 SAMPLES_DIR = f"{OUTDIR_PP}/Samples"
 RANDOM_SEED = config.get("random_seed", 42)
 
-samples_df = (
-    pd.read_csv(config["samples"])
-    .fillna("")
-    .set_index("sample_id", drop=False)
-)
-validate(samples_df, schema="schemas/samples.schema.yaml")
+# Xenium 5K head: config block + where the SpatialData zarr stores are written
+# (defaults to the shared head-processing outdir).
+XENIUM5K        = config.get("xenium5k", {}) or {}
+XENIUM_ZARR_DIR = XENIUM5K.get("zarr_dir", "") or OUTDIR_SR
 
-SAMPLES    = samples_df.to_dict(orient="index")
-SAMPLE_IDS = list(SAMPLES.keys())
+# Run mode: either a HEAD technology name (that head builds the contract h5ads in
+# this run) or "decoupled" (the core consumes PRE-EXISTING contracts from
+# contract_dir; head rules are not included and validation aborts up front if any
+# sample is missing its contract). Add new heads to KNOWN_HEADS as implemented.
+MODE = str(config.get("mode", "visiumhd")).lower()
+KNOWN_HEADS = ("visiumhd", "xenium5k")
+if MODE != "decoupled" and MODE not in KNOWN_HEADS:
+    sys.exit(f"[config error] mode must be 'decoupled' or a head technology "
+             f"{list(KNOWN_HEADS)}, got '{MODE}'.")
+IS_DECOUPLED = (MODE == "decoupled")
 
-def _resolution_range(rmin, rmax, step):
-    n = round((rmax - rmin) / step)
-    return [round(rmin + i * step, 10) for i in range(n + 1)]
+# ── Input contract (modular head → core hand-off) ────────────────────────────
+# prepare_input_vhd WRITES this unfiltered h5ad; validate_input, qc_sweep and
+# preprocess_umap READ it. Path + validation root are derived here from
+# post_processing_outdir so they follow SAMPLES_DIR automatically (set after the
+# config-schema validation above, so they don't need to be declared in the schema).
+config.setdefault("contract", {})
+# CONTRACT_DIR = where the CORE READS the contract h5ads. Empty → the per-sample
+# output tree (head mode: prepare_input_vhd writes there, so producer/consumers stay
+# on one key). In decoupled mode point contract_dir at wherever the head wrote the
+# {sample}/{sample}_unfiltered.h5ad files.
+CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
+config["contract"]["unfiltered_h5ad"] = f"{CONTRACT_DIR}/{{sample}}/{{sample}}_unfiltered.h5ad"
+config["outdir"] = SAMPLES_DIR     # validate_input / qc_sweep write under the per-sample tree
+
+# ── Sample sheets ────────────────────────────────────────────────────────────
+# CORE sample sheet (technology-agnostic ANCHOR): the authoritative list of
+# samples plus any optional experimental-design columns. The CORE reads ONLY this
+# sheet; the `sample` value need NOT match obs["sample"] inside the contract h5ad.
+# Falls back to the head visiumhd_samples.csv if no core sheet is configured.
+CORE_SAMPLES = None
+_core_sheet = config.get("core_samples", "") or ""
+if _core_sheet:
+    if not os.path.isfile(_core_sheet):
+        sys.exit(f"[config error] core_samples file not found: {_core_sheet}")
+    CORE_SAMPLES = pd.read_csv(_core_sheet, sep="\t", dtype=str, comment="#").fillna("")
+    if "sample" not in CORE_SAMPLES.columns:
+        sys.exit(f"[config error] core_samples ({_core_sheet}) needs a 'sample' column.")
+    validate(CORE_SAMPLES, schema="schemas/core_samples.schema.yaml")
+    CORE_SAMPLES = CORE_SAMPLES.set_index("sample", drop=False)
+    SAMPLE_IDS = list(CORE_SAMPLES["sample"])
+    if not SAMPLE_IDS:
+        sys.exit(f"[config error] core_samples ({_core_sheet}) has no sample rows.")
+
+# HEAD sample sheet (Visium HD): fastq dirs / slide / area for spaceranger +
+# prepare_input_vhd. Needed only in head mode; guarded so a decoupled run needs no
+# visiumhd_samples.csv on disk.
+SAMPLES = {}
+_head_sheet = config.get("samples", "") or ""
+if os.path.isfile(_head_sheet):
+    samples_df = (
+        pd.read_csv(_head_sheet, dtype=str)   # keep numeric sample_ids as strings
+        .fillna("")
+        .set_index("sample_id", drop=False)
+    )
+    validate(samples_df, schema="schemas/samples.schema.yaml")
+    SAMPLES = samples_df.to_dict(orient="index")
+
+# Derive the sample list from the head sheet only when no core sheet is set.
+if CORE_SAMPLES is None:
+    if not SAMPLES:
+        sys.exit("[config error] No core_samples sheet configured and no readable "
+                 "visiumhd_samples.csv found — cannot determine the sample list.")
+    SAMPLE_IDS = list(SAMPLES.keys())
+
+# Optional per-column colour palettes (sample + design columns) for downstream viz.
+SAMPLE_COLORS = config.get("sample_colors", {}) or {}
+
+# Integration key: the obs column Harmony corrects on in integrate_samples
+# ("sample" = per-sample = current behaviour; e.g. "patient" to correct on that).
+INTEGRATION   = config.get("integration", {}) or {}
+INTEGRATE_KEY = str(INTEGRATION.get("integrate_key", "sample") or "sample")
+
+# Extra-annotation columns (core-sheet columns beyond `sample`) surfaced to
+# downstream plots/annotation tracks. NOT DE covariates. `extra_annotations.columns`
+# overrides; otherwise all non-sample core-sheet columns are used.
+EXTRA_ANNOT = config.get("extra_annotations", {}) or {}
+if EXTRA_ANNOT.get("columns"):
+    EXTRA_ANNOT_COLUMNS = list(EXTRA_ANNOT["columns"])
+elif CORE_SAMPLES is not None:
+    EXTRA_ANNOT_COLUMNS = [c for c in CORE_SAMPLES.columns if c != "sample"]
+else:
+    EXTRA_ANNOT_COLUMNS = []
+
+EXTRA_ANNO_COLS, EXTRA_ANNO_VALS, EXTRA_ANNO_COLORS = _extra_annot_color_triples()
+
+# ── Contract presence gate (decoupled mode) ──────────────────────────────────
+# In decoupled mode the core consumes PRE-EXISTING contract h5ads; abort early —
+# before any job is submitted — listing every sample missing its contract.
+if IS_DECOUPLED:
+    _pat = config["contract"]["unfiltered_h5ad"]
+    _missing = [(s, _pat.format(sample=s)) for s in SAMPLE_IDS
+                if not os.path.isfile(_pat.format(sample=s))]
+    if _missing:
+        _lst = "\n".join(f"  - {s}: {p}" for s, p in _missing)
+        sys.exit(
+            f"[validate_input / decoupled] Missing contract h5ad for {len(_missing)} "
+            f"sample(s) in the input directory:\n{_lst}\n"
+            "Every sample in the core sheet must already have a contract present "
+            "(mode: decoupled does not build them). Fix the sheet or contract_dir, "
+            "or set mode to a head technology (e.g. visiumhd) to build inputs.")
 
 RESOLUTIONS = [
     str(r)
     for r in _resolution_range(
-        ANALYSIS.get("resolution_scan_min", 0.2),
-        ANALYSIS.get("resolution_scan_max", 1.0),
+        ANALYSIS.get("resolution_scan_min", 0.8),
+        ANALYSIS.get("resolution_scan_max", 1.2),
         ANALYSIS.get("resolution_scan_step", 0.2),
     )
 ]
 
-ANNOT_TYPES = ["tsv_annotation"] # "refined_annotation"
-
-# Add external annotation type if configured
-ext_annot = config.get("external_annotation", {})
-if ext_annot.get("enabled", False):
-    ANNOT_TYPES.append("external_annotation")
+# Primary annotation drives EVERY downstream rule consistently: the annotation TYPE
+# (neighbourhood / pseudobulk, via ANNOT_TYPES) and its obs COLUMN (explore_genes /
+# subcluster, via DEFAULT_ANNOT_COL) both derive from PRIMARY_ANNOT_TYPE. External takes
+# over when enabled — so cells the external tool left unannotated cannot leak (as
+# tsv-cluster-labelled noise) into downstream analyses. Set annotation_types explicitly
+# to compare, e.g. ["tsv_annotation", "external_annotation"].
+EXTERNAL_ENABLED   = bool((config.get("external_annotation", {}) or {}).get("enabled", False))
+PRIMARY_ANNOT_TYPE = "external_annotation" if EXTERNAL_ENABLED else "tsv_annotation"
+_ANNOT_TYPE_TO_COL = {
+    "tsv_annotation":      "cell_type_tsv",
+    "external_annotation": "cell_type_external",
+    "ingest_annotation":   "cell_type_ingest",
+    "refined_annotation":  "cell_type_refined",
+}
+DEFAULT_ANNOT_COL = _ANNOT_TYPE_TO_COL.get(PRIMARY_ANNOT_TYPE, "cell_type_tsv")
+ANNOT_TYPES = list(config.get("annotation_types") or [PRIMARY_ANNOT_TYPE])
 
 ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"])
 
@@ -70,16 +176,19 @@ ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_reg
 # count matrices + PCA QC are still produced; only the R/DESeq2 step is gated).
 RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 
+# Leiden per-resolution PLOTS are diagnostic (clustering itself lives in
+# preprocess_umap); optional so a run using external annotation can skip them.
+RUN_LEIDEN_ANALYSIS = bool(ANALYSIS.get("run_leiden_analysis", True))
 
-def _cluster_annotations_available():
-    path = config.get("cluster_annotations", "")
-    if not path or not os.path.isfile(path):
-        return False
-    try:
-        df = pd.read_csv(path, sep="\t", index_col=0)
-        return df.shape[0] > 0 and df.shape[1] > 0 and not df.isna().all().all()
-    except Exception:
-        return False
+# External annotation: fail fast if enabled but the column is not present in every
+# sample's metadata (runs only when the external labels are fully in place).
+check_external_annotation()
+
+# Consistency: analysing the external annotation downstream requires it to be produced.
+if "external_annotation" in ANNOT_TYPES and not EXTERNAL_ENABLED:
+    sys.exit("[config error] annotation_types includes 'external_annotation' but "
+             "external_annotation.enabled is false — cell_type_external would be absent "
+             "downstream. Enable external_annotation or drop it from annotation_types.")
 
 HAS_CLUSTER_ANNOT = _cluster_annotations_available()
 HAS_INGEST_REF = bool(config.get("ingest_ref", ""))
@@ -91,131 +200,117 @@ HAS_GENE_EXPLORATION = bool(_gene_queries_path) and os.path.isfile(_gene_queries
 
 SPATIAL_NICHES = config.get("spatial_niches", {})
 SPATIAL_NICHES_ENABLED = bool(SPATIAL_NICHES.get("enabled", False))
-# The spatial_niches rule always runs when enabled; it reloads precomputed niche
-# TSVs internally (use_precomputed + niche_dir) instead of being bypassed, so it
-# still produces the canonical TSVs / concatenated h5ad / plots cheaply.
 
+SUBCOMPARTMENTS = list(config.get("subcompartments", {}).keys())
 
-def get_resource(rule_name, key):
-    section = config.get("resources", {})
-    rule_res = section.get(rule_name, section.get("default", {}))
-    if key not in rule_res:
-        sys.exit(f"[config error] Resource '{key}' missing for rule '{rule_name}'.")
-    return rule_res[key]
+# ── Rules ────────────────────────────────────────────────────────────────────
+# Rule files are included directly (grouped by phase for readability). The Headblock is
+# technology-specific and included only for the matching head; the Coreblock is the same
+# for every technology.
 
-def fastq_dirs_comma_separated(wc):
-    s = SAMPLES[wc.sample]
-    dirs = [f"{s['fastq_dir']}/fastqs/"]
-    for col in ("resequenced_dir", "new_resequenced_dir", "third_resequencing_dir"):
-        val = s.get(col, "")
-        if val not in ("", "nan"):
-            dirs.append(f"{val}/fastqs/")
-    return ",".join(dirs)
+# Headblock (technology-specific): builds the contract h5ad.
+if MODE == "visiumhd":
+    include: "rules/spaceranger_count_vhd.smk"
+    include: "rules/generate_qupath_vhd.smk"
+    include: "rules/prepare_input_vhd.smk"
+elif MODE == "xenium5k":
+    include: "rules/convert_zarr_x5k.smk"
+    include: "rules/generate_qupath_x5k.smk"
+    include: "rules/prepare_input_x5k.smk"
 
-def get_all_targets(wildcards):
-    targets = []
-    for sample in SAMPLE_IDS:
-        targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}.h5ad")
-        targets.append(f"{SAMPLES_DIR}/{sample}/metadata_{sample}.tsv")
-        targets.append(f"{SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png")
-        for res in RESOLUTIONS:
-            targets.append(f"{SAMPLES_DIR}/{sample}/leiden_resolution_{res}")
-    if SPATIAL_NICHES_ENABLED:
-        targets.append(f"{OUTDIR_PP}/spatial_niches/spatial_niches_concatenated.h5ad")
-        targets.append(f"{OUTDIR_PP}/spatial_niches/plots")
-        targets.extend(expand(
-            f"{OUTDIR_PP}/spatial_niches/tsv/niche_{{sample}}.tsv",
-            sample=SAMPLE_IDS))
-    if HAS_CLUSTER_ANNOT:
-        if HAS_INGEST_REF:
-            for sample in SAMPLE_IDS:
-                targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}_ingested.h5ad")
-        for sample in SAMPLE_IDS:
-            targets.append(f"{SAMPLES_DIR}/{sample}/adata_{sample}_annotated.h5ad")
-        for sample in SAMPLE_IDS:
-            for at in ANNOT_TYPES:
-                targets.append(f"{SAMPLES_DIR}/{sample}/neighbourhood_analysis/{at}")
-        for at in ANNOT_TYPES:
-            for level in ANALYSIS_LEVELS:
-                targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/aggregated")
-                if RUN_DE:
-                    targets.append(f"{OUTDIR_PP}/pseudobulk/{at}/{level}/de_results")
-        targets.append(f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad")
-        targets.append(f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad")
-        targets.append(f"{OUTDIR_PP}/integrated_samples/sketched.h5ad")
-        targets.append(f"{OUTDIR_PP}/integrated_samples/samples_report.pdf")
-        if HAS_GENE_EXPLORATION:
-            targets.append(f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv")
-            targets.extend(expand(
-                f"{OUTDIR_PP}/gene_exploration/.sentinels/{{sample}}.done",
-                sample=SAMPLE_IDS))
-    subcomps = config.get("subcompartments", {})
-    if subcomps:
-        for sc_name in subcomps:
-            targets.append(f"{OUTDIR_PP}/Subcompartments/{sc_name}")
-    return targets
-
-
-# ── Include rules ────────────────────────────────────────────────────────────
-include: "rules/spaceranger.smk"
+# Coreblock — step 1: preprocessing.
+include: "rules/validate_input.smk"
+include: "rules/qc_sweep.smk"
 include: "rules/preprocess_umap.smk"
 include: "rules/leiden_analysis.smk"
+include: "rules/generate_annotation_template.smk"
 include: "rules/ingest_ref.smk"
 include: "rules/spatial_niches.smk"
+
+# Coreblock — step 2: postprocessing.
 include: "rules/annotate_cells.smk"
+include: "rules/integrate_samples.smk"      # before pseudobulk (its input = integrated h5ad)
 include: "rules/pseudobulk_aggregate.smk"
 include: "rules/pseudobulk_de.smk"
 include: "rules/neighbourhood_analysis.smk"
-include: "rules/integrate_samples.smk"
 include: "rules/subcluster.smk"
-include: "rules/generate_annotation_template.smk"
 include: "rules/sample_report.smk"
+
+# Coreblock — step 3: exploration.
 include: "rules/explore_genes.smk"
 
 
 # ── Targets ──────────────────────────────────────────────────────────────────
+# Head-specific "QuPath annotation image" per sample, resolved by mode so the CORE
+# targets stay technology-agnostic (Visium HD hires PNG / Xenium morphology TIFF).
+if MODE == "visiumhd":
+    QUPATH_IMAGES = expand(rules.generate_qupath_vhd.output.qupath_image, sample=SAMPLE_IDS)
+elif MODE == "xenium5k":
+    QUPATH_IMAGES = expand(rules.generate_qupath_x5k.output.qupath_image, sample=SAMPLE_IDS)
+else:
+    QUPATH_IMAGES = []
+
+# Target input lists reference producing rules by name (rules.<rule>.output.<name>)
+# rather than repeating literal paths, so a path change in a rule propagates here.
+
 rule all:
     input:
         get_all_targets,
-        f"{OUTDIR_PP}/cluster_annotations_template.tsv",
+        rules.generate_annotation_template.output.template,
 
-rule run_upstream:
-    """Spaceranger, preprocessing, leiden, annotation template, ingest (if configured)."""
+rule run_preprocessing:
+    """STEP 1 — validate, preprocess, leiden, annotation template, ingest, niches."""
     input:
-        expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad", sample=SAMPLE_IDS),
-        expand(f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv", sample=SAMPLE_IDS),
-        expand(f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
-               sample=SAMPLE_IDS),
-        expand(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{res}}",
-               sample=SAMPLE_IDS, res=RESOLUTIONS),
-        f"{OUTDIR_PP}/cluster_annotations_template.tsv",
-        *(expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_ingested.h5ad",
-                 sample=SAMPLE_IDS) if HAS_INGEST_REF else []),
-        *([f"{OUTDIR_PP}/spatial_niches/spatial_niches_concatenated.h5ad"]
-          if SPATIAL_NICHES_ENABLED else []),
+        expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS),
+        expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS),
+        expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS),
+        *QUPATH_IMAGES,
+        *(expand(rules.leiden_analysis.output.res_dir, sample=SAMPLE_IDS, resolution=RESOLUTIONS)
+          if RUN_LEIDEN_ANALYSIS else []),
+        rules.generate_annotation_template.output.template,
+        *(expand(rules.ingest_ref.output.adata_ingested, sample=SAMPLE_IDS)
+          if HAS_INGEST_REF else []),
+        *([rules.spatial_niches.output.concatenated] if SPATIAL_NICHES_ENABLED else []),
 
-rule run_downstream:
-    """Annotation + DE + neighbourhood + integration."""
+rule run_postprocessing:
+    """STEP 2 — annotation + DE + neighbourhood + integration + report."""
     input:
-        expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad", sample=SAMPLE_IDS),
-        *(expand(f"{OUTDIR_PP}/pseudobulk/{{at}}/{{level}}/de_results",
-                 at=ANNOT_TYPES, level=ANALYSIS_LEVELS) if RUN_DE else []),
-        expand(f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{at}}",
-               sample=SAMPLE_IDS, at=ANNOT_TYPES),
-        f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
-        f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
-        f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",
-        f"{OUTDIR_PP}/integrated_samples/samples_report.pdf",
+        expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
+        *(expand(rules.pseudobulk_de.output.results_dir,
+                 annot_type=ANNOT_TYPES, analysis_level=ANALYSIS_LEVELS) if RUN_DE else []),
+        expand(rules.neighbourhood_analysis.output.results_dir,
+               sample=SAMPLE_IDS, annot_type=ANNOT_TYPES),
+        rules.integrate_samples.output.concatenated,
+        rules.integrate_samples.output.harmony,
+        rules.integrate_samples.output.sketched,
+        rules.sample_report.output.report,
+        expand(rules.subcluster.output.sub_dir, subcompartment=SUBCOMPARTMENTS),
+
+rule run_exploration:
+    """STEP 3 — subcompartment re-analysis + gene/signature exploration."""
+    input:
+        *([rules.explore_genes_integrated.output.ranges] if HAS_GENE_EXPLORATION else []),
+        *(expand(rules.explore_genes_sample.output.done, sample=SAMPLE_IDS)
+          if HAS_GENE_EXPLORATION else []),
 
 rule subcluster_all:
     """Run all subcompartment analyses."""
     input:
-        expand(f"{OUTDIR_PP}/Subcompartments/{{sc}}",
-               sc=list(config.get("subcompartments", {}).keys())),
+        expand(rules.subcluster.output.sub_dir, subcompartment=SUBCOMPARTMENTS),
+
+rule qupath_images:
+    """HEAD: generate the hires images to annotate in QuPath (run FIRST, annotate,
+    export each {sample}_tissue_hires_image.geojson into geojson_path, then continue)."""
+    input:
+        QUPATH_IMAGES,
+
+rule qc_sweep_all:
+    """Optional pre-filtering QC diagnostic for every sample (no filtering)."""
+    input:
+        expand(rules.qc_sweep.output.violins_png, sample=SAMPLE_IDS),
 
 rule explore_genes:
     """Generate gene/signature exploration PNGs (integrated + per sample)."""
     input:
-        f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
-        expand(f"{OUTDIR_PP}/gene_exploration/.sentinels/{{sample}}.done",
-               sample=SAMPLE_IDS),
+        rules.explore_genes_integrated.output.ranges,
+        expand(rules.explore_genes_sample.output.done, sample=SAMPLE_IDS),

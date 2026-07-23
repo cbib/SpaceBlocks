@@ -8,7 +8,7 @@ rule subcluster:
     at multiple resolutions, silhouette evaluation, QC plots, and UMAPs.
     """
     input:
-        adata=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
+        adata=rules.integrate_samples.output.concatenated,
     output:
         sub_dir=directory(f"{OUTDIR_PP}/Subcompartments/{{subcompartment}}"),
     wildcard_constraints:
@@ -16,7 +16,7 @@ rule subcluster:
     params:
         subcompartment=lambda wc: wc.subcompartment,
         strings=lambda wc: config["subcompartments"][wc.subcompartment]["strings"],
-        annot_col=config.get("subcompartment_annot_col", "cell_type_tsv"),
+        annot_col=config.get("subcompartment_annot_col") or DEFAULT_ANNOT_COL,
         resolution_min=lambda wc: config["subcompartments"][wc.subcompartment].get("resolution_min", 0.2),
         resolution_max=lambda wc: config["subcompartments"][wc.subcompartment].get("resolution_max", 1.0),
         resolution_step=lambda wc: config["subcompartments"][wc.subcompartment].get("resolution_step", 0.2),
@@ -26,8 +26,11 @@ rule subcluster:
         random_seed=RANDOM_SEED,
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
+        region_levels=REGION_LEVELS,
         dpi=ANALYSIS.get("plot_dpi", 300),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS,
+        sample_colors=SAMPLE_COLORS,
     log:
         out=f"{LOGDIR}/subcluster/{{subcompartment}}.out",
         err=f"{LOGDIR}/subcluster/{{subcompartment}}.err",
@@ -38,7 +41,7 @@ rule subcluster:
     threads:
         get_resource("subcluster", "threads")
     resources:
-        mem_mb=get_resource("subcluster", "mem_mb"),
+        mem_mb=mem_mb_attempt("subcluster"),
         runtime=get_resource("subcluster", "runtime"),
     script:
         "../scripts/subcluster.py"

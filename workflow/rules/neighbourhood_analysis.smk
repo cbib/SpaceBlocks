@@ -5,12 +5,13 @@ rule neighbourhood_analysis:
     The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation'.
     """
     input:
-        adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
+        adata=rules.annotate_cells.output.adata_annot,
     output:
         results_dir=directory(f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{annot_type}}"),
     params:
         sample_id=lambda wc: wc.sample,
         annot_type=lambda wc: wc.annot_type,
+        annotation_colors=config.get("annotation_colors", {}),
     log:
         out=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.out",
         err=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.err",
@@ -21,7 +22,7 @@ rule neighbourhood_analysis:
     threads:
         get_resource("neighbourhood_analysis", "threads")
     resources:
-        mem_mb=get_resource("neighbourhood_analysis", "mem_mb"),
+        mem_mb=mem_mb_attempt("neighbourhood_analysis"),
         runtime=get_resource("neighbourhood_analysis", "runtime"),
     script:
         "../scripts/neighbourhood_analysis.py"

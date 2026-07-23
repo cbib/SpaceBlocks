@@ -1,0 +1,24 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-dryrun:
+    # Fast smoke test: lints the workflow and builds the full DAG on a tiny synthetic
+    # decoupled dataset (.tests/integration). No Conda envs or Space Ranger needed — a
+    # dry-run validates the graph and (via the Snakefile) the config against the schema.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install snakemake pandas jsonschema
+      - name: Lint
+        run: snakemake --lint --workflow-profile none
+      - name: Dry-run (decoupled smoke test)
+        run: snakemake --configfile .tests/integration/config/config.yaml -n --workflow-profile none

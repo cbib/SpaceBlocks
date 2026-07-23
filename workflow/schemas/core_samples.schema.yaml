@@ -1,0 +1,26 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: >
+  Schema for the CORE (technology-agnostic) sample sheet. One row per sample.
+  A required `sample` column, plus any number of optional experimental-design
+  columns (subtype, batch, condition, …) used downstream for integration / DE
+  grouping and, via config.sample_colors, for harmonised visualisation.
+  Extra columns are allowed and validated only as strings.
+type: object
+
+# Extra (design) columns beyond `sample` are allowed and validated as strings
+# (the sheet is read with dtype=str), so a stray numeric/boolean is caught.
+additionalProperties:
+  type: string
+
+properties:
+  sample:
+    type: string
+    pattern: "^[A-Za-z0-9_-]+$"
+    description: >
+      Sample identifier: drives the {sample} wildcard and locates the contract
+      h5ad. NOTE: this need NOT match obs["sample"] inside the contract h5ad —
+      samples may be renamed (e.g. anonymised or relabelled for publication)
+      during input preparation; the core does not assert that the two agree.
+
+required:
+  - sample

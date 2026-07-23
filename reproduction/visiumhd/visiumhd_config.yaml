@@ -1,0 +1,249 @@
+# Ready-to-run config for the visiumhd public-data example (mode: decoupled).
+# Build the contracts first (reproduction/visiumhd/format_visiumhd*.py),
+# then point the Snakefile at this file. Resources are deliberately low (tiny test).
+mode: decoupled
+post_processing_outdir: reproduction/visiumhd/results
+logdir: reproduction/visiumhd/logs
+spaceranger_processing_outdir: reproduction/visiumhd/_unused
+geojson_path: reproduction/visiumhd/_unused
+contract_dir: reproduction/visiumhd/contracts
+random_seed: 0
+use_precomputed_clusters: false
+precomputed_metadata_dir: ''
+core_samples: reproduction/visiumhd/contracts/core_samples.tsv
+xenium5k:
+  xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
+  zarr_dir: ''
+  qupath_pyramid_level: 3
+  hires_pyramid_level: 3
+  pixel_size_um: 0.2125
+contract:
+  sample_key: sample
+  spatial_key: spatial
+  require_region: false
+  require_raw_counts: true
+  mito_prefix:
+  - MT-
+  - mt-
+per_sample_qc: ''
+analysis:
+  plot_dpi: 300
+  min_counts: 1
+  min_cells: 3
+  min_genes: 100
+  n_neighbors: 10
+  n_pcs: 30
+  de_n_genes: 25
+  resolution_scan_min: 0.6
+  resolution_scan_max: 0.8
+  resolution_scan_step: 0.2
+  min_cells_per_type: 15
+  sketch_fraction: 0.25
+  run_pseudobulk_de: true
+  run_leiden_analysis: true
+  analysis_levels:
+  - by_region
+  - by_celltype_region
+  min_cells_per_pseudobulk: 10
+  min_replicates: 3
+  min_counts_per_pseudobulk: 1000
+  padj_threshold: 0.05
+  lfc_threshold: 0.25
+  region_levels:
+  - Region 1
+  - Region 2
+  - Region 3
+  - Region 4
+  region_colors:
+    Region 1: '#440154'
+    Region 2: '#31688e'
+    Region 3: '#35b779'
+    Region 4: '#fde725'
+qc_sweep:
+  ingest_enabled: false
+  ingest_key: cell_type_ingest
+  cell_id_key: cell_id
+  dpi: 300
+  thresholds:
+    min_genes:
+    - 50
+    - 100
+    - 200
+    min_counts:
+    - 1
+    - 10
+    - 50
+    max_counts:
+    - 3000
+    - 5000
+    max_pct_mt:
+    - 10
+    - 15
+    - 20
+cluster_annotations: config/cluster_annotations.tsv
+snakemake_cell_markers: config/snakemake_cell_markers.tsv
+external_annotation:
+  enabled: false
+  column: manual_celltype
+  keep_unannotated: true
+ingest_ref: ''
+ingest_ref_label_key: 04_celltypes
+integration:
+  integrate_key: sample
+extra_annotations:
+  columns: []
+spatial_niches:
+  enabled: true
+  use_precomputed: false
+  niche_dir: ''
+  lambda: 0.8
+  num_neighbours: 18
+  cluster_n_neighbours: 15
+  n_iterations: 2
+  max_m: 1
+  nbr_weight_decay: scaled_gaussian
+  use_hvg: true
+  n_top_genes: 2000
+  niche_resolution: 0.3
+  refine: false
+  refine_num_neigh: 6
+  refine_iterations: 1
+  refine_auto: false
+  compute_umap: false
+subcompartments: {}
+gene_exploration:
+  queries: config/gene_queries.tsv
+  aucell_max_rank_fraction: 0.05
+  niche_column: spatial_niche
+  dpi: 300
+sample_colors: {}
+annotation_colors:
+  cell_type_tsv:
+    Keratinocytes: '#d62728'
+    Keratinocytes_Basal: '#8c564b'
+    Keratinocytes_Suprabasal: '#a0522d'
+    Keratinocytes_Mal: '#000000'
+    Tcells: '#1f77b4'
+    Plasma_cells: '#9467bd'
+    Mono_Macro: '#08519c'
+    Macro_Tcells: '#756bb1'
+    Macro_Plasma: '#9e9ac8'
+    Fibroblasts: '#2ca02c'
+    Fibroblasts_Macro: '#bcbd22'
+    Fibroblasts_Endothelial: '#17becf'
+    Fibroblasts_Keratinocytes: '#ffbb78'
+    Fibroblasts_Plasma: '#fdae6b'
+    Endothelial: '#98df8a'
+    Adipocytes: '#dbdb8d'
+    Gland_cells: '#ff7f0e'
+    Smooth_muscle: '#d9d9d9'
+    Skeletal_muscle: '#b9b9c9'
+  cell_type_external:
+    Keratinocytes: '#d62728'
+    Keratinocytes_Basal: '#8c564b'
+    Keratinocytes_Suprabasal: '#a0522d'
+    Keratinocytes_Mal: '#000000'
+    Tcells: '#1f77b4'
+    Plasma_cells: '#9467bd'
+    Mono_Macro: '#08519c'
+    Macro_Tcells: '#756bb1'
+    Macro_Plasma: '#9e9ac8'
+    Fibroblasts: '#2ca02c'
+    Fibroblasts_Macro: '#bcbd22'
+    Fibroblasts_Endothelial: '#17becf'
+    Fibroblasts_Keratinocytes: '#ffbb78'
+    Fibroblasts_Plasma: '#fdae6b'
+    Endothelial: '#98df8a'
+    Adipocytes: '#dbdb8d'
+    Gland_cells: '#ff7f0e'
+    Smooth_muscle: '#d9d9d9'
+    Skeletal_muscle: '#b9b9c9'
+resources:
+  spaceranger_count_vhd:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  generate_qupath_vhd:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  prepare_input_vhd:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  convert_zarr_x5k:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  generate_qupath_x5k:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  prepare_input_x5k:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  validate_input:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  qc_sweep:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  preprocess_umap:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  ingest_ref:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  leiden_analysis:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  pseudobulk_aggregate:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  pseudobulk_de:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  neighbourhood_analysis:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  annotate_cells:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  integrate_samples:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  spatial_niches:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  subcluster:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  sample_report:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  explore_genes_integrated:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  explore_genes_spatial:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  default:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4

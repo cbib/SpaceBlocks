@@ -1,0 +1,87 @@
+"""
+generate_qupath_vhd.py — Visium HD HEAD (step 2)
+==================================================
+Copies the Space Ranger hires tissue image out of the (version-varying) SR output
+tree to a stable, predictable path so it can be opened and annotated in QuPath.
+The manually exported "{sample}_tissue_hires_image.geojson" is later consumed by
+prepare_input to build the region_annotation contract column.
+
+This is a cheap file copy (no image decoding): it locates tissue_hires_image.png
+using the same glob-pattern fallbacks as prepare_input.find_sr_file (so it tolerates
+Space Ranger layout/version differences) and copies it verbatim to
+    {SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png
+
+Snakemake I/O
+-------------
+  input.sr_done        : SR completion sentinel ({OUTDIR_SR}/{sample}/.done)
+  params.sr_outdir     : SR output directory to search ({OUTDIR_SR}/{sample})
+  params.sample_id     : sample wildcard
+  output.qupath_image  : destination PNG (copied verbatim)
+"""
+
+import logging
+import os
+import shutil
+import sys
+import traceback
+from glob import glob
+from pathlib import Path
+
+# ── Logging (mirror the other head/core scripts) ─────────────────────────────
+log_handlers = [logging.StreamHandler(sys.stderr)]
+if hasattr(snakemake, "log"):
+    if snakemake.log.out:
+        Path(snakemake.log.out).parent.mkdir(parents=True, exist_ok=True)
+        log_handlers.append(logging.FileHandler(snakemake.log.out, mode="w"))
+    if snakemake.log.err:
+        Path(snakemake.log.err).parent.mkdir(parents=True, exist_ok=True)
+        sys.stderr = open(snakemake.log.err, "w")
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s  %(levelname)-8s  %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S", handlers=log_handlers)
+log = logging.getLogger("generate_qupath_image")
+
+
+def find_sr_file(sr_outdir, *patterns):
+    """Return the first file under sr_outdir matching any of the glob patterns
+    (tried in order). Kept in sync with prepare_input.find_sr_file so both head
+    steps discover the SR hires image the same way."""
+    for pattern in patterns:
+        matches = glob(os.path.join(sr_outdir, pattern), recursive=True)
+        if matches:
+            return matches[0]
+    tried = ", ".join(patterns)
+    raise FileNotFoundError(f"Could not find any of [{tried}] under {sr_outdir}")
+
+
+try:
+    sample_id = str(snakemake.params.sample_id)
+    sr_outdir = str(snakemake.params.sr_outdir)
+    out_png   = str(snakemake.output.qupath_image)
+
+    log.info("=" * 70)
+    log.info("QuPath image copy: sample=%s", sample_id)
+    log.info("  SR outdir: %s", sr_outdir)
+    log.info("=" * 70)
+
+    # Same fallbacks as prepare_input, plus a recursive catch-all for unusual
+    # SR layouts (first match wins).
+    hires_src = find_sr_file(
+        sr_outdir,
+        "outs/segmented_outputs/spatial/tissue_hires_image.png",
+        "outs/spatial/tissue_hires_image.png",
+        "segmented_outputs/spatial/tissue_hires_image.png",
+        "spatial/tissue_hires_image.png",
+        "**/tissue_hires_image.png",
+    )
+    log.info("  found hires image: %s", hires_src)
+
+    Path(out_png).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(hires_src, out_png)
+    log.info("  copied → %s", out_png)
+    log.info("QuPath image ready for %s", sample_id)
+
+except Exception:
+    log.error("FAILED for %s:\n%s",
+              getattr(snakemake.params, "sample_id", "?"), traceback.format_exc())
+    raise

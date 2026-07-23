@@ -76,16 +76,26 @@ def apply_palette(adata, obs_key, colors_cfg):
     """Apply annotation_colors palette to an obs column."""
     if not isinstance(colors_cfg, dict):
         return
+    if obs_key not in adata.obs.columns:
+        return
     cd = colors_cfg.get(obs_key, {})
-    if cd and obs_key in adata.obs.columns:
-        adata.obs[obs_key] = adata.obs[obs_key].astype("category")
-        cats = adata.obs[obs_key].cat.categories
-        adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
+    if not cd:
+        # No palette configured for this column: behave like annotate_cells and leave the
+        # colours to scanpy. Any stale/incomplete *_colors carried in the h5ad is dropped,
+        # otherwise it would be reused here and can render every category grey.
+        adata.uns.pop(f"{obs_key}_colors", None)
+        return
+    adata.obs[obs_key] = adata.obs[obs_key].astype("category")
+    cats = adata.obs[obs_key].cat.categories
+    adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
 
 def apply_region_palette(adata, region_colors):
     """Apply region_colors palette to region_annotation."""
-    if region_colors and "region_annotation" in adata.obs.columns:
+    if not region_colors:
+        adata.uns.pop("region_annotation_colors", None)
+        return
+    if "region_annotation" in adata.obs.columns:
         adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
         cats = adata.obs["region_annotation"].cat.categories
         adata.uns["region_annotation_colors"] = [
@@ -106,15 +116,18 @@ def _pick_keys(adata, niche_column=None):
     return manual, tsv, auto, niche
 
 
-def _build_page1(adata, sample_id, keys, library_id):
-    """Row 1 = UMAPs, Row 2 = spatial, for clusters / tsv / auto / niche."""
+def _build_page1(adata, sample_id, keys, library_id, has_regions=False):
+    """Row 1 = UMAPs, Row 2 = spatial, for clusters / tsv / auto / region / niche."""
     manual, tsv, auto, niche = keys
     panels = [(manual, "Clusters"), (tsv, "TSV annotation"),
-              (auto, "Auto annotation"), (niche, "Spatial niche")]
+              (auto, "Auto annotation")]
+    if has_regions:                       # region annotation UMAP + spatial
+        panels.append(("region_annotation", "Region"))
+    panels.append((niche, "Spatial niche"))
     panels = [(k, t) for k, t in panels if k]
     n = len(panels)
     fig, axes = plt.subplots(2, n, figsize=(8 * n, 14),
-                             gridspec_kw={"wspace": 0.5, "hspace": 0.25},
+                             gridspec_kw={"wspace": 0.75, "hspace": 0.35},
                              squeeze=False)
     fig.suptitle(f"Sample: {sample_id}", fontsize=18, fontweight="bold", y=0.99)
     for j, (key, title) in enumerate(panels):
@@ -317,11 +330,22 @@ try:
 
                 keys = _pick_keys(adata, NICHE_COLUMN)
 
+                # Order spatial-niche categories numerically (like clusters), so the
+                # page-1 legends/colours read 0,1,2,…,10 rather than lexicographically.
+                niche_key = keys[3]
+                if niche_key and niche_key in adata.obs.columns:
+                    _nv = adata.obs[niche_key].astype(str)
+                    try:
+                        _ord = [str(v) for v in sorted(_nv.unique(), key=lambda x: int(x))]
+                        adata.obs[niche_key] = pd.Categorical(_nv, categories=_ord)
+                    except (ValueError, TypeError):
+                        pass   # non-numeric niche labels — leave order as-is
+
                 has_regions = ("region_annotation" in adata.obs.columns
                                and adata.obs["region_annotation"].nunique() > 1
                                and not all(adata.obs["region_annotation"] == "Unlabeled"))
 
-                fig1 = _build_page1(adata, sample_id, keys, library_id)
+                fig1 = _build_page1(adata, sample_id, keys, library_id, has_regions)
                 _rasterize_heavy_layers(fig1)
                 pdf.savefig(fig1, bbox_inches="tight", dpi=DPI); plt.close(fig1)
 

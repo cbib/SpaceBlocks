@@ -8,10 +8,7 @@ rule integrate_samples:
     - sketched.h5ad:  geosketched 25% subset with projected clusters
     """
     input:
-        annotated=expand(
-            f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
-            sample=SAMPLE_IDS,
-        ),
+        annotated=expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
     output:
         concatenated=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
         harmony=f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
@@ -25,6 +22,9 @@ rule integrate_samples:
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS,
+        sample_colors=SAMPLE_COLORS,
+        integrate_key=INTEGRATE_KEY,
     log:
         out=f"{LOGDIR}/integrate_samples/integrate.out",
         err=f"{LOGDIR}/integrate_samples/integrate.err",
@@ -35,7 +35,7 @@ rule integrate_samples:
     threads:
         get_resource("integrate_samples", "threads")
     resources:
-        mem_mb=get_resource("integrate_samples", "mem_mb"),
+        mem_mb=mem_mb_attempt("integrate_samples"),
         runtime=get_resource("integrate_samples", "runtime"),
     script:
         "../scripts/integrate_samples.py"

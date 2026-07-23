@@ -34,7 +34,7 @@ try:
 except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
-from composition_barplots import save_stacked_composition
+from composition_barplots import save_stacked_composition, find_niche_column, build_niche_palette
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ def generate_cluster_markers(adata, leiden_key, res, markers_dir, de_n_genes):
 
 def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                           n_neighbors, subcompartment, annot_col, de_n_genes, RANDOM_SEED,
-                          annotation_colors=None):
+                          annotation_colors=None, extra_annot_columns=None, sample_colors=None):
     """
     Run Leiden at multiple resolutions, produce all analysis outputs.
     """
@@ -380,12 +380,52 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
         and not all(adata.obs["region_annotation"] == "Unlabeled")
     )
     if has_regions:
-        adata.obs["region_annotation"] = adata.obs["region_annotation"].astype("category")
+        cats = list(pd.unique(adata.obs["region_annotation"].astype(str)))
+        ordered = [r for r in REGION_LEVELS if r in cats] + \
+                  [r for r in cats if r not in REGION_LEVELS]
+        adata.obs["region_annotation"] = pd.Categorical(
+            adata.obs["region_annotation"].astype(str), categories=ordered)
+        adata.uns["region_annotation_colors"] = [REGION_COLORS.get(str(c), "#cccccc")
+                                                 for c in ordered]
         sc.pl.umap(adata, color=["region_annotation"], size=2, wspace=0.25, frameon=False,
                    title="By region")
         plt.savefig(os.path.join(umap_dir, "UMAP_by_region.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
+
+    # UMAPs by each design column (grey for values absent from sample_colors)
+    for _dc in (extra_annot_columns or []):
+        if _dc in adata.obs.columns:
+            try:
+                adata.obs[_dc] = adata.obs[_dc].astype(str).astype("category")
+                cats = adata.obs[_dc].cat.categories
+                pal = sample_colors.get(_dc, {}) if isinstance(sample_colors, dict) else {}
+                adata.uns[f"{_dc}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
+                sc.pl.umap(adata, color=[_dc], size=2, wspace=0.25, frameon=False,
+                           title=f"By {_dc}")
+                plt.savefig(os.path.join(umap_dir, f"UMAP_by_{_dc}.png"),
+                            dpi=DPI, bbox_inches="tight")
+                plt.close()
+            except Exception as e:
+                log.warning("    design UMAP %s failed: %s", _dc, e)
+
+    # UMAP by spatial niche (if niches were identified upstream)
+    _niche_col = find_niche_column(adata)
+    if _niche_col:
+        try:
+            adata.obs[_niche_col] = adata.obs[_niche_col].astype(str).astype("category")
+            _ncats = list(adata.obs[_niche_col].cat.categories)
+            _ncfg = (ANNOTATION_COLORS.get("spatial_niche", {})
+                     if isinstance(ANNOTATION_COLORS, dict) else {})
+            _npal = build_niche_palette(_ncats, _ncfg)
+            adata.uns[f"{_niche_col}_colors"] = [_npal.get(str(c), "#cccccc") for c in _ncats]
+            sc.pl.umap(adata, color=[_niche_col], size=2, wspace=0.25, frameon=False,
+                       title="By spatial niche")
+            plt.savefig(os.path.join(umap_dir, "UMAP_by_spatial_niche.png"),
+                        dpi=DPI, bbox_inches="tight")
+            plt.close()
+        except Exception as e:
+            log.warning("    niche UMAP failed: %s", e)
 
     # Split UMAPs (use middle resolution)
     log.info("    [%s] Split UMAPs …", branch_name)
@@ -457,7 +497,10 @@ N_PCS          = int(snakemake.params.n_pcs)
 DE_N_GENES     = int(snakemake.params.de_n_genes)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS  = snakemake.params.region_colors
+REGION_LEVELS  = list(getattr(snakemake.params, "region_levels", []) or [])
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+EXTRA_ANNOT_COLUMNS = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
+SAMPLE_COLORS  = getattr(snakemake.params, "sample_colors", {}) or {}
 sub_dir        = str(snakemake.output.sub_dir)
 
 try:
@@ -516,6 +559,7 @@ try:
         adata_noharmony, "NoHarmony", noharmony_dir, resolutions,
         N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
         annotation_colors=ANNOTATION_COLORS,
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS, sample_colors=SAMPLE_COLORS,
     )
 
     log.info("  Saving NoHarmony adata …")
@@ -548,6 +592,7 @@ try:
         adata_harmony, "Harmony", harmony_dir, resolutions,
         N_NEIGHBORS, subcompartment, annot_col, DE_N_GENES, RANDOM_SEED,
         annotation_colors=ANNOTATION_COLORS,
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS, sample_colors=SAMPLE_COLORS,
     )
 
     log.info("  Saving Harmony adata …")

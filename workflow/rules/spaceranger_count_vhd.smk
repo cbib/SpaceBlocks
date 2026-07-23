@@ -1,4 +1,4 @@
-rule spaceranger_count:
+rule spaceranger_count_vhd:
     """
     Run Space Ranger ``count`` on a single Visium HD sample.
 
@@ -10,6 +10,9 @@ rule spaceranger_count:
     as the output of this rule due to Martian restrictions. These files are
     instead tracked in downstream rules, giving Snakemake proper provenance.
     """
+    # Space Ranger is proprietary and user-installed (path in config["spaceranger"]);
+    # the visiumhd env below is declared only to satisfy `snakemake --lint` and to
+    # provide the wrapper's Python — it does NOT contain Space Ranger itself.
     input:
         fastqs=lambda wc: f"{SAMPLES[wc.sample]['fastq_dir']}/fastqs/",
         cytaimage=lambda wc: (
@@ -26,21 +29,25 @@ rule spaceranger_count:
     output:
         done_flag=f"{OUTDIR_SR}/{{sample}}/.done",
     params:
-        outdir=f"{OUTDIR_SR}/{{sample}}",
+        # outdir derived from the rule output (not a hardcoded prefix) so it
+        # cannot drift and is correct on non-shared filesystems.
+        outdir=lambda wc, output: os.path.dirname(output.done_flag),
         slide=lambda wc: SAMPLES[wc.sample]["slide"],
         area=lambda wc: SAMPLES[wc.sample]["area"],
         spaceranger=config["spaceranger"],
         fastqs_formatted=fastq_dirs_comma_separated,
+    conda:
+        "../envs/visiumhd.yaml"
     log:
-        out=f"{LOGDIR}/spaceranger_count/{{sample}}.out",
-        err=f"{LOGDIR}/spaceranger_count/{{sample}}.err",
+        out=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.out",
+        err=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.err",
     benchmark:
-        f"{LOGDIR}/benchmarks/spaceranger_count/{{sample}}.tsv"
+        f"{LOGDIR}/benchmarks/spaceranger_count_vhd/{{sample}}.tsv"
     threads:
-        get_resource("spaceranger_count", "threads")
+        get_resource("spaceranger_count_vhd", "threads")
     resources:
-        mem_mb=get_resource("spaceranger_count", "mem_mb"),
-        runtime=get_resource("spaceranger_count", "runtime"),
+        mem_mb=mem_mb_attempt("spaceranger_count_vhd"),
+        runtime=get_resource("spaceranger_count_vhd", "runtime"),
     shell:
         """
         (

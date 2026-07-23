@@ -1,163 +1,81 @@
-# Visium HD Snakemake Pipeline
+# SpaceBlocks: streamlined, reproducible, spatial transcriptomics analyses
 
-End-to-end [Snakemake](https://snakemake.github.io/) workflow for 10x Genomics
-**Visium HD** spatial transcriptomics — from raw FASTQ files to cell-level
-clustering, spatial annotation, and cell-type marker visualisation.
+SpaceBlocks is a technology-agnostic Snakemake workflow to **semi-automatically analyse single-cell-resolution spatial transcriptomics (ST).**
 
-## Pipeline overview
+SpaceBlocks allows **easy, customisable, shareable and fully reproducible** quality control, clustering, annotation, integration, differential expression, and spatial neighbourhood/niche analysis.
 
-```
-FASTQ + images ─► Space Ranger count ─┬─► generate_qupath_tiff
-                                       │       ↓
-                                       │   (user annotates in QuPath,
-                                       │    exports GeoJSON)
-                                       │       ↓
-                                       └─► post_processing (bin2cell)
-                                               ├─ QC filtering
-                                               ├─ QuPath region annotations
-                                               ├─ Seurat normalisation + Harmony
-                                               ├─ UMAP + Leiden clustering
-                                               ├─ Silhouette + clustree evaluation
-                                               ├─ Differential expression
-                                               ├─ Cell-type marker visualisation
-                                               └─ AnnData export (.h5ad)
-```
+The architechture is meant to allow the analysis of public and *in house* generated ST datasets, with a modular and long-term maintainable design.
 
-## Repository layout
 
-```
-├── .gitignore
-├── .snakemake-workflow-catalog.yml     # Workflow Catalog metadata
-├── config.yaml                         # Main pipeline configuration
-├── config/
-│   ├── README.md                       # Configuration documentation
-│   ├── samples.csv                     # Sample sheet
-│   └── snakemake_cell_markers.tsv      # Cell-type marker genes
-├── profiles/
-│   └── default/
-│       └── config.yaml                 # SLURM execution profile
-├── .tests/                             # Minimal test fixtures
-│   ├── config.yaml
-│   └── config/
-│       ├── samples.csv
-│       └── snakemake_cell_markers.tsv
-└── workflow/
-    ├── Snakefile                       # Entry point (with schema validation)
-    ├── envs/
-    │   └── bin2cell.yaml               # Conda environment (minimal)
-    ├── rules/
-    │   ├── spaceranger.smk             # Space Ranger count
-    │   ├── generate_qupath_tiff.smk    # Low-res TIFF for QuPath annotation
-    │   └── post_processing.smk         # bin2cell analysis
-    ├── schemas/
-    │   ├── config.schema.yaml          # JSON Schema for config.yaml
-    │   └── samples.schema.yaml         # JSON Schema for samples.csv
-    └── scripts/
-        ├── generate_qupath_tiff.py     # TIFF generation script
-        └── post_processing.py          # Main analysis script
-```
+## Overview
 
-## Requirements
+The workflow is divided into (optional) technology-specific **HeadBlocks** and common **CoreBlocks** that streamline pre-, post-processing, and informative exploration of results.
 
-- **Snakemake ≥ 8.0** with `snakemake-executor-plugin-slurm`
-- **Space Ranger 4.0.1** installed locally (licence does not permit
-  redistribution in containers; download from
-  [10x Genomics](https://www.10xgenomics.com/support/software/space-ranger/downloads))
-- **Conda / Mamba** (for automatic environment creation)
+<p align="center"><img src="docs/img/overview.svg" alt="SpaceBlocks workflow overview" width="760"></p>
+ 
+A full SpaceBlocks run takes three inputs:
 
-## Quick start
+1. **ST formatted AnnData objects**. Generated from the HeadBlocks or manually. Their structure (count matrix, spatial coordinates and optional region annotations) is validated (`validate_input`) before downstream analyses.
+
+2. **Region annotations**. Provided in GeoJSON format.
+
+3. **Cell type annotations**. Automatically generated through externally annotated references (`ingest`), manually annotating clusters (default) or providing externally generated annotations.
+
+The only input needed for SpaceBlocks is the actual ST data (1).
+
+SpaceBlocks provides tools to ease region annotation via QuPath (ideal if collaborating with pathologists) and cell type annotation (either manual, semi-automatic or external).
+
+## Quickstart
+
+See the tutorial on [how to streamline a full run](docs/getting-started.md), and an [example with public data](docs/reproduction.md).
+
+> [!TIP]
+> Any run can be fully reproduced end-to-end only with the experimental design and cell type annotations.
+> Color palettes for sample metadata, cell type annotations and spatial niches are fully customizable from `config/config.yaml`.
+
+SpatialBlocks requires [Snakemake](https://snakemake.readthedocs.io) ≥ 8 and Conda/Mamba. The **Visium HD** HeadBlock
+additionally needs an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1 installation.
 
 ```bash
-# 1. Edit config.yaml — set spaceranger path and all directory paths
-vim config.yaml
+# 1. Get the workflow  (or: snakedeploy deploy-workflow cbib/SpaceBlocks spaceblocks --tag <version>)
+git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 
-# 2. Edit config/samples.csv with your samples
-vim config/samples.csv
+# 2. Configure
+#    config/visiumhd_samples.csv.csv   — if running mode : visiumhd
+#    config/core_samples.tsv   — one row per sample (+ any design columns)
+#    config/config.yaml        — mode: visiumhd | xenium5k | decoupled, and paths
 
-# 3. Dry run
-snakemake --profile profiles/default -n
+# 3. Check the plan
+snakemake -n --sdm conda
 
-# 4. Run Space Ranger + generate QuPath TIFFs
-snakemake --profile profiles/default -- generate_all_qupath_tiffs
-
-# 5. Annotate TIFFs in QuPath, export GeoJSON to geojson_path directory
-
-# 6. Run full pipeline (post-processing will pick up GeoJSON annotations)
-snakemake --profile profiles/default
+# 4. Make the QuPath images, annotate regions in QuPath, then run the core
+snakemake qupath_images       --sdm conda   # → annotate, export GeoJSON to config["geojson_path"]
+snakemake run_preprocessing   --sdm conda   # validate → QC/normalise → cluster
+snakemake run_postprocessing  --sdm conda   # annotate → integrate → DE → reports
 ```
 
-## QuPath annotation workflow
+On SLURM, add `--profile profiles/default`. Full configuration reference: [`config/README.md`](config/README.md).
 
-The pipeline includes a dedicated rule (`generate_qupath_tiff`) that creates
-low-resolution TIFF images suitable for annotation in QuPath:
+## Documentation
 
-1. **Run the rule** — after Space Ranger completes, invoke:
-   ```bash
-   snakemake --profile profiles/default -- generate_all_qupath_tiffs
-   ```
-   This creates `he_{sample_id}_mpp{mpp}.tiff` in the `geojson_path` directory.
+Full, searchable documentation lives at **https://cbib.github.io/SpaceBlocks/**:
 
-2. **Annotate in QuPath** — open the TIFF, draw region annotations
-   (e.g. tumour, stroma, necrosis).
+- **Design & architecture** — HeadBlock/CoreBlock split, the contract, and output tree
+- **Rule reference** — every rule explained briefly, grouped by phase
+- **Configuration** — explanation of all config keys and sample sheets
+- **QuPath annotation** — draw and export the region annotations
+- **Environments** — the Conda environments and how to lock them
+- **Get started: recommendations for a full run** — [how to streamline a full run](docs/getting-started.md)
+- **[Reproduce example run](docs/reproduction.md)** — example use on public data
 
-3. **Export as GeoJSON** — save the annotation file as
-   `he_{sample_id}_mpp{mpp}.geojson` in the same `geojson_path` directory.
+## Citing SpaceBlocks
 
-4. **Run post-processing** — the pipeline will automatically detect and
-   integrate the GeoJSON annotations.  If no GeoJSON is found for a sample,
-   the analysis continues without region labels.
+If you use SpaceBlocks in your research, please cite:
 
-## Configuration
+> _Authors. SpaceBlocks: \<title\>. \<preprint / journal\>, \<year\>. \<DOI\>_
 
-All configuration lives in `config.yaml`.  See `config/README.md` for full
-documentation, and `workflow/schemas/` for the validation schemas.
+<!-- A BibTeX entry and a Zenodo DOI badge will be added on the first release. -->
 
-Key design decisions:
+## License
 
-- **All analysis thresholds are in `config.yaml`** — QC filters, HVG count,
-  kNN parameters, Leiden resolution, silhouette scan range, DE gene count.
-  No code edits needed to change parameters.
-
-- **Schema validation** — both `config.yaml` and `samples.csv` are validated
-  at DAG-construction time, catching typos before any jobs run.
-
-- **Real output tracking** — Space Ranger outputs (`web_summary.html`,
-  `raw_feature_bc_matrix.h5`) and post-processing deliverables
-  (`adata_SH_*.h5ad`, `bdata_SH_*.h5ad`, `cluster_markers_*.tsv`) are
-  tracked as actual Snakemake outputs.
-
-- **Minimal conda environment** — the env YAML specifies only the direct
-  dependencies at major.minor level, letting the solver resolve the full
-  tree.  This is smaller, more portable, and faster to build than a pinned
-  export of 240+ packages.
-
-## Outputs
-
-Per sample, the pipeline produces:
-
-| Output | Location |
-|--------|----------|
-| Space Ranger web summary | `{sr_outdir}/{sample}/outs/web_summary.html` |
-| QuPath TIFF | `{geojson_path}/he_{sample}_mpp{mpp}.tiff` |
-| Processed AnnData | `{pp_outdir}/{sample}/adata_SH_{sample}.h5ad` |
-| HVG-subset AnnData | `{pp_outdir}/{sample}/bdata_SH_{sample}.h5ad` |
-| Cluster markers TSV | `{pp_outdir}/{sample}/cluster_markers_{sample}.tsv` |
-| QC plots | `{pp_outdir}/{sample}/QC_plots/` |
-| UMAP / spatial plots | `{pp_outdir}/{sample}/` |
-| Clustering evaluation | `{pp_outdir}/{sample}/clustering_evaluation/` |
-| Cell-type marker plots | `{pp_outdir}/{sample}/cell_type_markers/` |
-
-## Testing
-
-```bash
-snakemake --profile profiles/default -n \
-    --configfile .tests/config.yaml \
-    --config samples=.tests/config/samples.csv \
-           snakemake_cell_markers=.tests/config/snakemake_cell_markers.tsv
-```
-
-## Linting
-
-```bash
-snakemake --lint -s workflow/Snakefile
-```
+Released under the MIT License — see [LICENSE](LICENSE).

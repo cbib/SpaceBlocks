@@ -297,19 +297,19 @@ def generate_sample_contribution(plot_adata, var_name, title_name, annot_key,
                                  has_regions, sample_col, out_path, dpi):
     """Across ALL samples, screen each sample's contribution to one entry's
     expression/score. Composite of dotplots (single entry) grouped by:
-    patient, patient × area, patient × cell type. Stacked via PIL."""
+    sample, sample × region, sample × cell type. Stacked via PIL."""
     if sample_col is None or sample_col not in plot_adata.obs.columns:
         return
     ad = plot_adata.copy()
     samp = ad.obs[sample_col].astype(str)
-    ad.obs["_patient"] = samp
-    groupbys = [("_patient", "by patient")]
+    ad.obs["_sample"] = samp
+    groupbys = [("_sample", "by sample")]
     if has_regions and "region_annotation" in ad.obs.columns:
-        ad.obs["_patient_area"] = samp + " | " + ad.obs["region_annotation"].astype(str)
-        groupbys.append(("_patient_area", "by patient \u00d7 area"))
+        ad.obs["_sample_region"] = samp + " | " + ad.obs["region_annotation"].astype(str)
+        groupbys.append(("_sample_region", "by sample \u00d7 region"))
     if annot_key in ad.obs.columns:
-        ad.obs["_patient_ct"] = samp + " | " + ad.obs[annot_key].astype(str)
-        groupbys.append(("_patient_ct", "by patient \u00d7 cell type"))
+        ad.obs["_sample_ct"] = samp + " | " + ad.obs[annot_key].astype(str)
+        groupbys.append(("_sample_ct", "by sample \u00d7 cell type"))
 
     tmp_files = []
     for gb, sub in groupbys:
@@ -515,6 +515,8 @@ NICHE_COLUMN      = str(snakemake.params.niche_column) if snakemake.params.niche
 DPI               = int(snakemake.params.dpi)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
+EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
+SAMPLE_COLORS     = getattr(snakemake.params, "sample_colors", {}) or {}
 
 try:
     log.info("=" * 70)
@@ -538,6 +540,24 @@ try:
     log.info("Loading integrated h5ad …")
     adata = sc.read_h5ad(integrated_path)
     log.info("  %d cells, %d genes", adata.n_obs, adata.n_vars)
+
+    # Integrated UMAPs by each design column (grey for palette-less values)
+    for _dc in EXTRA_ANNOT_COLUMNS:
+        if _dc in adata.obs.columns:
+            try:
+                adata.obs[_dc] = adata.obs[_dc].astype(str).astype("category")
+                cats = adata.obs[_dc].cat.categories
+                pal = SAMPLE_COLORS.get(_dc, {}) if isinstance(SAMPLE_COLORS, dict) else {}
+                adata.uns[f"{_dc}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
+                _dd = os.path.join(base_dir, "_design")
+                os.makedirs(_dd, exist_ok=True)
+                sc.pl.umap(adata, color=[_dc], size=2, frameon=False,
+                           title=f"Integrated – by {_dc}", show=False)
+                plt.savefig(os.path.join(_dd, f"UMAP_by_{_dc}.png"),
+                            dpi=DPI, bbox_inches="tight")
+                plt.close()
+            except Exception as e:
+                log.warning("  design UMAP %s failed: %s", _dc, e)
 
     # ── 3. Validate genes ────────────────────────────────────────────────
     available_genes = set(adata.var_names)
@@ -666,7 +686,7 @@ try:
                                 vmin, vmax, DPI, "expression",
                                 niche_col=niche_col, niche_palette=niche_palette)
 
-        # Per-entry, all-samples contribution (patient / patient×area / patient×ct)
+        # Per-entry, all-samples contribution (sample / sample×area / sample×ct)
         generate_sample_contribution(
             adata, gene_name, gene_name, ANNOT_KEY, has_regions, sample_col,
             os.path.join(int_dir, f"{gene_name}_sample_contribution.png"), DPI)

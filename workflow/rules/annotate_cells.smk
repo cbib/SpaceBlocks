@@ -1,21 +1,3 @@
-def _annotate_input_adata(wc):
-    if config.get("ingest_ref", ""):
-        return f"{SAMPLES_DIR}/{wc.sample}/adata_{wc.sample}_ingested.h5ad"
-    return f"{SAMPLES_DIR}/{wc.sample}/adata_{wc.sample}.h5ad"
-
-
-def _annotate_niche_input(wc):
-    """Spatial-niche TSV for this sample (barcode → spatial_niche), injected as
-    the spatial_niche obs column. Always the spatial_niches rule output: the rule
-    itself handles precomputed reload (use_precomputed + niche_dir), so annotate
-    consumes a single canonical path. Returns [] when niche identification is
-    disabled, so annotate_cells does not depend on it."""
-    sn = config.get("spatial_niches", {})
-    if not sn.get("enabled", False):
-        return []
-    return f"{OUTDIR_PP}/spatial_niches/tsv/niche_{wc.sample}.tsv"
-
-
 rule annotate_cells:
     """
     Annotate cells: TSV cluster mapping + optional external annotation.
@@ -23,7 +5,7 @@ rule annotate_cells:
     """
     input:
         adata=_annotate_input_adata,
-        metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
+        metadata=rules.preprocess_umap.output.metadata,
         cluster_annotations=config.get("cluster_annotations", ""),
         spatial_niche=_annotate_niche_input,
     output:
@@ -50,7 +32,7 @@ rule annotate_cells:
     threads:
         get_resource("annotate_cells", "threads")
     resources:
-        mem_mb=get_resource("annotate_cells", "mem_mb"),
+        mem_mb=mem_mb_attempt("annotate_cells"),
         runtime=get_resource("annotate_cells", "runtime"),
     script:
         "../scripts/annotate_cells.py"

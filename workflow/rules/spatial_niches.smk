@@ -1,25 +1,3 @@
-def _spatial_niches_inputs(wc):
-    """Inputs for spatial_niches. When use_precomputed is set with an external
-    niche_dir, the per-sample niche_{sample}.tsv are added as MANDATORY inputs:
-    Snakemake then aborts the rule (Missing input files) if any is absent, before
-    the job starts. This is complementary to the in-script safeguard, which also
-    catches empty TSVs and partial cell coverage (which Snakemake cannot see).
-    When niche_dir is empty the rule reloads from its own output dir, so nothing
-    is added here (no circular dependency) and the script check applies alone."""
-    inputs = {
-        "adatas": expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
-                         sample=SAMPLE_IDS),
-    }
-    sn = config.get("spatial_niches", {})
-    if sn.get("use_precomputed", False):
-        d = sn.get("niche_dir", "")
-        if d:
-            inputs["precomputed_niches"] = [
-                os.path.join(d, f"niche_{s}.tsv") for s in SAMPLE_IDS
-            ]
-    return inputs
-
-
 rule spatial_niches:
     """
     Cross-sample spatial niche / domain identification with BANKSY.
@@ -74,7 +52,7 @@ rule spatial_niches:
     threads:
         get_resource("spatial_niches", "threads")
     resources:
-        mem_mb=get_resource("spatial_niches", "mem_mb"),
+        mem_mb=mem_mb_attempt("spatial_niches"),
         runtime=get_resource("spatial_niches", "runtime"),
     script:
         "../scripts/spatial_niches.py"

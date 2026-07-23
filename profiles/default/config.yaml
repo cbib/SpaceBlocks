@@ -8,6 +8,7 @@ jobs: 30
 
 # Robustness
 keep-going: true
+retries: 3                  # resubmit a failed job up to 3x; mem grows per attempt
 rerun-incomplete: true
 latency-wait: 60            # seconds to wait for NFS-lagged output files
 

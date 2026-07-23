@@ -10,7 +10,7 @@ rule pseudobulk_aggregate:
         └── manifest.tsv
     """
     input:
-        adata=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
+        adata=rules.integrate_samples.output.concatenated,
     output:
         agg_dir=directory(
             f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated"
@@ -26,6 +26,8 @@ rule pseudobulk_aggregate:
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),
+        extra_annot_columns=EXTRA_ANNOT_COLUMNS,
+        sample_colors=SAMPLE_COLORS,
     log:
         out=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.out",
         err=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.err",
@@ -36,7 +38,7 @@ rule pseudobulk_aggregate:
     threads:
         get_resource("pseudobulk_aggregate", "threads")
     resources:
-        mem_mb=get_resource("pseudobulk_aggregate", "mem_mb"),
+        mem_mb=mem_mb_attempt("pseudobulk_aggregate"),
         runtime=get_resource("pseudobulk_aggregate", "runtime"),
     script:
         "../scripts/pseudobulk_aggregate.py"

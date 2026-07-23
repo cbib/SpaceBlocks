@@ -1,40 +1,31 @@
-def _preprocess_inputs(wc):
-    inputs = {"sr_done": f"{OUTDIR_SR}/{wc.sample}/.done"}
-    if USE_PRECOMPUTED:
-        precomp_dir = config.get("precomputed_metadata_dir", "")
-        if precomp_dir:
-            # MANDATORY input: Snakemake aborts (Missing input files) if this
-            # sample's metadata is absent, before the job runs — complementary to
-            # the in-script safeguard, which also catches empty / partial-coverage
-            # TSVs (which Snakemake cannot see). When precomputed_metadata_dir is
-            # empty the script reloads from the rule's own output (no input added,
-            # no circular dependency) and the script check applies alone.
-            inputs["precomputed_meta"] = os.path.join(precomp_dir, f"metadata_{wc.sample}.tsv")
-    return inputs
-
+# workflow/rules/preprocess_umap.smk
+# ─────────────────────────────────────────────────────────────────────────────
+# CORE preprocessing. Now reads the UNFILTERED contract h5ad
+# (config["contract"]["unfiltered_h5ad"], produced by prepare_input) instead of
+# the Space Ranger tree, so it is technology-agnostic: QC filter → normalise →
+# PCA → UMAP → multi-resolution Leiden, with optional precomputed-cluster reload.
+# (The qupath_image output moved to rule generate_qupath_image; SR/image/geojson
+# reading moved to rule prepare_input.)
+# ─────────────────────────────────────────────────────────────────────────────
 
 rule preprocess_umap:
-    """
-    Load Space Ranger outputs, QC, normalise, PCA, Harmony, UMAP, all Leiden.
-
-    Discovers files from the Space Ranger output directory rather than
-    depending on hardcoded paths, since the tree varies across versions.
-    Saves metadata TSV with cluster assignments for reproducibility, or uses
-    precomputed metadata if specified in config.
-    """
+    """Core QC / normalise / PCA / UMAP / multi-resolution Leiden on the contract h5ad."""
     input:
         unpack(_preprocess_inputs),
     output:
         adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
         metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
-        qupath_image=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_tissue_hires_image.png",
+        report=f"{SAMPLES_DIR}/{{sample}}/{{sample}}_report.tsv",
     params:
         sample_id=lambda wc: wc.sample,
-        sr_outdir=f"{OUTDIR_SR}/{{sample}}",
-        geojson_path=GEOJ_DIR,
+        sample_meta=lambda wc: core_sample_meta(wc.sample),   # design columns → obs + report
+        # analysis.* filtering defaults; the script may override any of these
+        # per sample from the optional thresholds_tsv (absent → these defaults).
         min_counts=ANALYSIS.get("min_counts", 1),
         min_cells=ANALYSIS.get("min_cells", 3),
         min_genes=ANALYSIS.get("min_genes", 100),
+        max_counts=ANALYSIS.get("max_counts", None),   # optional upper bound; None = off
+        max_pct_mt=ANALYSIS.get("max_pct_mt", None),   # optional upper bound; None = off
         n_neighbors=ANALYSIS.get("n_neighbors", 10),
         n_pcs=ANALYSIS.get("n_pcs", 30),
         resolution_scan_min=ANALYSIS.get("resolution_scan_min", 0.2),
@@ -43,6 +34,9 @@ rule preprocess_umap:
         random_seed=RANDOM_SEED,
         use_precomputed=USE_PRECOMPUTED,
         precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
+        external_enabled=EXTERNAL_ENABLED,
+        external_column=(config.get("external_annotation", {}) or {}).get("column", ""),
+        keep_unannotated=(config.get("external_annotation", {}) or {}).get("keep_unannotated", True),
         region_colors=ANALYSIS.get("region_colors", {}),
     log:
         out=f"{LOGDIR}/preprocess_umap/{{sample}}.out",
@@ -54,7 +48,7 @@ rule preprocess_umap:
     threads:
         get_resource("preprocess_umap", "threads")
     resources:
-        mem_mb=get_resource("preprocess_umap", "mem_mb"),
+        mem_mb=mem_mb_attempt("preprocess_umap"),
         runtime=get_resource("preprocess_umap", "runtime"),
     script:
         "../scripts/preprocess_umap.py"

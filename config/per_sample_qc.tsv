@@ -1,0 +1,12 @@
+# Optional per-sample QC filtering thresholds for preprocess_umap.
+# Enable by setting `per_sample_qc: "config/per_sample_qc.tsv"` in config.yaml.
+# First column = sample name (matched against samples.csv sample_id).
+# Any of the remaining columns may be present; a blank cell OR a sample absent from
+# this file falls back to the analysis.* config default for that key.
+#   min_counts / min_genes / min_cells : lower bounds (as in analysis.*)
+#   max_counts                          : optional upper bound on total counts/cell
+#   max_pct_mt                          : optional upper bound on % mitochondrial
+# Lines starting with '#' are ignored. Uncomment/edit the rows below.
+sample	min_counts	min_genes	min_cells	max_counts	max_pct_mt
+# SAMPLE_A	20	150	3	40000	20
+# SAMPLE_B	10		3		15

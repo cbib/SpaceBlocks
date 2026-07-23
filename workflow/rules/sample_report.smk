@@ -7,10 +7,7 @@ rule sample_report:
     a barplot with cell proportions per region.
     """
     input:
-        annotated=expand(
-            f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
-            sample=SAMPLE_IDS,
-        ),
+        annotated=expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
     output:
         report=f"{OUTDIR_PP}/integrated_samples/samples_report.pdf",
     params:
@@ -29,7 +26,7 @@ rule sample_report:
     threads:
         get_resource("sample_report", "threads")
     resources:
-        mem_mb=get_resource("sample_report", "mem_mb"),
+        mem_mb=mem_mb_attempt("sample_report"),
         runtime=get_resource("sample_report", "runtime"),
     script:
         "../scripts/sample_report.py"

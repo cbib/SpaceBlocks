@@ -1,226 +1,288 @@
-# ═══════════════════════════════════════════════════════════════════════════
-#  Visium HD Pipeline – main configuration
-# ═══════════════════════════════════════════════════════════════════════════
+# SpaceBlocks configuration.  Full explanations: config/README.md (or the online docs).
+# Every key is validated against workflow/schemas/config.schema.yaml before the run starts.
 
-samples: "config/samples.csv"
-snakemake_cell_markers: "config/snakemake_cell_markers.tsv"
-probe_set: "/scratch/CBiB/soterino/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv"
-transcriptome: "/mnt/cbib/bank/cellranger/refdata-gex-GRCh38-2024-A"
+# ─── Run mode — which headblock builds the contract h5ad ─────────────────────
+mode: visiumhd
 
-ingest_ref: "/scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad"
-ingest_ref_label_key: "04_celltypes"   # obs column in the reference
+# ─── I/O directories ─────────────────────────────────────────────────────────
+post_processing_outdir: /scratch/CBiB/soterino/smk_visiumhd_results
+logdir: /scratch/CBiB/soterino/smk_logs
+spaceranger_processing_outdir: /scratch/CBiB/soterino/smk_spaceranger_results
+geojson_path: /scratch/CBiB/soterino/geojson # QuPath region GeoJSONs (optional, recommended)
+contract_dir: '' # mode: decoupled — dir of pre-built contract h5ads
 
-cluster_annotations: "config/cluster_annotations.tsv"
-annotation_markers: "config/annotation_markers.tsv"
-
-spaceranger: "/home/soterinosogo/spaceranger-4.0.1/spaceranger"
-
-geojson_path: "/scratch/CBiB/soterino/geojson"
-
-spaceranger_processing_outdir: "/scratch/CBiB/soterino/smk_spaceranger_results"
-post_processing_outdir: "/scratch/CBiB/soterino/smk_visiumhd_results"
-
-logdir: "/scratch/CBiB/soterino/smk_logs"
-
-
-# Global random seed for reproducibility (PCA, neighbors, UMAP, Leiden)
+# ─── Reproducibility & reuse   (docs → Configuration §6) ─────────────────────
 random_seed: 0
- 
-# If true, preprocess_umap and annotate_cells reload leiden cluster
-# assignments from the metadata TSV instead of recomputing.
-# Set to true after the first successful run to freeze cluster labels.
-use_precomputed_clusters: true
-# directory with precomputed metadata. empty = use pipeline output; set path for external backup
-precomputed_metadata_dir: "/scratch/CBiB/soterino/metadata_visiumhd/"   
+use_precomputed_clusters: true # reuse clusters from precomputed_metadata_dir
+precomputed_metadata_dir: /scratch/CBiB/soterino/metadata_visiumhd/
 
-# External annotation from metadata TSV column
-external_annotation:
-  enabled: false
-  column: "manual_celltype"
+# ─── Sample sheets ───────────────────────────────────────────────────────────
+core_samples: config/core_samples.tsv
+samples: config/visiumhd_samples.csv # mode: visiumhd — fastq/slide/area per sample
 
+# ─── Visium HD head   (mode: visiumhd) ───────────────────────────────────────
+spaceranger: /home/soterinosogo/spaceranger-4.0.1/spaceranger # external install; path to the executable
+probe_set: /scratch/CBiB/soterino/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv
+transcriptome: /mnt/cbib/bank/cellranger/refdata-gex-GRCh38-2024-A
+
+# ─── Xenium 5K head   (mode: xenium5k) ───────────────────────────────────────
+xenium5k:
+  xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
+  zarr_dir: ''
+  qupath_pyramid_level: 3
+  hires_pyramid_level: 3
+  pixel_size_um: 0.2125
+
+# ─── Contract — Head → Core hand-off ─────────────────────────────────────────
+contract:
+  sample_key: sample
+  spatial_key: spatial
+  require_region: false
+  require_raw_counts: true
+  mito_prefix:
+    - MT-
+    - mt-
+
+# ─── QC & preprocessing ──────────────────────────────────────────────────────
+per_sample_qc: '' # optional per-sample QC TSV; empty = global analysis.* thresholds
 analysis:
-  plot_dpi: 300                   # dpi used for plotting through the pipeline rules
+  plot_dpi: 300
   min_counts: 1
   min_cells: 3
   min_genes: 100
   n_neighbors: 10
   n_pcs: 30
-  de_n_genes: 10
+  de_n_genes: 25
   resolution_scan_min: 0.6
-  resolution_scan_max: 0.8            # inclusive upper bound (values > 1.0 are valid)
+  resolution_scan_max: 0.8
   resolution_scan_step: 0.2
   min_cells_per_type: 15
-  # Integration
-  sketch_fraction: 0.25              # fraction of cells for geosketch
-  # Pseudobulk
-  run_pseudobulk_de: true       # OPTIONAL DESeq2 DE (R). Off by default; the
-                                 # pseudobulk_aggregate matrices + PCA QC still
-                                 # run — only the DE step is gated. Set true to
-                                 # request the de_results/ outputs.
-  # Grouping levels for pseudobulk aggregation + (optional) DE. Each listed level
-  # is built (and DE-tested when run_pseudobulk_de is true). "by_niche_region" is
-  # available but intentionally NOT included by default: with a high spatial-niche
-  # count it creates many pseudobulk groups (one per niche × region) and, for DE,
-  # many comparisons — so add it deliberately.
-  analysis_levels: ["by_region", "by_celltype_region"] # "by_niche_region" available but excluded
-  min_cells_per_pseudobulk: 10   # minimum cells to form a pseudobulk sample
-  min_replicates: 3              # minimum samples per condition for DE
-  de_n_genes: 25                 # number of DE genes to plot
+  sketch_fraction: 0.25
+  run_pseudobulk_de: true
+  run_leiden_analysis: true
+  analysis_levels:                  # by_niche_region also available; off by default (many groups)
+    - by_region
+    - by_celltype_region
+  min_cells_per_pseudobulk: 10
+  min_replicates: 3
   min_counts_per_pseudobulk: 1000
   padj_threshold: 0.05
   lfc_threshold: 0.25
-  # Region levels: ordered list controlling LRT factor ordering,
-  # heatmap column order, and which regions to include in DE.
-  # Regions not listed here are excluded from pseudobulk DE.
   region_levels:
-    - "Healthy area"
-    - "Heatlhy over tumor"
-    - "Dysplastic area"
-    - "AK area"
-    - "AK over tumor"
-    - "In situ area"
-    - "Tumor area"
-    - "Invasive area"
-  # - "Ulcerated aread" # excluded from the analyses
-  # Color code for each region level (must match region_levels names)
-  region_colors:
-    "Healthy area" : "#FDE725FF"
-    "Heatlhy over tumor" : "#9FDA3AFF"
-    "Dysplastic area" : "#4AC16DFF"
-    "AK area" : "#1FA187FF"
-    "AK over tumor" : "#277F8EFF"
-    "In situ area" : "#365C8DFF"
-    "Tumor area" : "#46337EFF"
-    "Invasive area" : "#440154FF"
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  Color palette or leiden_analysis.py, ingest_ref.py, subcluster.py:
-# ═══════════════════════════════════════════════════════════════════════════
-# Any obs column can be specified — leiden, cell_type_refined, etc.
-# Categories not listed get #cccccc (light grey)
-annotation_colors:
-  cell_type_tsv:
-    # red, brown and black for keratinocytes
-    "Keratinocytes": "#d62728"
-    "Keratinocytes_Basal": "#8c564b"
-    "Keratinocytes_Suprabasal": "#a0522d"
-    "Keratinocytes_Mal": "#000000"
-    # blue for immune
-    "Tcells": "#1f77b4"
-    "Plasma_cells": "#9467bd"
-    "Mono_Macro": "#08519c"
-    "Macro_Tcells": "#756bb1"
-    "Macro_Plasma": "#9e9ac8"
-    # green for stroma
-    "Fibroblasts": "#2ca02c"
-    "Fibroblasts_Macro": "#bcbd22"
-    "Fibroblasts_Endothelial": "#17becf"
-    "Fibroblasts_Keratinocytes": "#ffbb78"
-    "Fibroblasts_Plasma": "#fdae6b"
-    "Endothelial": "#98df8a"
-    "Adipocytes": "#dbdb8d"
-    "Gland_cells": "#ff7f0e"
-    # grey for muscle
-    "Smooth_muscle": "#d9d9d9"
-    "Skeletal_muscle": "#b9b9c9"
-  # cell_type_ingest:
-  #   "T_cells": "#d62728"
-  #   "B_cells": "#9467bd"
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  Gene / signature exploration
-# ═══════════════════════════════════════════════════════════════════════════
-# Set queries to a TSV file (same column format as annotation_markers.tsv)
-# to enable the gene exploration rules.  Leave empty or omit to skip.
-gene_exploration:
-  queries: "config/gene_queries.tsv"
-  annot_key: "cell_type_tsv"              # obs column shown alongside expression
-  aucell_max_rank_fraction: 0.05          # top 5% of genes for AUCell recovery
-  niche_column: "spatial_niche"           # obs column written by the spatial_niches rule
+    - Healthy area
+    - Healthy over tumor
+    - Dysplastic area
+    - AK area
+    - AK over tumor
+    - In situ area
+    - Tumor area
+    - Invasive area
+  region_colors:                    # keys must match region_levels above
+    Healthy area: '#FDE725FF'
+    Healthy over tumor: '#9FDA3AFF'
+    Dysplastic area: '#4AC16DFF'
+    AK area: '#1FA187FF'
+    AK over tumor: '#277F8EFF'
+    In situ area: '#365C8DFF'
+    Tumor area: '#46337EFF'
+    Invasive area: '#440154FF'
+qc_sweep:
+  ingest_enabled: true
+  ingest_key: cell_type_ingest
+  cell_id_key: cell_id
   dpi: 300
+  thresholds:
+    min_genes:
+      - 50
+      - 100
+      - 200
+    min_counts:
+      - 1
+      - 10
+      - 50
+    max_counts:
+      - 3000
+      - 5000
+    max_pct_mt:
+      - 10
+      - 15
+      - 20
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  Spatial niche / domain identification (BANKSY)
-# ═══════════════════════════════════════════════════════════════════════════
-# Runs BANKSY jointly across all samples (before annotation) to find spatial
-# domains common to the cohort. Per-sample niche TSVs are injected as the
-# `spatial_niche` obs column by annotate_cells. Set enabled: false to skip.
+# ─── Annotation ──────────────────────────────────────────────────────────────
+cluster_annotations: config/cluster_annotations.tsv  # cluster → cell-type TSV (from generate_annotation_template)
+snakemake_cell_markers: config/snakemake_cell_markers.tsv # markers drawn on the Leiden diagnostic plots
+external_annotation:
+  enabled: false
+  column: manual_celltype
+  keep_unannotated: true
+ingest_ref: /scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad  # optional annotated scRNA-seq reference (ingest_ref)
+ingest_ref_label_key: 04_celltypes
+integration:
+  integrate_key: sample
+extra_annotations:
+  columns:
+    - patient
+    - batch
+
+# ─── Spatial niches   (optional) ─────────────────────────────────────────────
 spatial_niches:
   enabled: true
-  # Reproducibility / cost control (mirrors use_precomputed_clusters for leiden).
-  # When true, the rule RELOADS niche labels instead of recomputing BANKSY+Leiden:
-  # it reads niche_{sample}.tsv from niche_dir (external/backup) if present for
-  # every sample, else from the rule's own output dir, else falls back to
-  # computing. It still concatenates, writes the canonical TSVs, and regenerates
-  # plots — cheaply. Compute once, then set true to freeze + skip the heavy work.
-  use_precomputed: false
-  # External/precomputed niche TSV directory (files named niche_{sample}.tsv,
-  # columns: barcode <TAB> spatial_niche). Empty = use the rule's own output dir.
-  # Also lets you swap in a different niche method without changing the pipeline.
-  niche_dir: "/scratch/CBiB/soterino/niches_visiumhd/"
-  lambda: 0.8                  # 0.8 = domain/niche segmentation (0.2 = cell typing)
-  num_neighbours: 18           # BANKSY spatial kNN (single-cell / MERFISH-like)
-  cluster_n_neighbours: 15     # expression-space kNN for Leiden clustering (scanpy)
-  n_iterations: 2              # Leiden iterations (igraph flavor); 2 = fast & safe (not -1)
-  max_m: 1                     # azimuthal Fourier harmonics for the AGF
-  nbr_weight_decay: "scaled_gaussian"
-  use_hvg: false               # false = all genes (see note: memory at scale)
-  n_top_genes: 2000            # only used when use_hvg: true
-  # n_pcs omitted → defaults to analysis.n_pcs (the PCs used in preprocess_umap)
-  niche_resolution: 0.3        # Leiden resolution that defines the niche labels
-                               # (domains are coarse; lower = fewer, broader niches)
-  # Optional spatial refinement (BANKSY majority vote): each cell adopts its
-  # spatial-neighbourhood majority niche when >50% of neighbours agree. Smooths
-  # salt-and-pepper / spatially-incoherent niches. Reads staggered coords, so it
-  # acts per-sample. Applies to freshly-computed AND reloaded/precomputed niches.
-  # NB: this targets spatial INCOHERENCE, not single-sample niches — a coherent
-  # niche present in one sample is kept. Raw labels are saved in obs.
+  use_precomputed: true
+  niche_dir: /scratch/CBiB/soterino/niches_visiumhd/
+  lambda: 0.8
+  num_neighbours: 18
+  cluster_n_neighbours: 15
+  n_iterations: 2
+  max_m: 1
+  nbr_weight_decay: scaled_gaussian
+  use_hvg: true
+  n_top_genes: 2000
+  niche_resolution: 0.3
   refine: false
-  refine_num_neigh: 6          # spatial neighbours used in the majority vote
-  refine_iterations: 1         # number of refinement passes (used unless refine_auto)
-  refine_auto: false           # iterate until <0.5% of cells change (ignores refine_iterations)
-  # Integrated UMAP is viz-only and very slow on >1M cells (umap-learn). The
-  # per-sample spatial maps and niche TSVs do not need it. Leave off for speed.
+  refine_num_neigh: 6
+  refine_iterations: 1
+  refine_auto: false
   compute_umap: false
 
-
-
-
-# Subcompartment subclustering — leave empty or omit to skip
-# Keys become subcompartment names, strings are matched against the
-# annotation column (case-sensitive, exact match)
+# ─── Subcompartments   (optional) ────────────────────────────────────────────
 subcompartments:
   Fibroblasts:
-    strings: ["Fibroblasts", "Fibroblasts_Macro", "Fibroblasts_Endothelial", "Fibroblasts_Keratinocytes", "Fibroblasts_Plasma"]
+    strings:
+      - Fibroblasts
+      - Fibroblasts_Macro
+      - Fibroblasts_Endothelial
+      - Fibroblasts_Keratinocytes
+      - Fibroblasts_Plasma
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
   Keratinocytes:
-    strings: ["Keratinocytes", "Keratinocytes_Mal", "Keratinocytes_Basal", "Keratinocytes_Suprabasal", "Fibroblasts_Keratinocytes"]
+    strings:
+      - Keratinocytes
+      - Keratinocytes_Mal
+      - Keratinocytes_Basal
+      - Keratinocytes_Suprabasal
+      - Fibroblasts_Keratinocytes
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
   MonoMacro_Tcells:
-    strings: ["Mono_Macro", "Macro_Tcells","Macro_Plasma", "Tcells", "Fibroblasts_Macro"]
+    strings:
+      - Mono_Macro
+      - Macro_Tcells
+      - Macro_Plasma
+      - Tcells
+      - Fibroblasts_Macro
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
   Plasma_Bcells:
-    strings: ["Plasma_cells", "Macro_Plasma", "Fibroblasts_Plasma"]
+    strings:
+      - Plasma_cells
+      - Macro_Plasma
+      - Fibroblasts_Plasma
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  Resources
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Gene / signature exploration ────────────────────────────────────────────
+gene_exploration:
+  queries: config/gene_queries.tsv
+  aucell_max_rank_fraction: 0.05
+  niche_column: spatial_niche
+  dpi: 300
 
+# ─── Colour palettes   (docs → Configuration §4) ─────────────────────────────
+sample_colors:
+  patient:
+    Patient 1: '#000000'
+    Patient 2: '#E69F00'
+    Patient 3: '#56B4E9'
+    Patient 4: '#009E73'
+    Patient 5: '#F0E442'
+    Patient 6: '#CC79A7'
+    Patient 7: '#0072B2'
+    Patient 8: '#D55E00'
+  batch:
+    Batch 1: '#8E44AD'
+    Batch 2: '#C0392B'
+    Batch 3: '#7F7F7F'
+annotation_colors:
+  cell_type_tsv:
+    Keratinocytes: '#d62728'
+    Keratinocytes_Basal: '#8c564b'
+    Keratinocytes_Suprabasal: '#a0522d'
+    Keratinocytes_Mal: '#000000'
+    Tcells: '#1f77b4'
+    Plasma_cells: '#9467bd'
+    Mono_Macro: '#08519c'
+    Macro_Tcells: '#756bb1'
+    Macro_Plasma: '#9e9ac8'
+    Fibroblasts: '#2ca02c'
+    Fibroblasts_Macro: '#bcbd22'
+    Fibroblasts_Endothelial: '#17becf'
+    Fibroblasts_Keratinocytes: '#ffbb78'
+    Fibroblasts_Plasma: '#fdae6b'
+    Endothelial: '#98df8a'
+    Adipocytes: '#dbdb8d'
+    Gland_cells: '#ff7f0e'
+    Smooth_muscle: '#d9d9d9'
+    Skeletal_muscle: '#b9b9c9'
+  cell_type_external:
+    Keratinocytes: '#d62728'
+    Keratinocytes_Basal: '#8c564b'
+    Keratinocytes_Suprabasal: '#a0522d'
+    Keratinocytes_Mal: '#000000'
+    Tcells: '#1f77b4'
+    Plasma_cells: '#9467bd'
+    Mono_Macro: '#08519c'
+    Macro_Tcells: '#756bb1'
+    Macro_Plasma: '#9e9ac8'
+    Fibroblasts: '#2ca02c'
+    Fibroblasts_Macro: '#bcbd22'
+    Fibroblasts_Endothelial: '#17becf'
+    Fibroblasts_Keratinocytes: '#ffbb78'
+    Fibroblasts_Plasma: '#fdae6b'
+    Endothelial: '#98df8a'
+    Adipocytes: '#dbdb8d'
+    Gland_cells: '#ff7f0e'
+    Smooth_muscle: '#d9d9d9'
+    Skeletal_muscle: '#b9b9c9'
+
+# ─── Per-rule resources — mem_mb scales with the retry attempt ───────────────
 resources:
-  spaceranger_count:
+  spaceranger_count_vhd:
     mem_mb: 65536
     runtime: 1200
     threads: 16
+  generate_qupath_vhd:
+    mem_mb: 4096
+    runtime: 30
+    threads: 1
+  prepare_input_vhd:
+    mem_mb: 32768
+    runtime: 240
+    threads: 4
+  convert_zarr_x5k:
+    mem_mb: 65536
+    runtime: 240
+    threads: 4
+  generate_qupath_x5k:
+    mem_mb: 32768
+    runtime: 60
+    threads: 2
+  prepare_input_x5k:
+    mem_mb: 49152
+    runtime: 120
+    threads: 4
+  validate_input:
+    mem_mb: 32768
+    runtime: 30
+    threads: 2
+  qc_sweep:
+    mem_mb: 49152
+    runtime: 180
+    threads: 4
   preprocess_umap:
     mem_mb: 32768
     runtime: 240
@@ -269,8 +331,8 @@ resources:
     mem_mb: 65536
     runtime: 240
     threads: 4
-  explore_genes_spatial:
-    mem_mb: 32768
+  explore_genes_sample:
+    mem_mb: 16192
     runtime: 360
     threads: 4
   default:

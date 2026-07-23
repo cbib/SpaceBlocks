@@ -12,7 +12,7 @@ rule ingest_ref:
     Only runs if config['ingest_ref'] points to a valid h5ad file.
     """
     input:
-        adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
+        adata=rules.preprocess_umap.output.adata,
         ingest_ref=config.get("ingest_ref", ""),
     output:
         adata_ingested=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_ingested.h5ad",
@@ -32,7 +32,7 @@ rule ingest_ref:
     threads:
         get_resource("ingest_ref", "threads")
     resources:
-        mem_mb=get_resource("ingest_ref", "mem_mb"),
+        mem_mb=mem_mb_attempt("ingest_ref"),
         runtime=get_resource("ingest_ref", "runtime"),
     script:
         "../scripts/ingest_ref.py"
