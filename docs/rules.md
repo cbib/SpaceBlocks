@@ -1,3 +1,16 @@
+# Index
+
+- [SpaceBlocks — rule reference](#spaceblocks--rule-reference)
+- [HeadBlocks](#headBlocks)
+  - [Visium HD](#visium-hd) — `spaceranger_count_vhd`, `generate_qupath_vhd`, `prepare_input_vhd`
+  - [Xenium 5K](#xenium-5k) — `convert_zarr_x5k`, `generate_qupath_x5k`, `prepare_input_x5k`
+- [CoreBlocks](#coreblocks)
+  - [CoreBlock 1 — preprocessing](#coreblock-1--preprocessing)
+  - [CoreBlock 2 — postprocessing](#coreblock-2--postprocessing)
+  - [CoreBlock 3 — exploration](#coreblock-3--exploration)
+- [Resources & retries](#resources--retries)
+
+
 # SpaceBlocks — rule reference
 
 Here you can find one-paragraph explanations for every rule, grouped by phase.
@@ -7,31 +20,20 @@ Inputs/outputs are summarised; the `.smk` files and `config["resources"]` are th
 > [!NOTE]
 > Rules marked *(optional)* only run when their config toggle / input is present.
 
-## Contents
-
-- [Headblocks](#headblocks)
-  - [Visium HD](#visium-hd) — `spaceranger_count_vhd`, `generate_qupath_vhd`, `prepare_input_vhd`
-  - [Xenium 5K](#xenium-5k) — `convert_zarr_x5k`, `generate_qupath_x5k`, `prepare_input_x5k`
-- [Coreblocks](#coreblocks)
-  - [Coreblock 1 — preprocessing](#coreblock-1--preprocessing)
-  - [Coreblock 2 — postprocessing](#coreblock-2--postprocessing)
-  - [Coreblock 3 — exploration](#coreblock-3--exploration)
-- [Resources & retries](#resources--retries)
-
 ---
 
-# Headblocks
+# HeadBlocks
 
-Headblocks are *optional* technology-specific modules, selected in `config["mode"]`. Each
-one produces the standardized **contract h5ad** the Coreblocks start from; the rules within
-a headblock carry a 3-letter technology suffix (`_vhd`, `_x5k`) so the organization stays
+HeadBlocks are *optional* technology-specific modules, selected in `config["mode"]`. Each
+one produces the standardized **contract h5ad** the CoreBlocks start from; the rules within
+a headBlock carry a 3-letter technology suffix (`_vhd`, `_x5k`) so the organization stays
 easy to follow.
 
-The pipeline can also run in `mode: decoupled`, without any headblock — the Coreblocks then
+The pipeline can also run in `mode: decoupled`, without any headBlock — the CoreBlocks then
 consume pre-existing contract h5ads directly.
 
 > [!TIP]
-> Whichever headblock you use, run the `qupath_images` target **first**: it produces the
+> Whichever headBlock you use, run the `qupath_images` target **first**: it produces the
 > per-sample annotation images, which you annotate in QuPath and export as GeoJSON *before*
 > launching the rest of the run. The contract builders (`prepare_input_*`) pick those
 > GeoJSONs up automatically (and fall back to `Unlabeled` regions if none are present).
@@ -41,7 +43,7 @@ consume pre-existing contract h5ads directly.
 Included only when `mode: visiumhd`. Produces the standardized contract h5ad.
 
 > [!WARNING]
-> This headblock requires an external installation of [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger/downloads) version ≥ 4.0.1 (proprietary 10x Genomics software), with its path set in `config["spaceranger"]`.
+> This headBlock requires an external installation of [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger/downloads) version ≥ 4.0.1 (proprietary 10x Genomics software), with its path set in `config["spaceranger"]`.
 
 ### Visium HD: `spaceranger_count_vhd`
 Runs Space Ranger (SR) `count` on each sample from the fastq files. An example input sheet can be found in `config/visiumhd_samples.csv`.
@@ -51,17 +53,17 @@ Output is a `.done` sentinel; the real SR files are tracked by the rules that co
 ### Visium HD: `generate_qupath_vhd`
 A cheap file copy: finds `tissue_hires_image.png` in the version-varying Space Ranger tree and copies it to `Samples/{sample}/QuPath_image/`.
 
-This image is meant to be annotated in QuPath to generate a GeoJSON with the region-annotation polygons — see the [QuPath annotation tutorial](qupath_tutorial.md).
+This image is meant to be annotated in QuPath to generate a GeoJSON with the region-annotation polygons — see the [QuPath annotation tutorial](qupath-tutorial.md).
 The GeoJSON files follow the naming convention `{sample}_tissue_hires_image.geojson` and are read from the folder in `config["geojson_path"]`.
 
 ### Visium HD: `prepare_input_vhd`
-Takes the `spaceranger_count_vhd` output and the QuPath GeoJSON region annotations, and prepares the contract h5ad for the Coreblocks.
+Takes the `spaceranger_count_vhd` output and the QuPath GeoJSON region annotations, and prepares the contract h5ad for the CoreBlocks.
 Discovers the SR files, reads the raw count matrix, computes per-cell centroids (mean position of the 2 µm bins making up each segmented cell), embeds the hires image + scalefactors into `uns["spatial"]`,
 joins the QuPath GeoJSON into `obs["region_annotation"]`, and writes the **unfiltered contract h5ad** (raw counts, no filtering/normalisation). This is the file every core rule starts from.
 
 ## Xenium 5K
 
-Included only when `mode: xenium5k`. Produces the *same* standardized contract h5ad as the Visium HD head, so the Coreblocks run identically. The head only needs the SpatialData stack (`envs/xenium5k.yaml`).
+Included only when `mode: xenium5k`. Produces the *same* standardized contract h5ad as the Visium HD head, so the CoreBlocks run identically. The head only needs the SpatialData stack (`envs/xenium5k.yaml`).
 
 ### Xenium 5K: `convert_zarr_x5k`
 The heavy I/O step (once per sample): converts a Xenium output bundle to a [SpatialData](https://spatialdata.scverse.org/) zarr store via `spatialdata_io`, which becomes the canonical object holding the morphology image, cell masks, boundaries, and the raw count table.
@@ -72,20 +74,20 @@ Reads the `morphology_focus` channels from the zarr at a configurable pyramid le
 Analogous to `generate_qupath_vhd`. Channel colours are assigned by **name** (nuclear/DAPI → blue, membrane/boundary → red, RNA → green, cytoplasm → amber), with a positional-palette fallback for unrecognised channels and any channel count, and the mapping is logged each run so it can be verified. The GeoJSON files follow the naming convention `{sample}_morphology.geojson` (read from `config["geojson_path"]`).
 
 ### Xenium 5K: `prepare_input_x5k`
-Takes the zarr and the QuPath GeoJSON, and writes the **unfiltered contract h5ad** for the Coreblocks.
-Extracts the raw count table, embeds a channel-agnostic greyscale morphology image + scalefactors into `uns["spatial"]`, joins the GeoJSON into `obs["region_annotation"]`, and writes raw counts with **no filtering/normalisation/clustering** — that is deliberately the Coreblock's job, so a Xenium run and a Visium HD run reach the core identically. Analogous to `prepare_input_vhd`.
+Takes the zarr and the QuPath GeoJSON, and writes the **unfiltered contract h5ad** for the CoreBlocks.
+Extracts the raw count table, embeds a channel-agnostic greyscale morphology image + scalefactors into `uns["spatial"]`, joins the GeoJSON into `obs["region_annotation"]`, and writes raw counts with **no filtering/normalisation/clustering** — that is deliberately the CoreBlock's job, so a Xenium run and a Visium HD run reach the core identically. Analogous to `prepare_input_vhd`.
 
 ---
 
-# Coreblocks
+# CoreBlocks
 
-The Coreblocks are the central (core) modules of SpaceBlocks.
+The CoreBlocks are the central (core) modules of SpaceBlocks.
 
-They perform the `preprocessing`, `postprocessing` and `exploration` steps for single-cell resolution spatial transcriptomics data, starting from a standardized ("contract") `AnnData` h5ad file.
+They perform the `preprocessing`, `postprocessing` and `exploration` steps for single-cell resolution spatial transcriptomics data, starting from a **standardized ("contract") `AnnData` h5ad file**.
 
-## Coreblock 1 — preprocessing
+## CoreBlock 1 — preprocessing
 
-The first coreblock includes rules from data preparation to clustering.
+The first CoreBlock includes rules from data preparation to clustering.
 
 ### `validate_input`
 The **most important rule** of the pipeline: performs contract-format validation.
@@ -123,9 +125,9 @@ Produces per-sample niche TSVs (barcode → niche), a concatenated h5ad, and spa
 
 ---
 
-## Coreblock 2 — postprocessing
+## CoreBlock 2 — postprocessing
 
-This second coreblock includes rules from sample annotation to integration and differential expression.
+This second CoreBlock includes rules from sample annotation to integration and differential expression.
 
 ### `annotate_cells`
 Adds cell-type annotations from a manually curated TSV (cluster → cell type), or from an external annotation TSV (barcode → cell type).
@@ -134,7 +136,7 @@ Writes `adata_{sample}_annotated.h5ad` plus annotation plots and composition bar
 ### `integrate_samples`
 Concatenates all annotated samples, runs Harmony batch correction on the specified variable (`integration.integrate_key`), geosketch subsampling, and composition barplots.
 
-Writes `concatenated.h5ad`, `harmony_integrated.h5ad`, and `sketched.h5ad`. This is the input to pseudobulk, subclustering (Coreblock 2), and gene exploration (Coreblock 3).
+Writes `concatenated.h5ad`, `harmony_integrated.h5ad`, and `sketched.h5ad`. This is the input to pseudobulk, subclustering (CoreBlock 2), and gene exploration (CoreBlock 3).
 
 ### `pseudobulk_aggregate`
 Builds pseudobulk count matrices via [decoupler](https://decoupler.readthedocs.io/en/latest/) per `region`, `cell type` and (optionally) `niche` from the integrated object.
@@ -166,9 +168,9 @@ Each page contains the most important data-descriptive information: cluster / an
 
 ---
 
-## Coreblock 3 — exploration
+## CoreBlock 3 — exploration
 
-This third coreblock allows the informative exploration of curated genes and gene sets (obtained in the DE step or from external sources) in individual and merged samples.
+This third CoreBlock allows the informative exploration of curated genes and gene sets (obtained in the DE step or from external sources) in individual and merged samples.
 
 Integrated exploration scales are standardized to ease interpretation of the results.
 

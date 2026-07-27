@@ -1,8 +1,10 @@
 # Configuration
 
-This page explains how to fully set up the config files to run SpaceBlocks.
+This page explains how to fully set up the config files to run SpaceBlocks. Full documentation can be found at https://cbib.github.io/SpaceBlocks/configuration/.
 
 SpaceBlocks is configured through **`config/config.yaml`**, which contains all the parameters needed for the run, plus one or two **sample sheets**.
+
+The explanations in this page are divided by type (dir, parameter, color, etc.). In the config file, parameters are divided by Block and function.
 
 **Every key in `config/config.yaml` is validated** against `workflow/schemas/config.schema.yaml` before the run starts, so a typo or a missing required field fails immediately with a clear message.
 
@@ -48,7 +50,7 @@ The SpaceBlocks `config/config.yaml` sets the input and output directories, and 
 | File | `transcriptome` | `mode: visiumhd` | [Reference transcriptome](https://www.10xgenomics.com/support/software/space-ranger/downloads) needed to run Space Ranger. |
 | Path | `post_processing_outdir` | **Mandatory** | Output directory root; it will contain the result folders for the run. |
 | Path | `logdir` | **Mandatory** | Directory for per-rule logs and benchmarks. |
-| Path | `geojson_path` | **Optional, recommended** | Directory containing the GeoJSONs that annotate spatial regions for each sample (see the [QuPath tutorial](qupath_tutorial.md)). |
+| Path | `geojson_path` | **Optional, recommended** | Directory containing the GeoJSONs that annotate spatial regions for each sample (see the [QuPath tutorial](https://cbib.github.io/SpaceBlocks/qupath-tutorial/)). |
 | Path | `contract_dir` | `mode: decoupled` | Directory holding the pre-existing contract h5ads to analyse. |
 | File | `per_sample_qc` | **Optional** (per-sample filters) | TSV of sample-specific QC filters. If empty, the same `analysis.*` thresholds apply to every sample (*default*). |
 | File | `snakemake_cell_markers` | **Optional** (pre-annotation) | TSV of canonical marker genes drawn on the Leiden diagnostic plots (`leiden_analysis`) to guide manual annotation. |
@@ -120,17 +122,17 @@ Spatial niches are coloured automatically from a deterministic palette unless yo
 
 The rest of the configuration lives in nested blocks. Files and single parameters are covered in [section 2](#2-paths-files-and-sample-sheets) and [section 3](#3-parameters); colour palettes in [section 4](#4-color-scale-customization).
 
-| Section | Optional? | What it configures |
+| Section | Condition | What it configures |
 | --- | --- | --- |
-| `contract` | | Semantic keys of the hand-off object: `sample_key`, `spatial_key`, `require_region`, `require_raw_counts`, `mito_prefix`. |
-| `analysis` | | The bulk of the run: QC filters (`min_counts` / `min_genes` / `min_cells` / `max_counts` / `max_pct_mt`), the Leiden `resolution_scan_*`, the pseudobulk `analysis_levels` + thresholds, the `region_levels`, and the `run_*` toggles. Per-sample QC overrides come from `per_sample_qc`. |
+| `xenium5k` | `mode: xenium5k` | Xenium head settings: `xenium_dir`, `zarr_dir`, pyramid levels, `pixel_size_um`. |
+| `contract` | **Mandatory** | Semantic keys of the hand-off object: `sample_key`, `spatial_key`, `require_region`, `require_raw_counts`, `mito_prefix`. |
+| `analysis` | **Mandatory** | The bulk of the run: QC filters (`min_counts` / `min_genes` / `min_cells` / `max_counts` / `max_pct_mt`), the Leiden `resolution_scan_*`, the pseudobulk `analysis_levels` + thresholds, the `region_levels`, and the `run_*` toggles. Per-sample QC overrides come from `per_sample_qc`. |
+| `resources` | **Mandatory** | Per-rule `mem_mb` / `runtime` / `threads` (with a `default`). Memory scales with the retry attempt, so an OOM-killed job is resubmitted with more RAM. |
 | `external_annotation` | *optional* | Overlay labels from an external tool: `enabled`, `column`, `keep_unannotated` (see [section 6](#6-advanced-reproducibility-and-reusability)). |
 | `qc_sweep` | *optional* | Candidate-threshold QC diagnostics (never filters). |
 | `spatial_niches` | *optional* | BANKSY niche detection across concatenated samples. |
 | `subcompartments` | *optional* | Named cell-type subsets to re-cluster in `subcluster`. |
-| `gene_exploration` | | Genes / gene sets to score (AUCell) and plot in the exploration block, plus its `niche_column` and rank fraction. |
-| `xenium5k` | `mode: xenium5k` | Xenium head settings: `xenium_dir`, `zarr_dir`, pyramid levels, `pixel_size_um`. |
-| `resources` | | Per-rule `mem_mb` / `runtime` / `threads` (with a `default`). Memory scales with the retry attempt, so an OOM-killed job is resubmitted with more RAM. |
+| `gene_exploration` | Exploration CoreBlock | Genes / gene sets to score (AUCell) and plot in the exploration block, plus its `niche_column` and rank fraction. |
 
 > [!NOTE]
 > A few one-key blocks are documented elsewhere for readability: `integration` (`integrate_key`) and `extra_annotations` (`columns`) are parameters in [section 3](#3-parameters); `cluster_annotations` is a file in [section 2](#2-paths-files-and-sample-sheets); and the colour blocks (`sample_colors`, `annotation_colors`, `analysis.region_colors`) are in [section 4](#4-color-scale-customization).
@@ -139,11 +141,15 @@ The rest of the configuration lives in nested blocks. Files and single parameter
 
 Even though we have ensured the highest reproducibility standards when creating SpaceBlocks, some steps are never 100% reproducible between systems (e.g. UMAP calculation, Leiden clustering).
 
-We therefore provide features for minimal file sharing/storage that tighten the reproducibility gap. You can provide:
+We therefore provide features for minimal file sharing/storage that tighten the reproducibility gap.
+
+SpaceBlocks allows you to input:
 
 - **Externally assembled h5ad AnnData objects** — run `mode: decoupled` and point `contract_dir` at the directory of pre-built contract h5ads. The heads are skipped; the core validates and analyses them directly.
 - **Pre-computed clusters / annotations** — set `use_precomputed_clusters: true` and `precomputed_metadata_dir` to reuse Leiden clusters and metadata; for niches, set `spatial_niches.use_precomputed: true` with `spatial_niches.niche_dir`.
 - **Externally annotated data** — set `external_annotation.enabled: true` with `external_annotation.column`, and choose whether to keep or discard unannotated barcodes downstream via `external_annotation.keep_unannotated` (see [section 5](#5-key-sections)).
+
+These files are generated during the run, and can be shared with minimum effort to reproduce downstream results from raw data.
 
 ## 7. Example use case configurations
 
@@ -189,5 +195,6 @@ post_processing_outdir: "/path/to/results"
 # ... see config/config.yaml for the full, commented template.
 ```
 
-Start from the commented `config/config.yaml` shipped with the workflow and adjust the paths and
-sample sheets to your data.
+Start from the commented `config/config.yaml` shipped with the workflow and adjust the paths and sample sheets to your data.
+
+You may next read the [get started](../docs/getting-started.md) documentation and the [examples with public data](../docs/reproduction.md).

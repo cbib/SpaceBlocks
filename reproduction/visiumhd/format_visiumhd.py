@@ -105,7 +105,7 @@ def main() -> None:
     assign_regions(a, GEOJSON)
     samples = make_samples(a, N_SAMPLES, SEED)
     for name, sub in samples.items():
-        out = OUT_DIR / name / f"{name}_unfiltered.h5ad"
+        out = OUT_DIR / f"{name}.h5ad"   # flat: decoupled reads <dir>/<sample>.h5ad
         out.parent.mkdir(parents=True, exist_ok=True)
         sub.write_h5ad(out)
         print(f"  {name}: {sub.n_obs} bins")

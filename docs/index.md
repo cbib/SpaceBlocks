@@ -2,26 +2,29 @@
 
 **A Snakemake workflow for single-cell-resolution spatial transcriptomics.**
 
-SpaceBlocks turns raw spatial data from multiple platforms into one standardized, analysis-ready
-object (the *contract* h5ad) and runs a full, reproducible analysis on top of it — quality control,
-clustering, annotation, integration, differential expression, and spatial neighbourhood/niche
-analysis — identically on a workstation or an HPC cluster.
+This site documents SpaceBlocks, a technology-agnostic Snakemake workflow to **semi-automatically analyse single-cell-resolution spatial transcriptomics (ST).**
 
-<p align="center"><img src="img/overview.svg" alt="SpaceBlocks workflow overview" width="760"></p>
+New here? Start taking a look at the **[Configuration](configuration.md)** and follow with **[Get started](getting-started.md)** for a complete run.
 
-## How it fits together
+Full documentation:
 
-A **Headblock** is technology-specific and builds the standardized contract h5ad; the
-**Coreblock** is technology-agnostic and consumes it. Adding a new platform means writing a new
-head that emits the contract — the analysis core never changes.
+- **[Workflow design, architectural decisions and output structure](design.md)** — a brief explanation on the HeadBlock/CoreBlock split, the contract, and output tree.
+- **[Get started: recommendations for a full run](getting-started.md)** — how to streamline a full run.
+- **[Rule reference](rules.md)** — every rule explained briefly, grouped by HeadBlock/CoreBlock phase.
+- **[Configuration](configuration.md)** — explanation of all config keys and sample sheets.
+- **[QuPath annotation](qupath-tutorial.md)** — tutorial to easily draw and export the region annotations.
+- **[Environments](environments.md)** — the Conda environments and how to lock them.
+- **[Reproduce example run](reproduction.md)** — example use on public data.
 
-- **[Pipeline & architecture](pipeline.md)** — the Headblock/Coreblock split, the contract spec, the output tree.
-- **[Rule reference](rules.md)** — every rule, grouped by phase.
-- **[Configuration](configuration.md)** — modes, sample sheets, and all config keys.
-- **[Environments](environments.md)** — the per-rule Conda environments and how to lock them.
-- **[Reproduce the paper run](reproduction.md)** — full validation on public data.
+---
 
-## Quickstart
+- **Source code:** [github.com/cbib/SpaceBlocks](https://github.com/cbib/SpaceBlocks)
+- **Snakemake Workflow Catalog:** [entry for SpaceBlocks](https://snakemake.github.io/snakemake-workflow-catalog/?usage=cbib/SpaceBlocks)
 
-See the [repository README](https://github.com/<owner>/SpaceBlocks#quickstart) for the minimal
-run, or the [Configuration](configuration.md) page for the full setup.
+---
+
+## Quickstart glossary
+
+- **HeadBlocks** — technology-specific sets of rules that prepare the raw data files into a contract h5ad.
+- **CoreBlocks** — technology-agnostic sets of rules that streamline ST processing steps.
+- **Contract** — The standardized AnnData h5ad files, validated before running the CoreBlocks.

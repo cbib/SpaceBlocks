@@ -1,24 +1,28 @@
-# SpaceBlocks configuration.  Full explanations: config/README.md (or the online docs).
+# SpaceBlocks configuration.  Full explanations: config/README.md (or the online docs https://cbib.github.io/SpaceBlocks/configuration/).
 # Every key is validated against workflow/schemas/config.schema.yaml before the run starts.
 
 # ─── Run mode — which headblock builds the contract h5ad ─────────────────────
 mode: visiumhd
 
-# ─── I/O directories ─────────────────────────────────────────────────────────
+# ─── input/output directories ────────────────────────────────────────────────
 post_processing_outdir: /scratch/CBiB/soterino/smk_visiumhd_results
 logdir: /scratch/CBiB/soterino/smk_logs
 spaceranger_processing_outdir: /scratch/CBiB/soterino/smk_spaceranger_results
-geojson_path: /scratch/CBiB/soterino/geojson # QuPath region GeoJSONs (optional, recommended)
-contract_dir: '' # mode: decoupled — dir of pre-built contract h5ads
+# dir with region annotation GeoJSONs (optional, recommended)
+geojson_path: /scratch/CBiB/soterino/geojson 
+# only when using "mode: decoupled" — dir of pre-built contract h5ads
+contract_dir: ''
 
-# ─── Reproducibility & reuse   (docs → Configuration §6) ─────────────────────
+# ─── Reproducibility & reuse   (docs → Configuration) ────────────────────────
 random_seed: 0
-use_precomputed_clusters: true # reuse clusters from precomputed_metadata_dir
 precomputed_metadata_dir: /scratch/CBiB/soterino/metadata_visiumhd/
+# reuse clusters from precomputed_metadata_dir
+use_precomputed_clusters: true
 
 # ─── Sample sheets ───────────────────────────────────────────────────────────
 core_samples: config/core_samples.tsv
-samples: config/visiumhd_samples.csv # mode: visiumhd — fastq/slide/area per sample
+# only when using "mode: visiumhd" — fastq/slide/area per sample
+samples: config/visiumhd_samples.csv
 
 # ─── Visium HD head   (mode: visiumhd) ───────────────────────────────────────
 spaceranger: /home/soterinosogo/spaceranger-4.0.1/spaceranger # external install; path to the executable
@@ -44,53 +48,14 @@ contract:
     - mt-
 
 # ─── QC & preprocessing ──────────────────────────────────────────────────────
-per_sample_qc: '' # optional per-sample QC TSV; empty = global analysis.* thresholds
-analysis:
-  plot_dpi: 300
-  min_counts: 1
-  min_cells: 3
-  min_genes: 100
-  n_neighbors: 10
-  n_pcs: 30
-  de_n_genes: 25
-  resolution_scan_min: 0.6
-  resolution_scan_max: 0.8
-  resolution_scan_step: 0.2
-  min_cells_per_type: 15
-  sketch_fraction: 0.25
-  run_pseudobulk_de: true
-  run_leiden_analysis: true
-  analysis_levels:                  # by_niche_region also available; off by default (many groups)
-    - by_region
-    - by_celltype_region
-  min_cells_per_pseudobulk: 10
-  min_replicates: 3
-  min_counts_per_pseudobulk: 1000
-  padj_threshold: 0.05
-  lfc_threshold: 0.25
-  region_levels:
-    - Healthy area
-    - Healthy over tumor
-    - Dysplastic area
-    - AK area
-    - AK over tumor
-    - In situ area
-    - Tumor area
-    - Invasive area
-  region_colors:                    # keys must match region_levels above
-    Healthy area: '#FDE725FF'
-    Healthy over tumor: '#9FDA3AFF'
-    Dysplastic area: '#4AC16DFF'
-    AK area: '#1FA187FF'
-    AK over tumor: '#277F8EFF'
-    In situ area: '#365C8DFF'
-    Tumor area: '#46337EFF'
-    Invasive area: '#440154FF'
+# qc thresholds to screen in qc_sweep_all
 qc_sweep:
+  # use ingest_ref
   ingest_enabled: true
   ingest_key: cell_type_ingest
   cell_id_key: cell_id
   dpi: 300
+  # thresholds to screen
   thresholds:
     min_genes:
       - 50
@@ -108,9 +73,65 @@ qc_sweep:
       - 15
       - 20
 
+# optional: per-sample QC thresholds TSV (example at config/per_sample_qc.tsv)
+per_sample_qc: ''
+# default: global thresholds
+analysis:
+  # qc thresholds
+  plot_dpi: 300
+  min_counts: 1
+  min_cells: 3
+  min_genes: 100
+  # umap
+  n_neighbors: 10
+  n_pcs: 30
+  # n marker genes; n DE genes in pseudobulk heatmaps
+  de_n_genes: 25
+  # leiden
+  resolution_scan_min: 0.6
+  resolution_scan_max: 0.8
+  resolution_scan_step: 0.2
+  min_cells_per_type: 15
+  # integrate
+  sketch_fraction: 0.25
+  # pseudobulk
+  run_pseudobulk_de: true
+  run_leiden_analysis: true
+  analysis_levels:                  # by_niche_region also available; off by default (too many groups)
+    - by_region
+    - by_celltype_region
+  min_cells_per_pseudobulk: 10
+  min_replicates: 3
+  min_counts_per_pseudobulk: 1000
+  padj_threshold: 0.05
+  lfc_threshold: 0.25
+  # regions to consider in pseudobulk (omitted names get removed from pseudobulk DE)
+  region_levels:
+    - Healthy area
+    - Healthy over tumor
+    - Dysplastic area
+    - AK area
+    - AK over tumor
+    - In situ area
+    - Tumor area
+    - Invasive area
+  # color palette: keys must match region_levels above
+  region_colors:
+    Healthy area: '#FDE725FF'
+    Healthy over tumor: '#9FDA3AFF'
+    Dysplastic area: '#4AC16DFF'
+    AK area: '#1FA187FF'
+    AK over tumor: '#277F8EFF'
+    In situ area: '#365C8DFF'
+    Tumor area: '#46337EFF'
+    Invasive area: '#440154FF'
+
 # ─── Annotation ──────────────────────────────────────────────────────────────
-cluster_annotations: config/cluster_annotations.tsv  # cluster → cell-type TSV (from generate_annotation_template)
-snakemake_cell_markers: config/snakemake_cell_markers.tsv # markers drawn on the Leiden diagnostic plots
+# (optional, recommended) predefined cell type markers, screened during leiden to ease annotation
+snakemake_cell_markers: config/snakemake_cell_markers.tsv 
+# (default) cluster → cell-type TSV (fill template from generate_annotation_template)
+cluster_annotations: config/cluster_annotations.tsv 
+# (optional) use external tsv with annotations
 external_annotation:
   enabled: false
   column: manual_celltype
@@ -119,6 +140,7 @@ ingest_ref: /scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2
 ingest_ref_label_key: 04_celltypes
 integration:
   integrate_key: sample
+# (optional) include annotations for downstream plots from core_samples.tsv
 extra_annotations:
   columns:
     - patient
@@ -127,6 +149,7 @@ extra_annotations:
 # ─── Spatial niches   (optional) ─────────────────────────────────────────────
 spatial_niches:
   enabled: true
+  # use niche_dir precomputed .tsv
   use_precomputed: true
   niche_dir: /scratch/CBiB/soterino/niches_visiumhd/
   lambda: 0.8
@@ -135,9 +158,11 @@ spatial_niches:
   n_iterations: 2
   max_m: 1
   nbr_weight_decay: scaled_gaussian
+  # (recommended) use only HVGs for niche clustering
   use_hvg: true
   n_top_genes: 2000
   niche_resolution: 0.3
+  # (optional) BANKSY refine niches
   refine: false
   refine_num_neigh: 6
   refine_iterations: 1
@@ -146,13 +171,16 @@ spatial_niches:
 
 # ─── Subcompartments   (optional) ────────────────────────────────────────────
 subcompartments:
+  # subcompartment name
   Fibroblasts:
+    # exact-string match of cell type names to pool together
     strings:
       - Fibroblasts
       - Fibroblasts_Macro
       - Fibroblasts_Endothelial
       - Fibroblasts_Keratinocytes
       - Fibroblasts_Plasma
+    # resolution range to screen in leiden clustering
     resolution_min: 0.6
     resolution_max: 1.2
     resolution_step: 0.2
@@ -187,14 +215,18 @@ subcompartments:
 
 # ─── Gene / signature exploration ────────────────────────────────────────────
 gene_exploration:
+  # tsv where col name is gene set name, values are genes (one or more)
   queries: config/gene_queries.tsv
   aucell_max_rank_fraction: 0.05
   niche_column: spatial_niche
   dpi: 300
 
-# ─── Colour palettes   (docs → Configuration §4) ─────────────────────────────
+# ─── Colour palettes   (docs → Configuration) ────────────────────────────────
+# region color palettes is found under analysis: region_colors
 sample_colors:
+  # extra column in core_samples.tsv
   patient:
+    # levels and HEX code; unfound levels fall back to grey
     Patient 1: '#000000'
     Patient 2: '#E69F00'
     Patient 3: '#56B4E9'
@@ -208,6 +240,7 @@ sample_colors:
     Batch 2: '#C0392B'
     Batch 3: '#7F7F7F'
 annotation_colors:
+  # levels in cluster_annotations.tsv
   cell_type_tsv:
     Keratinocytes: '#d62728'
     Keratinocytes_Basal: '#8c564b'
@@ -228,6 +261,7 @@ annotation_colors:
     Gland_cells: '#ff7f0e'
     Smooth_muscle: '#d9d9d9'
     Skeletal_muscle: '#b9b9c9'
+  # levels when external_annotation: enabled: true
   cell_type_external:
     Keratinocytes: '#d62728'
     Keratinocytes_Basal: '#8c564b'

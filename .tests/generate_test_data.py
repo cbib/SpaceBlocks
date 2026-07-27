@@ -27,7 +27,7 @@ for sample in ("S1", "S2"):
     a.obs_names = [f"{sample}_{i}" for i in range(n)]
     a.var_names = GENES
     a.obsm["spatial"] = RNG.uniform(0, 1000, size=(n, 2))
-    out = os.path.join(HERE, "integration", "data", sample, f"{sample}_unfiltered.h5ad")
+    out = os.path.join(HERE, "integration", "data", f"{sample}.h5ad")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     a.write_h5ad(out)
     print("wrote", out, a.shape)

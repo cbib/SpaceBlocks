@@ -59,12 +59,21 @@ IS_DECOUPLED = (MODE == "decoupled")
 # post_processing_outdir so they follow SAMPLES_DIR automatically (set after the
 # config-schema validation above, so they don't need to be declared in the schema).
 config.setdefault("contract", {})
-# CONTRACT_DIR = where the CORE READS the contract h5ads. Empty → the per-sample
-# output tree (head mode: prepare_input_vhd writes there, so producer/consumers stay
-# on one key). In decoupled mode point contract_dir at wherever the head wrote the
-# {sample}/{sample}_unfiltered.h5ad files.
-CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
-config["contract"]["unfiltered_h5ad"] = f"{CONTRACT_DIR}/{{sample}}/{{sample}}_unfiltered.h5ad"
+# CONTRACT_DIR = where the CORE READS the contract h5ads.
+#   HEAD mode:      prepare_input_{vhd,x5k} WRITE the contract into the per-sample output
+#                   tree (SAMPLES_DIR/{sample}/{sample}_unfiltered.h5ad), co-located with
+#                   that sample's adata/metadata/plots. contract_dir stays empty.
+#   DECOUPLED mode: the user drops pre-built h5ads into contract_dir, one per sample, named
+#                   after its core_samples.tsv row: contract_dir/{sample}.h5ad (flat — no
+#                   per-sample subfolder, no _unfiltered suffix, so the folder mirrors the
+#                   sheet and is easy to inspect). No head runs, so there is no producer to
+#                   keep in sync with.
+if IS_DECOUPLED:
+    CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
+    config["contract"]["unfiltered_h5ad"] = f"{CONTRACT_DIR}/{{sample}}.h5ad"
+else:
+    CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
+    config["contract"]["unfiltered_h5ad"] = f"{CONTRACT_DIR}/{{sample}}/{{sample}}_unfiltered.h5ad"
 config["outdir"] = SAMPLES_DIR     # validate_input / qc_sweep write under the per-sample tree
 
 # ── Sample sheets ────────────────────────────────────────────────────────────
@@ -140,9 +149,9 @@ if IS_DECOUPLED:
         sys.exit(
             f"[validate_input / decoupled] Missing contract h5ad for {len(_missing)} "
             f"sample(s) in the input directory:\n{_lst}\n"
-            "Every sample in the core sheet must already have a contract present "
-            "(mode: decoupled does not build them). Fix the sheet or contract_dir, "
-            "or set mode to a head technology (e.g. visiumhd) to build inputs.")
+            "Every sample in the core sheet must already have a contract present as "
+            "<contract_dir>/<sample>.h5ad (mode: decoupled does not build them). Fix the "
+            "sheet or contract_dir, or set mode to a head technology (e.g. visiumhd).")
 
 RESOLUTIONS = [
     str(r)

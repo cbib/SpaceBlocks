@@ -1,3 +1,10 @@
+# Index
+
+- [Conda environments & version pinning](#conda-environments--version-pinning)
+  - [Generating exact pins from the Snakemake-managed environments](#generating-exact-pins-from-the-snakemake-managed-environments)
+  - [Alternative: conda-lock (multi-platform locks)](#alternative-conda-lock-multi-platform-locks)
+  - [Note on the DE environment](#note-on-the-de-environment)
+
 # Conda environments & version pinning
 
 The pipeline provisions one conda environment per rule group (run with `--use-conda`):
@@ -31,18 +38,18 @@ snakemake --use-conda --conda-create-envs-only --cores 1
 
 # 2. List each env file and the prefix Snakemake built for it.
 snakemake --use-conda --list-conda-envs
-#   ... prints:  envs/pseudobulk_de.yaml   .snakemake/conda/<hash>_
+#   ... prints:  workflow/envs/<envname>.yaml   .snakemake/conda/<hash>_
 
 # 3. Export EXACT versions from a given env (choose one style):
 
 #  a) versions only, cross-platform (recommended for envs/*.pinned.yaml):
 conda env export -p .snakemake/conda/<hash>_ --no-builds \
-  > envs/pseudobulk_de.pinned.yaml
+  > workflow/envs/<envname>.pinned.yaml
 
 #  b) fully reproducible, platform-specific (versions + builds + URLs):
 conda list -p .snakemake/conda/<hash>_ --explicit \
-  > envs/pseudobulk_de.linux-64.lock
-#     recreate with:  conda create --name X --file envs/pseudobulk_de.linux-64.lock
+  > workflow/envs/<envname>.linux-64.lock
+#     recreate with:  conda create --name X --file workflow/envs/<envname>.linux-64.lock
 ```
 
 Repeat per env, then point the rules at the `.pinned.yaml` files (or keep the loose
@@ -54,12 +61,12 @@ Repeat per env, then point the rules at the `.pinned.yaml` files (or keep the lo
 
 ```bash
 pip install conda-lock
-conda-lock lock -f envs/pseudobulk_de.yaml -p linux-64 -p osx-64 --kind explicit
+conda-lock lock -f workflow/envs/<envname>.yaml -p linux-64 -p osx-64 --kind explicit
 #   -> conda-linux-64.lock, conda-osx-64.lock
 ```
 
 ## Note on the DE environment
 
-`envs/pseudobulk_de.yaml` is pinned to a coherent Bioconductor 3.18 / R 4.3 release. If your working environment used a different Bioconductor/R release, replace it with an exact export (above) so the published env matches what you validated.
+`workflow/envs/pseudobulk_de.yaml` is pinned to a coherent Bioconductor 3.18 / R 4.3 release. If your working environment used a different Bioconductor/R release, replace it with an exact export (above) so the published env matches what you validated.
 
 Notice that the minor-version pins here are a sensible default, not a guarantee that they equal your tested versions.

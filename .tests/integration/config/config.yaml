@@ -23,7 +23,7 @@ contract:
   mito_prefix:
   - MT-
   - mt-
-preprocess_thresholds: ''
+per_sample_qc: ''
 analysis:
   plot_dpi: 300
   min_counts: 1

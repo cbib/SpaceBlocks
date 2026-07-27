@@ -1,4 +1,11 @@
-# QuPath region annotation
+# Index
+
+- [0. QuPath region annotation](#0-qupath-region-annotation)
+- [1. Get the image to annotate](#1-get-the-image-to-annotate)
+- [2. Annotate in QuPath](#2-annotate-in-qupath)
+- [3. Naming convention](#3-naming-convention)
+
+# 0. QuPath region annotation
 
 SpaceBlocks lets you overlay manual **region annotations** (tumour, healthy, necrosis, …) onto your samples. You draw them once in [QuPath](https://qupath.github.io/), export them as GeoJSON, and the pipeline folds them into `obs["region_annotation"]`.
 

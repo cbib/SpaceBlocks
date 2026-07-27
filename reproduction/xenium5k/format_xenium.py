@@ -29,7 +29,7 @@ from shapely.affinity import scale as shp_scale
 SAMPLE     = "Xenium_Prime_Human_Skin_FFPE"
 DATA_DIR   = Path("data") / SAMPLE         # Xenium output bundle (manual download)
 GEOJSON    = Path("demo_x5k.geojson")      # QuPath export on the morphology image
-OUT_DIR    = Path("contracts")             # -> contracts/<sampleK>/<sampleK>_unfiltered.h5ad
+OUT_DIR    = Path("contracts")             # -> contracts/<sampleK>.h5ad (flat, decoupled)
 TOP_GENES  = 500                           # keep only the N most-expressed genes (light test)
 N_SAMPLES  = 3                             # random non-overlapping samples to split into
 SEED       = 0                             # reproducible split
@@ -142,7 +142,7 @@ def main() -> None:
                 "scalefactors": {"tissue_hires_scalef": float(ds_factor / px),
                                  "spot_diameter_fullres": 10.0,
                                  "pixel_size_um": px}}}
-        out = OUT_DIR / name / f"{name}_unfiltered.h5ad"
+        out = OUT_DIR / f"{name}.h5ad"   # flat: decoupled reads <dir>/<sample>.h5ad
         out.parent.mkdir(parents=True, exist_ok=True)
         sub.write_h5ad(out)
         print(f"  {name}: {sub.n_obs} cells")
