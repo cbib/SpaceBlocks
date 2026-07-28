@@ -73,9 +73,14 @@ It is a single coupling point with one h5ad per sample. Every HeadBlock produces
   - `obsm["spatial"]` — per-cell `(x, y)` centroids, finite.
   - `uns["spatial"][sample]` — `{images: {hires}, scalefactors}` when a tissue/morphology image
     exists; omitted otherwise (the CoreBlock then scatters on coordinates).
-  - `obs` — `sample`, `cell_id`, and `region_annotation` when a GeoJSON was provided.
+  - `obs` — `sample` (required); `region_annotation` when a GeoJSON was provided; and
+    `cell_id` (optional but strongly recommended, and **must equal `obs_names`** to prevent
+    unexpected behaviour, since downstream joins key on it — `validate_input` warns otherwise).
 - **The image is a HeadBlock concern.** The CoreBlock never rebuilds an image — it consumes the
   embedded `uns["spatial"]` image when present and otherwise scatters on `obsm["spatial"]`.
+
+For a worked walk-through of building these files by hand (naming, layout, config), see
+[Preparing inputs for decoupled mode](reproduction.md#preparing-inputs-for-decoupled-mode).
 
 ## Output structure
 

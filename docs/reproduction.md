@@ -10,8 +10,6 @@ This page shows how to run SpaceBlocks end-to-end on **public data**, and docume
 - [Xenium 5K example (human melanoma)](#xenium-5k-example-human-melanoma)
   - [Configure and run the examples](#configure-and-run-the-examples)
   - [What preconfigured files exercise](#what-preconfigured-files-exercise)
-    - [Config files](#config-files)
-    - [TSV cluster annoation files](#tsv-cluster-annotation-files)
 - [Preparing other inputs for decoupled mode](#preparing-inputs-for-decoupled-mode)
 
 
@@ -132,13 +130,9 @@ Example cell type annotation files are provided as `cluster_annotations_{technol
 
 The config `mode: decoupled` skips the HeadBlocks entirely and runs the CoreBlocks on contract h5ads you provide. The two scripts above are worked examples of how to produce them (with artificial samples).
 
-To successfully generate valid format h5ad files, see [contract](design.md#the-validation-object-contract), the rules are:
+To generate valid *contract* AnnData objects (saved as h5ads), follow the [contract specification](design.md#the-validation-object-contract); the rules in short are:
 
-**1 — Shape.** Each h5ad must satisfy the [contract](design.md#the-validation-contract): `X` = raw
-integer counts, `obsm["spatial"]` = per-cell `(x, y)`, and `obs` carrying `sample` (and, ideally,
-`cell_id` and `region_annotation`). If you set `cell_id`, it **must equal `obs_names`** — the
-downstream joins key on it, and `validate_input` warns when it does not. An embedded `uns["spatial"]` image is optional. `validate_input`
-checks all of this before anything runs.
+**1 — Shape.** Each h5ad must satisfy the [contract](design.md#the-validation-object-contract): `X` = raw integer counts, `obsm["spatial"]` = per-cell `(x, y)`, and `obs` carrying `sample` (and, ideally, `cell_id` and `region_annotation`). `cell_id` is **optional but strongly recommended, and must equal `obs_names`** to prevent unexpected behaviour — downstream joins key on it, and `validate_input` warns when it differs. An embedded `uns["spatial"]` image is optional, but also strongly recommended. `validate_input` checks all of this before anything runs.
 
 **2 — Naming & layout.** One file per sample, laid out as:
 
@@ -146,8 +140,7 @@ checks all of this before anything runs.
 <contract_dir>/<sample>.h5ad
 ```
 
-where each `<sample>` is a row in `config/core_samples.tsv`. The sample names in the sheet, the
-folder names, and the `obs["sample"]` values must all match (the example scripts guarantee this).
+where each `<sample>` is a row in `config/core_samples.tsv`. The sample names in the sheet, the folder names, and the `obs["sample"]` values must all match. The example scripts (see above) guarantee this. You can find the TSV examples in `reproduction/<technology>/contracts/core_samples.tsv`.
 
 **3 — Config.** Point the run at them:
 

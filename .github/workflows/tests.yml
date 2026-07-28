@@ -19,6 +19,8 @@ jobs:
           python-version: "3.12"
       - run: pip install snakemake pandas jsonschema
       - name: Lint
-        run: snakemake --lint --workflow-profile none
+        # Pin to the committed .tests fixture so editing the shipped default config
+        # (or an example config pointing at generated paths) cannot break CI.
+        run: snakemake --lint --configfile .tests/integration/config/config.yaml --workflow-profile none
       - name: Dry-run (decoupled smoke test)
         run: snakemake --configfile .tests/integration/config/config.yaml -n --workflow-profile none

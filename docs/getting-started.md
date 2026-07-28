@@ -76,7 +76,7 @@ In `mode: decoupled` there is no Headblock, so `qupath_images` produces nothing 
 Your provided contract h5ads should therefore already carry `obs["region_annotation"]`; otherwise every cell is `Unlabeled`.
 
 > [!WARNING]
-> Make sure that the pixel size and coordinates of the images used to annotate your spatial regions are the same. This is automatically managed inside `qupath_images`.
+> Make sure the pixel size and coordinate system of the image you annotate match the contract's `obsm["spatial"]`. In head modes the `generate_qupath_*` rules export a correctly-scaled image; in `mode: decoupled` you are responsible for annotating on an image consistent with the coordinates you embedded.
 
 ## 4. Preprocess, then look before you filter
 

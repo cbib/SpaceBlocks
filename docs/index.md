@@ -27,4 +27,4 @@ Full documentation:
 
 - **HeadBlocks** — technology-specific sets of rules that prepare the raw data files into a contract h5ad.
 - **CoreBlocks** — technology-agnostic sets of rules that streamline ST processing steps.
-- **Contract** — The standardized AnnData h5ad files, validated before running the CoreBlocks.
+- **Contract** — the standardized AnnData h5ad files, validated before running the CoreBlocks.

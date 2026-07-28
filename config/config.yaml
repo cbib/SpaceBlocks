@@ -1,0 +1,375 @@
+# SpaceBlocks configuration.  Full explanations: config/README.md (or the online docs https://cbib.github.io/SpaceBlocks/configuration/).
+# Every key is validated against workflow/schemas/config.schema.yaml before the run starts.
+
+# ─── Run mode — which headblock builds the contract h5ad ─────────────────────
+mode: visiumhd
+
+# ─── input/output directories ────────────────────────────────────────────────
+post_processing_outdir: /scratch/CBiB/soterino/smk_visiumhd_results
+logdir: /scratch/CBiB/soterino/smk_logs
+spaceranger_processing_outdir: /scratch/CBiB/soterino/smk_spaceranger_results
+# dir with region annotation GeoJSONs (optional, recommended)
+geojson_path: /scratch/CBiB/soterino/geojson 
+# only when using "mode: decoupled" — dir of pre-built contract h5ads
+contract_dir: ''
+
+# ─── Reproducibility & reuse   (docs → Configuration) ────────────────────────
+random_seed: 0
+precomputed_metadata_dir: /scratch/CBiB/soterino/metadata_visiumhd/
+# reuse clusters from precomputed_metadata_dir
+use_precomputed_clusters: true
+
+# ─── Sample sheets ───────────────────────────────────────────────────────────
+core_samples: config/core_samples.tsv
+# only when using "mode: visiumhd" — fastq/slide/area per sample
+samples: config/visiumhd_samples.csv
+
+# ─── Visium HD head   (mode: visiumhd) ───────────────────────────────────────
+spaceranger: /home/soterinosogo/spaceranger-4.0.1/spaceranger # external install; path to the executable
+probe_set: /scratch/CBiB/soterino/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv
+transcriptome: /mnt/cbib/bank/cellranger/refdata-gex-GRCh38-2024-A
+
+# ─── Xenium 5K head   (mode: xenium5k) ───────────────────────────────────────
+xenium5k:
+  xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
+  zarr_dir: ''
+  qupath_pyramid_level: 3
+  hires_pyramid_level: 3
+  pixel_size_um: 0.2125
+
+# ─── Contract — Head → Core hand-off ─────────────────────────────────────────
+contract:
+  sample_key: sample
+  spatial_key: spatial
+  require_region: false
+  require_raw_counts: true
+  mito_prefix:
+    - MT-
+    - mt-
+
+# ─── QC & preprocessing ──────────────────────────────────────────────────────
+# qc thresholds to screen in qc_sweep_all
+qc_sweep:
+  # use ingest_ref
+  ingest_enabled: true
+  ingest_key: cell_type_ingest
+  cell_id_key: cell_id
+  dpi: 300
+  # thresholds to screen
+  thresholds:
+    min_genes:
+      - 50
+      - 100
+      - 200
+    min_counts:
+      - 1
+      - 10
+      - 50
+    max_counts:
+      - 3000
+      - 5000
+    max_pct_mt:
+      - 10
+      - 15
+      - 20
+
+# optional: per-sample QC thresholds TSV (example at config/per_sample_qc.tsv)
+per_sample_qc: ''
+# default: global thresholds
+analysis:
+  # qc thresholds
+  plot_dpi: 300
+  min_counts: 1
+  min_cells: 3
+  min_genes: 100
+  # umap
+  n_neighbors: 10
+  n_pcs: 30
+  # n marker genes; n DE genes in pseudobulk heatmaps
+  de_n_genes: 25
+  # leiden
+  resolution_scan_min: 0.6
+  resolution_scan_max: 0.8
+  resolution_scan_step: 0.2
+  min_cells_per_type: 15
+  # integrate
+  sketch_fraction: 0.25
+  # pseudobulk
+  run_pseudobulk_de: true
+  run_leiden_analysis: true
+  analysis_levels:                  # by_niche_region also available; off by default (too many groups)
+    - by_region
+    - by_celltype_region
+  min_cells_per_pseudobulk: 10
+  min_replicates: 3
+  min_counts_per_pseudobulk: 1000
+  padj_threshold: 0.05
+  lfc_threshold: 0.25
+  # regions to consider in pseudobulk (omitted names get removed from pseudobulk DE)
+  region_levels:
+    - Healthy area
+    - Healthy over tumor
+    - Dysplastic area
+    - AK area
+    - AK over tumor
+    - In situ area
+    - Tumor area
+    - Invasive area
+  # color palette: keys must match region_levels above
+  region_colors:
+    Healthy area: '#FDE725FF'
+    Healthy over tumor: '#9FDA3AFF'
+    Dysplastic area: '#4AC16DFF'
+    AK area: '#1FA187FF'
+    AK over tumor: '#277F8EFF'
+    In situ area: '#365C8DFF'
+    Tumor area: '#46337EFF'
+    Invasive area: '#440154FF'
+
+# ─── Annotation ──────────────────────────────────────────────────────────────
+# (optional, recommended) predefined cell type markers, screened during leiden to ease annotation
+snakemake_cell_markers: config/snakemake_cell_markers.tsv 
+# (default) cluster → cell-type TSV (fill template from generate_annotation_template)
+cluster_annotations: config/cluster_annotations.tsv 
+# (optional) use external tsv with annotations
+external_annotation:
+  enabled: false
+  column: manual_celltype
+  keep_unannotated: true
+ingest_ref: /scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad  # optional annotated scRNA-seq reference (ingest_ref)
+ingest_ref_label_key: 04_celltypes
+integration:
+  integrate_key: sample
+# (optional) include annotations for downstream plots from core_samples.tsv
+extra_annotations:
+  columns:
+    - patient
+    - batch
+
+# ─── Spatial niches   (optional) ─────────────────────────────────────────────
+spatial_niches:
+  enabled: true
+  # use niche_dir precomputed .tsv
+  use_precomputed: true
+  niche_dir: /scratch/CBiB/soterino/niches_visiumhd/
+  lambda: 0.8
+  num_neighbours: 18
+  cluster_n_neighbours: 15
+  n_iterations: 2
+  max_m: 1
+  nbr_weight_decay: scaled_gaussian
+  # (recommended) use only HVGs for niche clustering
+  use_hvg: true
+  n_top_genes: 2000
+  niche_resolution: 0.3
+  # (optional) BANKSY refine niches
+  refine: false
+  refine_num_neigh: 6
+  refine_iterations: 1
+  refine_auto: false
+  compute_umap: false
+
+# ─── Subcompartments   (optional) ────────────────────────────────────────────
+subcompartments:
+  # subcompartment name
+  Fibroblasts:
+    # exact-string match of cell type names to pool together
+    strings:
+      - Fibroblasts
+      - Fibroblasts_Macro
+      - Fibroblasts_Endothelial
+      - Fibroblasts_Keratinocytes
+      - Fibroblasts_Plasma
+    # resolution range to screen in leiden clustering
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+  Keratinocytes:
+    strings:
+      - Keratinocytes
+      - Keratinocytes_Mal
+      - Keratinocytes_Basal
+      - Keratinocytes_Suprabasal
+      - Fibroblasts_Keratinocytes
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+  MonoMacro_Tcells:
+    strings:
+      - Mono_Macro
+      - Macro_Tcells
+      - Macro_Plasma
+      - Tcells
+      - Fibroblasts_Macro
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+  Plasma_Bcells:
+    strings:
+      - Plasma_cells
+      - Macro_Plasma
+      - Fibroblasts_Plasma
+    resolution_min: 0.6
+    resolution_max: 1.2
+    resolution_step: 0.2
+
+# ─── Gene / signature exploration ────────────────────────────────────────────
+gene_exploration:
+  # tsv where col name is gene set name, values are genes (one or more)
+  queries: config/gene_queries.tsv
+  aucell_max_rank_fraction: 0.05
+  niche_column: spatial_niche
+  dpi: 300
+
+# ─── Colour palettes   (docs → Configuration) ────────────────────────────────
+# region color palettes is found under analysis: region_colors
+sample_colors:
+  # extra column in core_samples.tsv
+  patient:
+    # levels and HEX code; unfound levels fall back to grey
+    Patient 1: '#000000'
+    Patient 2: '#E69F00'
+    Patient 3: '#56B4E9'
+    Patient 4: '#009E73'
+    Patient 5: '#F0E442'
+    Patient 6: '#CC79A7'
+    Patient 7: '#0072B2'
+    Patient 8: '#D55E00'
+  batch:
+    Batch 1: '#8E44AD'
+    Batch 2: '#C0392B'
+    Batch 3: '#7F7F7F'
+annotation_colors:
+  # levels in cluster_annotations.tsv
+  cell_type_tsv:
+    Keratinocytes: '#d62728'
+    Keratinocytes_Basal: '#8c564b'
+    Keratinocytes_Suprabasal: '#a0522d'
+    Keratinocytes_Mal: '#000000'
+    Tcells: '#1f77b4'
+    Plasma_cells: '#9467bd'
+    Mono_Macro: '#08519c'
+    Macro_Tcells: '#756bb1'
+    Macro_Plasma: '#9e9ac8'
+    Fibroblasts: '#2ca02c'
+    Fibroblasts_Macro: '#bcbd22'
+    Fibroblasts_Endothelial: '#17becf'
+    Fibroblasts_Keratinocytes: '#ffbb78'
+    Fibroblasts_Plasma: '#fdae6b'
+    Endothelial: '#98df8a'
+    Adipocytes: '#dbdb8d'
+    Gland_cells: '#ff7f0e'
+    Smooth_muscle: '#d9d9d9'
+    Skeletal_muscle: '#b9b9c9'
+  # levels when external_annotation: enabled: true
+  cell_type_external:
+    Keratinocytes: '#d62728'
+    Keratinocytes_Basal: '#8c564b'
+    Keratinocytes_Suprabasal: '#a0522d'
+    Keratinocytes_Mal: '#000000'
+    Tcells: '#1f77b4'
+    Plasma_cells: '#9467bd'
+    Mono_Macro: '#08519c'
+    Macro_Tcells: '#756bb1'
+    Macro_Plasma: '#9e9ac8'
+    Fibroblasts: '#2ca02c'
+    Fibroblasts_Macro: '#bcbd22'
+    Fibroblasts_Endothelial: '#17becf'
+    Fibroblasts_Keratinocytes: '#ffbb78'
+    Fibroblasts_Plasma: '#fdae6b'
+    Endothelial: '#98df8a'
+    Adipocytes: '#dbdb8d'
+    Gland_cells: '#ff7f0e'
+    Smooth_muscle: '#d9d9d9'
+    Skeletal_muscle: '#b9b9c9'
+
+# ─── Per-rule resources — mem_mb scales with the retry attempt ───────────────
+resources:
+  spaceranger_count_vhd:
+    mem_mb: 65536
+    runtime: 1200
+    threads: 16
+  generate_qupath_vhd:
+    mem_mb: 4096
+    runtime: 30
+    threads: 1
+  prepare_input_vhd:
+    mem_mb: 32768
+    runtime: 240
+    threads: 4
+  convert_zarr_x5k:
+    mem_mb: 65536
+    runtime: 240
+    threads: 4
+  generate_qupath_x5k:
+    mem_mb: 32768
+    runtime: 60
+    threads: 2
+  prepare_input_x5k:
+    mem_mb: 49152
+    runtime: 120
+    threads: 4
+  validate_input:
+    mem_mb: 32768
+    runtime: 30
+    threads: 2
+  qc_sweep:
+    mem_mb: 49152
+    runtime: 180
+    threads: 4
+  preprocess_umap:
+    mem_mb: 32768
+    runtime: 240
+    threads: 8
+  ingest_ref:
+    mem_mb: 32768
+    runtime: 240
+    threads: 8
+  leiden_analysis:
+    mem_mb: 16384
+    runtime: 120
+    threads: 4
+  pseudobulk_aggregate:
+    mem_mb: 124768
+    runtime: 60
+    threads: 4
+  pseudobulk_de:
+    mem_mb: 24384
+    runtime: 120
+    threads: 4
+  neighbourhood_analysis:
+    mem_mb: 32768
+    runtime: 120
+    threads: 8
+  annotate_cells:
+    mem_mb: 32768
+    runtime: 60
+    threads: 4
+  integrate_samples:
+    mem_mb: 65536
+    runtime: 360
+    threads: 8
+  spatial_niches:
+    mem_mb: 124768
+    runtime: 720
+    threads: 16
+  subcluster:
+    mem_mb: 120768
+    runtime: 1440
+    threads: 16
+  sample_report:
+    mem_mb: 32768
+    runtime: 60
+    threads: 4
+  explore_genes_integrated:
+    mem_mb: 65536
+    runtime: 240
+    threads: 4
+  explore_genes_sample:
+    mem_mb: 16192
+    runtime: 360
+    threads: 4
+  default:
+    mem_mb: 8192
+    runtime: 60
+    threads: 1
