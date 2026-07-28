@@ -39,7 +39,10 @@ Our HPC specifications
 
 SpaceBlocks is built to analyse single-cell resolution Spatial Transcriptomics data, so Visium HD data needs to be preprocessed via [bin2cell](https://github.com/Teichlab/bin2cell), [ENACT](https://github.com/Sanofi-Public/enact-pipeline) or, as in the Visium HD HeadBlock, Space Ranger >= v4.0.1 (internally implementing StarDist segmentation).
 
-You may download the Visium HD dataset from the [10x Genomics web](https://www.10xgenomics.com/datasets/visium-hd-cytassist-gene-expression-libraries-of-mouse-brain-he), or via terminal using curl or wget:
+> [!IMPORTANT]
+> We use a **Space Ranger ≥ 4.0.1** Visium HD dataset (one that ships `segmented_outputs/`). The older Space Ranger 3.x Mouse Brain release has **no** segmentation, so `format_visiumhd.py` would > find no cell table.
+
+For the example here presented, you may download the Visium HD dataset from the [10x Genomics web](https://www.10xgenomics.com/datasets/visium-hd-cytassist-gene-expression-libraries-of-mouse-brain-he-v4), or via terminal using curl or wget. This dataset has been processed with Space Ranger v4.0.1:
 
 ```bash
 # at the workflow dir, build the environment
@@ -47,19 +50,23 @@ cd SpaceBlocks/
 conda env create --file=workflow/envs/visiumhd.yaml
 # activate it
 conda activate visiumhd
-# move to the reproduciblity dir
+# move to the reproducibility dir and place the downloaded outs under data/<SAMPLE>/
+# move to the reproducibility dir and download the three files under data/<SAMPLE>/
 cd reproduction/visiumhd
-# download the binned outputs + spatial into data/
 mkdir -p data/Visium_HD_Mouse_Brain && cd data/Visium_HD_Mouse_Brain
-curl -O https://cf.10xgenomics.com/samples/spatial-exp/3.0.0/Visium_HD_Mouse_Brain/Visium_HD_Mouse_Brain_spatial.tar.gz
-curl -O https://cf.10xgenomics.com/samples/spatial-exp/3.0.0/Visium_HD_Mouse_Brain/Visium_HD_Mouse_Brain_binned_outputs.tar.gz
+BASE=https://cf.10xgenomics.com/samples/spatial-exp/4.0.1/Visium_HD_Mouse_Brain
+curl -O $BASE/Visium_HD_Mouse_Brain_segmented_outputs.tar.gz
+curl -O $BASE/Visium_HD_Mouse_Brain_barcode_mappings.parquet
+curl -O $BASE/Visium_HD_Mouse_Brain_binned_outputs.tar.gz
+tar -xzf Visium_HD_Mouse_Brain_segmented_outputs.tar.gz    # -> segmented_outputs/
+tar -xzf Visium_HD_Mouse_Brain_binned_outputs.tar.gz       # -> binned_outputs/
 cd ../..
 # build the contracts for the CoreBlocks
-# use an interactive job with 16Gb and 4 cores if using a slurm cluster (salloc --ntasks=1 --cpus-per-task=4 --mem 16G -t 01:00:00)
-python format_visiumhd.py            # -> contracts/<roi>.h5ad + core_samples.tsv
+# use an interactive job with 16Gb and 4 cores on a slurm cluster (salloc --ntasks=1 --cpus-per-task=4 --mem 16G -t 01:00:00)
+python format_visiumhd.py            # -> contracts/<sample>.h5ad + core_samples.tsv
 ```
 
-We provide `regions.geojson` for this dataset, as an example QuPath export on the hires image (see [QuPath annotation tutorial](qupath-tutorial.md)).
+We provide `demo_vhd.geojson` for this dataset, as an example QuPath export on the hires image (see [QuPath annotation tutorial](qupath-tutorial.md)).
 
 ## Xenium 5K example (human melanoma)
 

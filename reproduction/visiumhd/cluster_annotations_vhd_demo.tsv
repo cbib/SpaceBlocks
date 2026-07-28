@@ -1,0 +1,17 @@
+cluster	sample1_0.6	sample2_0.6	sample3_0.6
+0	Astrocytes	Excitatory neurons	Astrocytes
+1	Excitatory neurons	Neuroendocrine neurons	Neuroendocrine neurons
+2	Neuroendocrine neurons	Astrocytes	Excitatory neurons
+3	Striatal neurons	Excitatory neurons	Excitatory neurons
+4	Excitatory neurons	Excitatory neurons	Excitatory neurons
+5	Excitatory neurons	Oligodendrocytes	Excitatory neurons
+6	Oligodendrocytes	Inhibitory neurons	Oligodendrocytes
+7	Inhibitory neurons	Excitatory neurons	Neuroendocrine neurons
+8	Excitatory neurons	Astrocytes	Astrocytes
+9	Excitatory neurons	Striatal neurons	Inhibitory neurons
+10	Hippocampal neurons	Excitatory neurons	Striatal neurons
+11	Immature neurons	Immature neurons	Excitatory neurons
+12	Astrocytes	Hippocampal neurons	Immature neurons
+13	Astrocytes	Astrocytes	Hippocampal neurons
+14	Choroid plexus		Astrocytes
+15			Hippocampal neurons
