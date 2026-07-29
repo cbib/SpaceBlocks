@@ -110,7 +110,15 @@ spatial_niches:
   refine_iterations: 1
   refine_auto: false
   compute_umap: false
-subcompartments: {}
+subcompartments:
+  Neurons:
+    strings:
+    - Excitatory neurons
+    - Inhibitory neurons
+    - Immature neurons
+    resolution_min: 0.2
+    resolution_max: 0.6
+    resolution_step: 0.2
 gene_exploration:
   queries: reproduction/visiumhd/gene_queries_demo.tsv
   aucell_max_rank_fraction: 0.05
