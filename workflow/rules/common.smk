@@ -123,7 +123,7 @@ def fastq_dirs_comma_separated(wc):
 # ── HEAD (Xenium 5K) input helper ────────────────────────────────────────────
 def xenium_dir_for(sample):
     """Xenium output bundle directory for a sample, from the xenium5k.xenium_dir
-    {sample} pattern (e.g. '/data/xenium/{sample}')."""
+    {sample} pattern (e.g. 'data/xenium/{sample}')."""
     pat = (config.get("xenium5k", {}) or {}).get("xenium_dir", "")
     if not pat:
         sys.exit("[config error] mode 'xenium5k' requires xenium5k.xenium_dir "

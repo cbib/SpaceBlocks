@@ -13,7 +13,7 @@ rule ingest_ref:
     """
     input:
         adata=rules.preprocess_umap.output.adata,
-        ingest_ref=config.get("ingest_ref", ""),
+        ingest_ref=config.get("ingest_ref", "") or [],
     output:
         adata_ingested=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_ingested.h5ad",
         plots_dir=directory(f"{SAMPLES_DIR}/{{sample}}/ingest"),

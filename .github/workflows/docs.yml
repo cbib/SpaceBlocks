@@ -20,8 +20,8 @@ jobs:
     # Runs on every push/PR: fails fast on broken links or nav (--strict). Does NOT publish.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install mkdocs-material pymdown-extensions
@@ -31,10 +31,6 @@ jobs:
           path: site
 
   deploy:
-    # GATED: only publishes to GitHub Pages once you opt in by setting the repository
-    # variable PUBLISH_DOCS=true (Settings → Secrets and variables → Actions → Variables).
-    # Until then the site is built and validated but never goes live — safe while the repo
-    # is private / pre-publication. After transferring ownership, set the variable to flip it on.
     if: github.ref == 'refs/heads/main' && vars.PUBLISH_DOCS == 'true'
     needs: build
     runs-on: ubuntu-latest
