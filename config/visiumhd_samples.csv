@@ -1,0 +1,4 @@
+sample_id,fastq_dir,slide,area,resequenced_dir,new_resequenced_dir,third_resequencing_dir
+sample1,/path/to/fastq/files,H1-XXXXXXX,D1,/optional/path/to/fastq/files,/optional/path/to/fastq/files,/optional/path/to/fastq/files
+sample2,/path/to/fastq/files,H1-XXXXXXX,A1,/optional/path/to/fastq/files,/optional/path/to/fastq/files,
+sample3,/path/to/fastq/files,H1-XXXXXXX,D1,,,
