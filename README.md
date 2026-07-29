@@ -91,6 +91,10 @@ If you use SpaceBlocks in your research, please cite:
 
 <!-- A BibTeX entry and a Zenodo DOI badge will be added on the first release. -->
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture, conventions, and how to validate a change.
+
 ## License
 
 Released under the MIT License — see [LICENSE](LICENSE).

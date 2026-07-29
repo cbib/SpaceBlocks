@@ -120,6 +120,8 @@ For a worked walk-through of building these files by hand (naming, layout, confi
 
 The aim of SpaceBlocks is to allow for long-term maintainable and extensible Spatial Transcriptomics analyses across platforms and tools. Below you can find guidelines for development.
 
+If you want to contribute or extend SpaceBlocks, see [CONTRIBUTING.md](https://github.com/cbib/SpaceBlocks/blob/main/CONTRIBUTING.md) for the conventions and validation workflow.
+
 ### Extending HeadBlocks to a new platform
 
 If you wished to run SpaceBlocks but your platform is not listed among the available SpaceBlocks HeadBlocks, there are two options available:
