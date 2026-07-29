@@ -31,7 +31,7 @@ SpaceBlocks/
 ├── config/                   config.yaml, README.md (config reference), sample sheets
 ├── docs/                     this documentation site (MkDocs)
 ├── .tests/                   tiny synthetic decoupled dataset for CI
-├── reproduction/             full public-data runs (data fetched, not committed)
+├── demos/             full public-data runs (data fetched, not committed)
 ├── tools/                    stand-alone helper scripts
 └── profiles/default/         SLURM profile (retries, resources)
 ```
@@ -80,7 +80,7 @@ It is a single coupling point with one h5ad per sample. Every HeadBlock produces
   embedded `uns["spatial"]` image when present and otherwise scatters on `obsm["spatial"]`.
 
 For a worked walk-through of building these files by hand (naming, layout, config), see
-[Preparing inputs for decoupled mode](reproduction.md#preparing-inputs-for-decoupled-mode).
+[Preparing inputs for decoupled mode](demos.md#preparing-inputs-for-decoupled-mode).
 
 ## Output structure
 
@@ -128,7 +128,7 @@ If you wished to run SpaceBlocks but your platform is not listed among the avail
 1. Running SpaceBlocks in `mode: decoupled` (**easier, recommended**).
 2. Writting a new SpaceBlocks HeadBlock.
 
-See [uncoupled demos](reproduction.md) for examples about how to run SpaceBlocks in decoupled mode.
+See [public data end-to-end example runs](demos.md) for demonstrations about how to run SpaceBlocks in decoupled mode.
 
 If you wished to write a new HeadBlock:
 
@@ -136,7 +136,7 @@ If you wished to write a new HeadBlock:
 - Write the Snakemake rules and Python scripts to prepare the AnnData h5ad contracts. Name them as `rules/*_<code>.smk` and `scripts/*_<code>.py`.
 - Add the mode in the `Snakefile` parameter `KNOWN_HEADS`.
 - Create a `demo/` (public data download, GeoJSON region annotations, short documentation) with a prepared config example and instructions for reproducibility with a test run.
-- Include the documentation in the `reproduction.md`.
+- Include the documentation in the `demos.md`.
 - Create a Pull Request to the `development` branch. We will revise it promptly.
 
 ### Extending the CoreBlocks

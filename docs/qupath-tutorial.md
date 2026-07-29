@@ -20,7 +20,7 @@ Choosing QuPath means anatomopathologists and researchers without bioinformatics
 | Mode | How to obtain the image |
 | --- | --- |
 | `visiumhd` / `xenium5k` (a Headblock runs) | `snakemake qupath_images` writes one image per sample under `Samples/{sample}/QuPath_image/` (a hires PNG for Visium HD, a morphology TIFF for Xenium 5K). |
-| `decoupled` (no Headblock) | There is no `qupath_images` target — the image is instead **embedded in the contract h5ad** you provided (`uns["spatial"]`). Annotate the regions when you build the contract externally (see [Preparing inputs for decoupled mode](reproduction.md#preparing-inputs-for-decoupled-mode)). |
+| `decoupled` (no Headblock) | There is no `qupath_images` target — the image is instead **embedded in the contract h5ad** you provided (`uns["spatial"]`). Annotate the regions when you build the contract externally (see [Preparing inputs for decoupled mode](demos.md#preparing-inputs-for-decoupled-mode)). |
 
 ## 2. Annotate in QuPath
 

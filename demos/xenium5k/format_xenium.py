@@ -14,7 +14,7 @@ Strategy (deliberately cheap, but analysis-ready):
 Each sample is written as a contract h5ad (X = raw counts, obsm["spatial"], uns["spatial"],
 obs = sample / cell_id / region_annotation), plus a core_samples.tsv.
 
-Download the bundle manually (see reproduction.md) into ./data/<SAMPLE>/, then run this.
+Download the bundle manually (see demos.md) into ./data/<SAMPLE>/, then run this.
 deps: numpy pandas anndata geopandas shapely spatialdata-io  (envs/xenium5k.yaml)
 """
 import json

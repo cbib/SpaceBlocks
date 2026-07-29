@@ -22,7 +22,7 @@ image's own pixel space. The Visium HD HeadBlock keeps full-res coordinates + th
 scalefactor; this remapping is local to the demo contract.
 
 Needs (all from the 10x page): segmented_outputs/, barcode_mappings.parquet, and the
-binned_outputs spatial/tissue_positions.parquet. See reproduction.md.
+binned_outputs spatial/tissue_positions.parquet. See demos.md.
 deps: numpy pandas anndata scanpy pillow geopandas shapely  (envs/visiumhd.yaml)
 """
 import json

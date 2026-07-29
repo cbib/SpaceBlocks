@@ -21,7 +21,7 @@
 
 This page walks through a complete SpaceBlocks run and the recommendations to make it smooth. For the exhaustive key reference see [Configuration](configuration.md); for what each rule does, [Rule reference](rules.md).
 
-If you want to see an example run on public data, see the [reproducibility runs](reproduction.md) page — Visium HD and Xenium 5K worked examples can be found there.
+If you want to see an example run on public data, see the [public data end-to-end example runs](demos.md) page — Visium HD and Xenium 5K worked examples can be found there.
 
 > [!TIP]
 > A run is defined almost entirely by two things: your **experimental design**
@@ -166,6 +166,6 @@ To reproduce your full run, make sure to back up:
 
 ## 9. Example runs
 
-You may check our [end-to-end examples on public data](reproduction.md) to see how a full run looks.
+You may check our [public data end-to-end example runs](demos.md) to see how a full run looks.
 
 Both the Visium HD and Xenium 5K examples are set to run in <40 min under a slurm scheduler system, with individual jobs not going above 8Gb of RAM use.

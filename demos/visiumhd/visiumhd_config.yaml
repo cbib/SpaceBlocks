@@ -1,16 +1,16 @@
 # Ready-to-run config for the visiumhd public-data example (mode: decoupled).
-# Build the contracts first (reproduction/visiumhd/format_visiumhd*.py),
+# Build the contracts first (demos/visiumhd/format_visiumhd*.py),
 # then point the Snakefile at this file. Resources are deliberately low (tiny test).
 mode: decoupled
-post_processing_outdir: /scratch/CBiB/soterino/reproduction/visiumhd/results
-logdir: /scratch/CBiB/soterino/reproduction/visiumhd/logs
-spaceranger_processing_outdir: /scratch/CBiB/soterino/reproduction/visiumhd/_unused
-geojson_path: /scratch/CBiB/soterino/reproduction/visiumhd/_unused
-contract_dir: reproduction/visiumhd/contracts
+post_processing_outdir: /scratch/CBiB/soterino/demos/visiumhd/results
+logdir: /scratch/CBiB/soterino/demos/visiumhd/logs
+spaceranger_processing_outdir: /scratch/CBiB/soterino/demos/visiumhd/_unused
+geojson_path: /scratch/CBiB/soterino/demos/visiumhd/_unused
+contract_dir: demos/visiumhd/contracts
 random_seed: 0
 use_precomputed_clusters: true
-precomputed_metadata_dir: 'reproduction/visiumhd/metadata'
-core_samples: reproduction/visiumhd/contracts/core_samples.tsv
+precomputed_metadata_dir: 'demos/visiumhd/metadata'
+core_samples: demos/visiumhd/contracts/core_samples.tsv
 xenium5k:
   xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
   zarr_dir: ''
@@ -80,8 +80,8 @@ qc_sweep:
     - 10
     - 15
     - 20
-cluster_annotations: reproduction/visiumhd/cluster_annotations_vhd_demo.tsv
-snakemake_cell_markers: reproduction/visiumhd/snakemake_cell_markers_vhd.tsv
+cluster_annotations: demos/visiumhd/cluster_annotations_vhd_demo.tsv
+snakemake_cell_markers: demos/visiumhd/snakemake_cell_markers_vhd.tsv
 external_annotation:
   enabled: false
   column: manual_celltype
@@ -120,7 +120,7 @@ subcompartments:
     resolution_max: 0.6
     resolution_step: 0.2
 gene_exploration:
-  queries: reproduction/visiumhd/gene_queries_demo.tsv
+  queries: demos/visiumhd/gene_queries_demo.tsv
   aucell_max_rank_fraction: 0.05
   niche_column: spatial_niche
   dpi: 300

@@ -1,6 +1,6 @@
-# Reproduce the paper run — `mode: decoupled` demos
+# Demos — public-data runs per technology
 
-This page shows how to run SpaceBlocks end-to-end on **public data**, and documents how to prepare your own inputs for `mode: decoupled`.
+This page shows how to run SpaceBlocks end-to-end on **public data** for each supported technology, and documents how to prepare your own inputs for `mode: decoupled`.
 
 > [!WARNING]
 > The tiny case in `.tests/` exists only to exercise the DAG in CI, and to render the workflow's tube map on the Snakemake catalog.
@@ -19,7 +19,7 @@ To keep the tutorials simple and lightweight, we use 1 sample from a public data
 
 We provide preconfigured `config` files, pre-annotated regions (GeoJSON files), clusters and cluster-to-cell type equivalences for the example public datasets to ensure reproducibility.
 
-The exact environment versions used during the generation of these tutorials can be found under `reproduction/lock.envs`.
+The exact environment versions used during the generation of these tutorials can be found under `demos/lock.envs`.
 
 Each of the examples below can run under 8Gb of RAM and 4 cores in <40 min under our `slurm` HPC system:
 
@@ -52,7 +52,7 @@ conda env create --file=workflow/envs/visiumhd.yaml
 conda activate visiumhd
 # move to the reproducibility dir and place the downloaded outs under data/<SAMPLE>/
 # move to the reproducibility dir and download the three files under data/<SAMPLE>/
-cd reproduction/visiumhd
+cd demos/visiumhd
 mkdir -p data/Visium_HD_Mouse_Brain && cd data/Visium_HD_Mouse_Brain
 BASE=https://cf.10xgenomics.com/samples/spatial-exp/4.0.1/Visium_HD_Mouse_Brain
 curl -O $BASE/Visium_HD_Mouse_Brain_segmented_outputs.tar.gz
@@ -79,7 +79,7 @@ conda env create --file=workflow/envs/xenium5k.yaml
 # activate it
 conda activate xenium5k
 # move to the reproduciblity dir
-cd reproduction/xenium5k
+cd demos/xenium5k
 # download the Xenium bundle into data/<SAMPLE>/
 mkdir -p data && cd data
 curl -O https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Human_Skin_FFPE/Xenium_Prime_Human_Skin_FFPE_outs.zip
@@ -96,14 +96,14 @@ Importantly, **`format_xenium.py` embeds a greyscale composite of the `morpholog
 
 ## Configure and run the examples
 
-A ready-to-run config ships next to each example: `reproduction/xenium5k/xenium5k_config.yaml` and `reproduction/visiumhd/visiumhd_config.yaml`. Optionally, you may use an external reference for the `ingest` rule, we provide external links to set in the example config files.
+A ready-to-run config ships next to each example: `demos/xenium5k/xenium5k_config.yaml` and `demos/visiumhd/visiumhd_config.yaml`. Optionally, you may use an external reference for the `ingest` rule, we provide external links to set in the example config files.
 
 To use one, comment the default `configfile:` line in `workflow/Snakefile` and uncomment the matching example line (all are already present):
 
 ```python
 # configfile: "config/config.yaml"
-# configfile: reproduction/visiumhd/visiumhd_config.yaml      # alternative for visiumhd
-configfile: "reproduction/xenium5k/xenium5k_config.yaml"
+# configfile: demos/visiumhd/visiumhd_config.yaml      # alternative for visiumhd
+configfile: "demos/xenium5k/xenium5k_config.yaml"
 ```
 
 > [!WARNING]
@@ -121,7 +121,7 @@ snakemake run_postprocessing             --sdm conda   # integration + DE across
 
 #### Config files
 
-The shipped `reproduction/xenium5k/xenium5k_config.yaml` is set up to demonstrate the optional rules too:
+The shipped `demos/xenium5k/xenium5k_config.yaml` is set up to demonstrate the optional rules too:
 
 - **Subcompartment re-clustering.** `subcompartments` groups cell type labels and re-clusters them (`subcluster` rule, included in `run_posprocessing`).
 - **Gene / signature exploration.** `gene_queries_demo.tsv` holds a small gene set and a gene to showcase the `run_exploration` CoreBlock capabilities.
@@ -147,14 +147,14 @@ To generate valid *contract* AnnData objects (saved as h5ads), follow the [contr
 <contract_dir>/<sample>.h5ad
 ```
 
-where each `<sample>` is a row in `config/core_samples.tsv`. The sample names in the sheet, the folder names, and the `obs["sample"]` values must all match. The example scripts (see above) guarantee this. You can find the TSV examples in `reproduction/<technology>/contracts/core_samples.tsv`.
+where each `<sample>` is a row in `config/core_samples.tsv`. The sample names in the sheet, the folder names, and the `obs["sample"]` values must all match. The example scripts (see above) guarantee this. You can find the TSV examples in `demos/<technology>/contracts/core_samples.tsv`.
 
 **3 — Config.** Point the run at them:
 
 ```yaml
 mode: "decoupled"
-contract_dir: "reproduction/visiumhd/contracts"   # holds <sample>.h5ad
-core_samples: "reproduction/visiumhd/contracts/core_samples.tsv"
+contract_dir: "demos/visiumhd/contracts"   # holds <sample>.h5ad
+core_samples: "demos/visiumhd/contracts/core_samples.tsv"
 # plus post_processing_outdir, logdir, geojson_path (see Configuration)
 ```
 

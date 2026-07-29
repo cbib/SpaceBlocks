@@ -14,12 +14,12 @@ from snakemake.utils import validate, min_version
 
 min_version("8.0")
 
-# configfile: "config/config.yaml"
+configfile: "config/config.yaml"
 # --- Public-data examples (mode: decoupled) -------------------------------------
 # To run a worked example instead of your own data, comment the line above and
 # uncomment ONE of these (see docs -> Reproduce & examples):
-# configfile: "reproduction/xenium5k/xenium5k_config.yaml"
-configfile: "reproduction/visiumhd/visiumhd_config.yaml"
+# configfile: "demos/xenium5k/xenium5k_config.yaml"
+# configfile: "demos/visiumhd/visiumhd_config.yaml"
 validate(config, schema="schemas/config.schema.yaml")
 
 # Helper functions

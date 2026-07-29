@@ -43,7 +43,7 @@ If you are not familiar with Snakemake, there are three key files to configure:
 
 The full [configuration reference](https://cbib.github.io/SpaceBlocks/configuration/) presents a detailed explanation on how to set `config.yaml`.
 
-We recommend reading the configuration reference first, and then starting with the tutorial on [how to streamline a full run](https://cbib.github.io/SpaceBlocks/getting-started), and an [example with public data](https://cbib.github.io/SpaceBlocks/reproduction).
+We recommend reading the configuration reference first, and then starting with the tutorial on [how to streamline a full run](https://cbib.github.io/SpaceBlocks/getting-started), and an [example with public data](https://cbib.github.io/SpaceBlocks/demos/).
 
 > [!TIP]
 > Any run can be fully reproduced end-to-end only with the experimental design and cell type annotations.
@@ -77,12 +77,12 @@ Full, searchable documentation lives at **https://cbib.github.io/SpaceBlocks/ind
 
 - **[Workflow design, architectural decisions and output structure](https://cbib.github.io/SpaceBlocks/design/)** — a brief explanation on the HeadBlock/CoreBlock split, the standardized *contract* h5ad AnnData object, and output tree.
 - **[Get started: recommendations for a full run](https://cbib.github.io/SpaceBlocks/getting-started/)** — how to streamline a full run.
+- **[Demos](https://cbib.github.io/SpaceBlocks/demos/)** — public data end-to-end example runs.
 - **[Rule reference](https://cbib.github.io/SpaceBlocks/rules/)** — every rule explained briefly, grouped by HeadBlock/CoreBlock phase.
 - **[Outputs](https://cbib.github.io/SpaceBlocks/outputs/)** — what each step produces and why it is useful.
 - **[Configuration](https://cbib.github.io/SpaceBlocks/configuration/)** — explanation of all config keys and sample sheets.
 - **[QuPath annotation](https://cbib.github.io/SpaceBlocks/qupath-tutorial/)** — tutorial to easily draw and export the region annotations.
 - **[Environments](https://cbib.github.io/SpaceBlocks/environments/)** — the Conda environments and how to lock them.
-- **[Reproduce example run](https://cbib.github.io/SpaceBlocks/reproduction/)** — example use on public data.
 
 ## Citing SpaceBlocks
 

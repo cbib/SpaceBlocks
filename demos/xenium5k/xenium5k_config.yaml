@@ -1,18 +1,18 @@
 # Ready-to-run config for the xenium5k public-data example (mode: decoupled).
-# Build the contracts first (reproduction/xenium5k/format_xenium*.py),
+# Build the contracts first (demos/xenium5k/format_xenium*.py),
 # then point the Snakefile at this file. Resources are deliberately low (tiny test).
 mode: decoupled
-post_processing_outdir: /scratch/CBiB/soterino/reproduction/xenium5k/results
-logdir: /scratch/CBiB/soterino/reproduction/xenium5k/logs
-spaceranger_processing_outdir: /scratch/CBiB/soterino/reproduction/xenium5k/_unused
-geojson_path: /scratch/CBiB/soterino/reproduction/xenium5k/_unused
-contract_dir: reproduction/xenium5k/contracts
+post_processing_outdir: /scratch/CBiB/soterino/demos/xenium5k/results
+logdir: /scratch/CBiB/soterino/demos/xenium5k/logs
+spaceranger_processing_outdir: /scratch/CBiB/soterino/demos/xenium5k/_unused
+geojson_path: /scratch/CBiB/soterino/demos/xenium5k/_unused
+contract_dir: demos/xenium5k/contracts
 random_seed: 0
 use_precomputed_clusters: true
-precomputed_metadata_dir: 'reproduction/xenium5k/metadata'
-core_samples: reproduction/xenium5k/contracts/core_samples.tsv
+precomputed_metadata_dir: 'demos/xenium5k/metadata'
+core_samples: demos/xenium5k/contracts/core_samples.tsv
 xenium5k:
-  xenium_dir: /scratch/CBiB/soterino/reproduction/xenium5k/results/{sample}
+  xenium_dir: /scratch/CBiB/soterino/demos/xenium5k/results/{sample}
   zarr_dir: ''
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
@@ -80,7 +80,7 @@ qc_sweep:
     - 10
     - 15
     - 20
-cluster_annotations: reproduction/xenium5k/cluster_annotations_x5k_demo.tsv
+cluster_annotations: demos/xenium5k/cluster_annotations_x5k_demo.tsv
 snakemake_cell_markers: config/snakemake_cell_markers.tsv
 external_annotation:
   enabled: false
@@ -123,7 +123,7 @@ subcompartments:
     resolution_max: 0.6
     resolution_step: 0.2
 gene_exploration:
-  queries: reproduction/xenium5k/gene_queries_demo.tsv
+  queries: demos/xenium5k/gene_queries_demo.tsv
   aucell_max_rank_fraction: 0.05
   niche_column: spatial_niche
   dpi: 300
