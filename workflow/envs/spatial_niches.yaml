@@ -1,10 +1,6 @@
 name: spatial_niches
 channels:
   - conda-forge
-
-# Isolated environment for spatial niche / domain identification.
-# Kept separate from visiumhd.yaml so the niche-clustering method (BANKSY)
-# can be swapped without touching the core single-cell stack.
 dependencies:
   - python=3.10
 
@@ -12,11 +8,6 @@ dependencies:
   - anndata>=0.10
   - scanpy>=1.10
   - harmonypy==0.0.10          # batch correction on the BANKSY PCA
-  # Leiden clustering backend. scanpy's sc.tl.leiden(flavor="igraph") uses
-  # python-igraph (provides `import igraph`); community_leiden with a resolution
-  # arg needs >=0.10. On conda-forge the Python bindings are "python-igraph"
-  # (the "igraph" package there is the C library). leidenalg is only needed for
-  # the older flavor="leidenalg" (unused now) — kept for compatibility.
   - python-igraph>=0.10
   - leidenalg>=0.8
 
@@ -34,9 +25,4 @@ dependencies:
   # ── pip-only packages ───────────────────────────────────────────
   - pip
   - pip:
-      # Official BANKSY Python package. The GitHub repo is "Banksy_py", but its
-      # maintained PyPI distribution is "pybanksy" (provides the banksy +
-      # banksy_utils modules). 1.3.4 is the release that added multi-sample +
-      # Harmony. To pin to the repo directly instead, replace with:
-      #   - git+https://github.com/prabhakarlab/Banksy_py.git
       - pybanksy>=1.3.4

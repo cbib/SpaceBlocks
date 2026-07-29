@@ -1,7 +1,3 @@
-# xenium5k — Xenium 5K Headblock environment (SpatialData I/O → contract h5ad).
-# Only the head needs the spatialdata stack; the Coreblock keeps using visiumhd.yaml.
-# Lower bounds only (consistent with the other envs); commit a lock for a release
-# (see docs/environments.md).
 name: xenium5k
 channels:
   - conda-forge
