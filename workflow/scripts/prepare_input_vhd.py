@@ -51,18 +51,13 @@ out_h5ad     = str(snakemake.output.h5ad)
 
 
 # ── File discovery helper ────────────────────────────────────────────────────
-def find_sr_file(sr_outdir, *patterns):
-    """Search for a file under the Space Ranger output directory.
-
-    Tries each glob pattern in order and returns the first match."""
-    for pattern in patterns:
-        matches = glob(os.path.join(sr_outdir, pattern))
-        if matches:
-            return matches[0]
-    tried = ", ".join(patterns)
-    raise FileNotFoundError(
-        f"Could not find any of [{tried}] under {sr_outdir}"
-    )
+# Space Ranger file discovery, shared with the other VHD head step (no drift).
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from vhd_sr import find_sr_file
 
 
 def _normalise_cell_id(raw_id):
@@ -115,13 +110,9 @@ try:
         "barcode_mappings.parquet",
     )
 
-    hires_image_path = find_sr_file(
-        sr_outdir,
-        "outs/segmented_outputs/spatial/tissue_hires_image.png",
-        "outs/spatial/tissue_hires_image.png",
-        "segmented_outputs/spatial/tissue_hires_image.png",
-        "spatial/tissue_hires_image.png",
-    )
+    # canonical copy declared as an input (generate_qupath_vhd already discovered it) —
+    # no second glob of the SR tree, so the two head steps can't diverge on the image.
+    hires_image_path = str(snakemake.input.hires_png)
 
     scalefactors_path = find_sr_file(
         sr_outdir,

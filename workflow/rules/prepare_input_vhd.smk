@@ -2,6 +2,7 @@ rule prepare_input_vhd:
     """Build the UNFILTERED contract h5ad from Space Ranger + QuPath annotations."""
     input:
         sr_done=f"{OUTDIR_SR}/{{sample}}/.done",
+        hires_png=rules.generate_qupath_vhd.output.qupath_image,
     output:
         h5ad=config["contract"]["unfiltered_h5ad"],
     params:

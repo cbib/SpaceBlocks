@@ -30,16 +30,13 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("generate_qupath_image")
 
 
-def find_sr_file(sr_outdir, *patterns):
-    """Return the first file under sr_outdir matching any of the glob patterns
-    (tried in order). Kept in sync with prepare_input.find_sr_file so both head
-    steps discover the SR hires image the same way."""
-    for pattern in patterns:
-        matches = glob(os.path.join(sr_outdir, pattern), recursive=True)
-        if matches:
-            return matches[0]
-    tried = ", ".join(patterns)
-    raise FileNotFoundError(f"Could not find any of [{tried}] under {sr_outdir}")
+# Space Ranger file discovery, shared with the other VHD head step (no drift).
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from vhd_sr import find_sr_file, HIRES_IMAGE_PATTERNS
 
 
 try:
@@ -54,14 +51,7 @@ try:
 
     # Same fallbacks as prepare_input, plus a recursive catch-all for unusual
     # SR layouts (first match wins).
-    hires_src = find_sr_file(
-        sr_outdir,
-        "outs/segmented_outputs/spatial/tissue_hires_image.png",
-        "outs/spatial/tissue_hires_image.png",
-        "segmented_outputs/spatial/tissue_hires_image.png",
-        "spatial/tissue_hires_image.png",
-        "**/tissue_hires_image.png",
-    )
+    hires_src = find_sr_file(sr_outdir, *HIRES_IMAGE_PATTERNS)
     log.info("  found hires image: %s", hires_src)
 
     Path(out_png).parent.mkdir(parents=True, exist_ok=True)
