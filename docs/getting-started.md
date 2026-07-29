@@ -102,7 +102,7 @@ Next, you may run the preprocessing CoreBlock:
 snakemake run_preprocessing --sdm conda   # validate → QC → normalise → cluster
 ```
 
-The output (see [the output structure](design.md#output-structure) for details) will show spatial plots and UMAPs containing clustering metrics (clustree, Silhouette scores) for each resolution in the range, predefined markers (*optional*), QC plots to diagnose potentially noisy clusters. Then, you may proceed to the annotation step.
+The output (see [Outputs](outputs.md) for what every file is, and [the output tree](design.md#output-structure) for where it lands) will show spatial plots and UMAPs containing clustering metrics (clustree, Silhouette scores) for each resolution in the range, predefined markers (*optional*), QC plots to diagnose potentially noisy clusters. Then, you may proceed to the annotation step.
 
 ## 5. Annotate cell types
 

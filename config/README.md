@@ -197,4 +197,4 @@ post_processing_outdir: "/path/to/results"
 
 Start from the commented `config/config.yaml` shipped with the workflow and adjust the paths and sample sheets to your data.
 
-You may next read the [get started](../docs/getting-started.md) documentation and the [examples with public data](../docs/reproduction.md).
+You may next read the [get started](https://cbib.github.io/SpaceBlocks/getting-started/) documentation and the [examples with public data](https://cbib.github.io/SpaceBlocks/reproduction/).

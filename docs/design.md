@@ -16,7 +16,7 @@ SpaceBlocks is built around one idea: a technology-specific **HeadBlock** turns 
 
 Adding a platform means writing a new HeadBlock; the CoreBlock is shared and stable across technologies.
 
-Importantly, the CoreBlocks immediately admit external data, as soon as they pass the `validate_input` rule (see [below](design.md#the-validation-contract)).
+Importantly, the CoreBlocks immediately admit external data, as soon as they pass the `validate_input` rule (see [below](design.md#the-validation-object-contract)).
 
 ## Repository structure
 
@@ -84,6 +84,8 @@ For a worked walk-through of building these files by hand (naming, layout, confi
 
 ## Output structure
 
+For what every file is and why it is useful, see [Outputs](outputs.md); the tree below shows where each lands.
+
 ```
 {post_processing_outdir}/
 ├── Samples/{sample}/
@@ -120,8 +122,6 @@ For a worked walk-through of building these files by hand (naming, layout, confi
 
 The aim of SpaceBlocks is to allow for long-term maintainable and extensible Spatial Transcriptomics analyses across platforms and tools. Below you can find guidelines for development.
 
-If you want to contribute or extend SpaceBlocks, see [CONTRIBUTING.md](https://github.com/cbib/SpaceBlocks/blob/main/CONTRIBUTING.md) for the conventions and validation workflow.
-
 ### Extending HeadBlocks to a new platform
 
 If you wished to run SpaceBlocks but your platform is not listed among the available SpaceBlocks HeadBlocks, there are two options available:
@@ -144,3 +144,7 @@ If you wished to write a new HeadBlock:
 SpaceBlocks includes many utilities for ST analyses, but there is room for extension and inclusion of flexible analysis parameters (i.e. methods for normalization, integration, variable gene selection, etc.).
 
 If you wished to contribute, we will be happy to revise contributions to the SpaceBlocks workflow.
+
+---
+
+Want to contribute or extend SpaceBlocks? See [CONTRIBUTING.md](https://github.com/cbib/SpaceBlocks/blob/main/CONTRIBUTING.md) for the conventions and validation workflow.

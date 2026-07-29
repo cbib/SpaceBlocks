@@ -1,7 +1,7 @@
 # Index
 
 - [SpaceBlocks — rule reference](#spaceblocks--rule-reference)
-- [HeadBlocks](#headBlocks)
+- [HeadBlocks](#headblocks)
   - [Visium HD](#visium-hd) — `spaceranger_count_vhd`, `generate_qupath_vhd`, `prepare_input_vhd`
   - [Xenium 5K](#xenium-5k) — `convert_zarr_x5k`, `generate_qupath_x5k`, `prepare_input_x5k`
 - [CoreBlocks](#coreblocks)
