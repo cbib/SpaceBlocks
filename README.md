@@ -73,7 +73,7 @@ snakemake run_exploration         --sdm conda   # explore genes (integrated and 
 
 ## Documentation
 
-Full, searchable documentation lives at **https://cbib.github.io/SpaceBlocks/index/**:
+Full, searchable documentation lives at **https://cbib.github.io/SpaceBlocks/**:
 
 - **[Workflow design, architectural decisions and output structure](https://cbib.github.io/SpaceBlocks/design/)** — a brief explanation on the HeadBlock/CoreBlock split, the standardized *contract* h5ad AnnData object, and output tree.
 - **[Get started: recommendations for a full run](https://cbib.github.io/SpaceBlocks/getting-started/)** — how to streamline a full run.
