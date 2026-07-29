@@ -1,7 +1,7 @@
 site_name: SpaceBlocks
 site_description: A Snakemake workflow for single-cell-resolution spatial transcriptomics
-repo_url: https://github.com/<owner>/SpaceBlocks
-repo_name: <owner>/SpaceBlocks
+repo_url: https://github.com/cbib/SpaceBlocks
+repo_name: cbib/SpaceBlocks
 edit_uri: edit/main/docs/
 
 theme:
