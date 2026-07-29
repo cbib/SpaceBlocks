@@ -1,9 +1,8 @@
-# workflow/rules/prepare_input_x5k.smk
-# Xenium5k Headblock — zarr + QuPath GeoJSON → the standardized UNFILTERED CONTRACT
-# h5ad (raw counts, embedded morphology image, region_annotation). No QC / normalise /
-# cluster: that is the Coreblock's job (preprocess_umap). Analogous to prepare_input_vhd
-# for Visium HD; writes the same single contract path every core consumer reads.
 rule prepare_input_x5k:
+    """
+    Xenium5k Headblock — zarr + QuPath GeoJSON → the standardized UNFILTERED CONTRACT
+    h5ad. Analogous to prepare_input_vhd for Visium HD; writes an AnnData.h5ad contract file per sample.
+    """
     input:
         done=rules.convert_zarr_x5k.output.done,                   # zarr completion marker
         qupath_meta=rules.generate_qupath_x5k.output.qupath_meta,   # geojson px→µm scale

@@ -5,31 +5,8 @@ Reads the VALIDATED, unfiltered, segmented h5ad (core contract input) and makes
 the consequences of candidate QC thresholds explicit, so the final analysis.*
 thresholds can be chosen deliberately before run_upstream. It does NOT filter,
 NOT cluster and does NOT write an h5ad.
-
-Per-feature thresholds are LISTS (e.g. min_genes=[100, 200]) resolved per sample
-upstream (shared `default` + optional `per_sample` overrides). For every cutoff
-it shows WHERE on the tissue the affected cells land.
-
-Outputs (per sample)
---------------------
-  * qc_violins.png            : counts / genes / %mito violins (grouped by region
-                                if present, strip on, scatter rasterised) with
-                                every candidate threshold drawn as a line.
-  * qc_remove_low_genes.png   : per-parameter "landing" figure — leftmost panel =
-  * qc_remove_low_counts.png    whole dataset, then one panel per threshold showing
-  * qc_remove_high_counts.png   the removed cells on the tissue. Two rows when an
-  * qc_remove_high_mito.png     ingest reference is given (top = by cell type,
-                                bottom = plain), one row otherwise.
-  * qc_features_spatial.png   : continuous spatial composite of the three metrics.
-  * qc_joint_scatter.png      : n_genes vs total_counts coloured by %mito, with
-                                thresholds drawn (doublet / debris view).
-  * qc_thresholds_summary.tsv : per-feature ranges + per-threshold n removed /
-                                retained and the percentile each threshold lands at.
-  * qc_ingest_removed.tsv     : (if ingest) cell type × threshold → removed; else stub.
-
-Mito is computed only when genes match the prefix(es); spatial plots use the
-embedded image when present and otherwise scatter on coordinates.
 """
+
 import logging
 import os
 import sys

@@ -1,38 +1,3 @@
-# workflow/rules/qc_sweep.smk
-# ─────────────────────────────────────────────────────────────────────────────
-# OPTIONAL pre-filtering QC diagnostic (modular core, module 1). Per sample, it
-# reads the VALIDATED unfiltered h5ad and shows where candidate QC cutoffs land
-# on the tissue, so the final analysis.* thresholds can be chosen deliberately.
-# It does NOT filter, NOT cluster and does NOT write an h5ad. Request its outputs
-# explicitly — it is not pulled in by run_preprocessing.
-#
-# Thresholds are LISTS per feature and may be SHARED across samples (a `default`
-# block) or UNIQUE per sample (a `per_sample` override block, merged key-by-key).
-# An ingest reference (cell-type labels) can optionally be overlaid for a richer
-# "what am I removing" diagnosis. When enabled it reuses the SAME reference the
-# downstream ingest_ref rule uses (top-level config: ingest_ref +
-# ingest_ref_label_key) and transfers labels via sc.tl.ingest — there is no
-# separate qc_sweep reference to configure.
-#
-# Expected config (in addition to the `contract` / `outdir` / `samples` blocks
-# used by validate_input.smk):
-#
-#   ingest_ref: "resources/reference.h5ad"   # top-level; shared with ingest_ref rule
-#   ingest_ref_label_key: "cell_type"        # top-level; obs column in the reference
-#   qc_sweep:
-#     ingest_enabled: false                  # overlay cell types on removed cells
-#     dpi: 300
-#     thresholds:
-#       default:
-#         min_genes:  [100, 200]
-#         min_counts: [10, 50]
-#         max_counts: [3000, 5000]
-#         max_pct_mt: [10, 15, 20]
-#       per_sample:                      # optional, overrides default key-by-key
-#         SAMPLE_A:
-#           max_counts: [4000]
-# ─────────────────────────────────────────────────────────────────────────────
-
 _CONTRACT = config.get("contract", {})
 _OUT = config.get("outdir", "results")
 _QC = config.get("qc_sweep", {})

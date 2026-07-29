@@ -2,7 +2,7 @@
 validate_input.py — Input-contract validation for the modular CORE.
 ===================================================================
 Runs once per sample, BEFORE qc_sweep / run_upstream. It asserts that the
-unfiltered, segmented h5ad produced by the (technology-specific) HEAD satisfies
+unfiltered, segmented h5ad produced by the (technology-specific) HEAD or manually inputted satisfies
 the core contract, and records whether an image is embedded so that spatial
 plots downstream can choose between an image-backed `sc.pl.spatial` and a plain
 coordinate scatter. It NEVER modifies the data — file preparation is a head

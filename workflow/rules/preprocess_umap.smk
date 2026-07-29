@@ -1,13 +1,3 @@
-# workflow/rules/preprocess_umap.smk
-# ─────────────────────────────────────────────────────────────────────────────
-# CORE preprocessing. Now reads the UNFILTERED contract h5ad
-# (config["contract"]["unfiltered_h5ad"], produced by prepare_input) instead of
-# the Space Ranger tree, so it is technology-agnostic: QC filter → normalise →
-# PCA → UMAP → multi-resolution Leiden, with optional precomputed-cluster reload.
-# (The qupath_image output moved to rule generate_qupath_image; SR/image/geojson
-# reading moved to rule prepare_input.)
-# ─────────────────────────────────────────────────────────────────────────────
-
 rule preprocess_umap:
     """Core QC / normalise / PCA / UMAP / multi-resolution Leiden on the contract h5ad."""
     input:

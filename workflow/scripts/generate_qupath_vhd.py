@@ -5,18 +5,6 @@ Copies the Space Ranger hires tissue image out of the (version-varying) SR outpu
 tree to a stable, predictable path so it can be opened and annotated in QuPath.
 The manually exported "{sample}_tissue_hires_image.geojson" is later consumed by
 prepare_input to build the region_annotation contract column.
-
-This is a cheap file copy (no image decoding): it locates tissue_hires_image.png
-using the same glob-pattern fallbacks as prepare_input.find_sr_file (so it tolerates
-Space Ranger layout/version differences) and copies it verbatim to
-    {SAMPLES_DIR}/{sample}/QuPath_image/{sample}_tissue_hires_image.png
-
-Snakemake I/O
--------------
-  input.sr_done        : SR completion sentinel ({OUTDIR_SR}/{sample}/.done)
-  params.sr_outdir     : SR output directory to search ({OUTDIR_SR}/{sample})
-  params.sample_id     : sample wildcard
-  output.qupath_image  : destination PNG (copied verbatim)
 """
 
 import logging

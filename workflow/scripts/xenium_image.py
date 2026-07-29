@@ -1,14 +1,10 @@
 """
 xenium_image.py — robust morphology-channel compositing for the Xenium5k head.
-
+==============================================================================
 Shared by export_qupath_x5k (RGB TIFF for QuPath annotation) and prepare_input_x5k
 (greyscale background embedded in the contract), so the two can never diverge.
 
-Why this exists: the Xenium `morphology_focus` image can have a varying NUMBER and
-ORDER of channels across instruments / panels / software versions (e.g. DAPI-only vs
-the multimodal DAPI + boundary + interior-RNA stack). The original code assumed a
-fixed 4-channel order by POSITION, silently mis-colouring or ignoring channels when
-that assumption did not hold. This module instead:
+This module:
 
   * normalises each channel independently (1–99th percentile),
   * assigns a colour by channel NAME (nuclear→blue, membrane/boundary→red,

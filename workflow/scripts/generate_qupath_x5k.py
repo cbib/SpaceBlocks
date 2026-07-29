@@ -1,6 +1,6 @@
 """
 generate_qupath_x5k.py — Extract composite TIFF from zarr for QuPath.
-
+=====================================================================
 Reads morphology channels at a configurable pyramid level, composites
 into an RGB TIFF, and saves a scale-factor JSON for coordinate mapping
 between QuPath pixel coords and the micron coordinate system.

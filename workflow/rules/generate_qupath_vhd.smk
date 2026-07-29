@@ -1,17 +1,3 @@
-# workflow/rules/generate_qupath_vhd.smk
-# ─────────────────────────────────────────────────────────────────────────────
-# Visium HD HEAD (step 2). Copies the Space Ranger hires tissue image out of the
-# (version-varying) SR tree to a stable path, so it can be opened and annotated
-# in QuPath. The exported "{sample}_tissue_hires_image.geojson" (placed in
-# GEOJ_DIR) is later consumed by prepare_input_vhd.
-#
-# Kept SEPARATE from prepare_input_vhd on purpose: it is a cheap file copy (low
-# resources) and is meant to be grouped into a single DAG job together with
-# spaceranger — the geojson annotation must exist BEFORE prepare_input_vhd runs.
-# (DAG grouping will be wired in a later revision.)
-# Globals used (defined in the Snakefile): OUTDIR_SR, SAMPLES_DIR, LOGDIR, get_resource.
-# ─────────────────────────────────────────────────────────────────────────────
-
 rule generate_qupath_vhd:
     """Copy the Space Ranger hires tissue image out for QuPath annotation."""
     input:

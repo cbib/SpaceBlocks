@@ -5,18 +5,6 @@ Runs BANKSY jointly across all preprocessed samples to find spatial domains
 ("niches") that are common across the cohort, then writes one niche label per
 cell back as a per-sample TSV that annotate_cells injects as ``spatial_niche``.
 
-Flow (multi-sample BANKSY with Harmony, cell resolution):
-  1. Concatenate all preprocessed per-sample h5ads.
-  2. (Optional) subset to HVGs, then z-score (BANKSY convention).
-  3. Stagger each sample's spatial coordinates side-by-side so the single
-     BANKSY kNN graph never links spots across samples.
-  4. initialize_banksy + generate_banksy_matrix  → neighbour-augmented matrix.
-  5. PCA on the BANKSY matrix.
-  6. Harmony across samples on the BANKSY PCA (spatially-informed integration).
-  7. Leiden at niche_resolution → spatial_niche.
-  8. (Optional) BANKSY spatial majority-vote refinement of the niche labels
-     (refine), applied to freshly-computed OR reloaded/precomputed niches.
-
 Outputs:
   spatial_niches/
   ├── spatial_niches_concatenated.h5ad   (light: lognorm X + niche + embeddings)

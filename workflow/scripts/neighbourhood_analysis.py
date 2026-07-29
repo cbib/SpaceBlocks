@@ -200,9 +200,7 @@ try:
         #       directly-comparable "which cell types co-occur here" plot.
         #   (b) a compact pairwise cell-type × cell-type heatmap (co-occurrence averaged
         #       over distance), saved individually AND as a by-region composite.
-        # (Replaces the earlier self-/diagonal-co-occurrence composite, which showed a
-        #  different quantity — each type's self-clustering — and could be misread as
-        #  pairwise.) Regions with too few cells/types are skipped.
+        # Regions with too few cells/types are skipped.
         heatmaps = {}   # region -> DataFrame(cell_type × cell_type), distance-averaged
         for region in regions:
             rdata = adata[adata.obs["region_annotation"] == region].copy()

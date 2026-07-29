@@ -1,9 +1,8 @@
-# workflow/rules/generate_qupath_x5k.smk
-# Xenium5k Headblock — composite a morphology RGB TIFF (+ scale-factor JSON) from the
-# zarr for QuPath region annotation. Analogous to generate_qupath_vhd (Visium HD):
-# run it, annotate in QuPath, export {sample}_morphology.geojson into geojson_path,
-# then continue to prepare_input_x5k.
 rule generate_qupath_x5k:
+    """
+    Xenium5k Headblock — composite a morphology RGB TIFF (+ scale-factor JSON) from the
+    zarr for QuPath region annotation. Analogous to generate_qupath_vhd (Visium HD).
+    """
     input:
         done=rules.convert_zarr_x5k.output.done,
     output:

@@ -1,7 +1,7 @@
 """
 prepare_input_x5k.py — Xenium5k Headblock: build the standardized UNFILTERED CONTRACT
 h5ad from the SpatialData zarr + QuPath GeoJSON.
-
+======================================================================================
 Analogous to prepare_input.py (Visium HD). Produces ONLY the contract:
   X                     raw integer counts (NO filtering / normalisation / clustering)
   obsm['spatial']       cell centroids (µm)
