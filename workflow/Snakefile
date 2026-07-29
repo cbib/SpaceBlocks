@@ -18,12 +18,11 @@ min_version("8.0")
 # --- Public-data examples (mode: decoupled) -------------------------------------
 # To run a worked example instead of your own data, comment the line above and
 # uncomment ONE of these (see docs -> Reproduce & examples):
-configfile: "reproduction/xenium5k/xenium5k_config.yaml"
-# configfile: "reproduction/visiumhd/config.yaml"
+# configfile: "reproduction/xenium5k/xenium5k_config.yaml"
+configfile: "reproduction/visiumhd/visiumhd_config.yaml"
 validate(config, schema="schemas/config.schema.yaml")
 
-# Helper functions (kept out of this file and the rule files per the Snakemake
-# modularization guideline). Included first so they are visible everywhere below.
+# Helper functions
 include: "rules/common.smk"
 
 # ── Globals ──────────────────────────────────────────────────────────────────
@@ -37,15 +36,12 @@ GEOJ_DIR   = config["geojson_path"]
 SAMPLES_DIR = f"{OUTDIR_PP}/Samples"
 RANDOM_SEED = config.get("random_seed", 42)
 
-# Xenium 5K head: config block + where the SpatialData zarr stores are written
-# (defaults to the shared head-processing outdir).
+# Xenium 5K head specifics
 XENIUM5K        = config.get("xenium5k", {}) or {}
 XENIUM_ZARR_DIR = XENIUM5K.get("zarr_dir", "") or OUTDIR_SR
 
-# Run mode: either a HEAD technology name (that head builds the contract h5ads in
-# this run) or "decoupled" (the core consumes PRE-EXISTING contracts from
-# contract_dir; head rules are not included and validation aborts up front if any
-# sample is missing its contract). Add new heads to KNOWN_HEADS as implemented.
+# Run mode (HeadBlocks or decoupled)
+# Add new heads to KNOWN_HEADS as implemented.
 MODE = str(config.get("mode", "visiumhd")).lower()
 KNOWN_HEADS = ("visiumhd", "xenium5k")
 if MODE != "decoupled" and MODE not in KNOWN_HEADS:
@@ -54,20 +50,7 @@ if MODE != "decoupled" and MODE not in KNOWN_HEADS:
 IS_DECOUPLED = (MODE == "decoupled")
 
 # ── Input contract (modular head → core hand-off) ────────────────────────────
-# prepare_input_vhd WRITES this unfiltered h5ad; validate_input, qc_sweep and
-# preprocess_umap READ it. Path + validation root are derived here from
-# post_processing_outdir so they follow SAMPLES_DIR automatically (set after the
-# config-schema validation above, so they don't need to be declared in the schema).
 config.setdefault("contract", {})
-# CONTRACT_DIR = where the CORE READS the contract h5ads.
-#   HEAD mode:      prepare_input_{vhd,x5k} WRITE the contract into the per-sample output
-#                   tree (SAMPLES_DIR/{sample}/{sample}_unfiltered.h5ad), co-located with
-#                   that sample's adata/metadata/plots. contract_dir stays empty.
-#   DECOUPLED mode: the user drops pre-built h5ads into contract_dir, one per sample, named
-#                   after its core_samples.tsv row: contract_dir/{sample}.h5ad (flat — no
-#                   per-sample subfolder, no _unfiltered suffix, so the folder mirrors the
-#                   sheet and is easy to inspect). No head runs, so there is no producer to
-#                   keep in sync with.
 if IS_DECOUPLED:
     CONTRACT_DIR = config.get("contract_dir", "") or SAMPLES_DIR
     config["contract"]["unfiltered_h5ad"] = f"{CONTRACT_DIR}/{{sample}}.h5ad"
@@ -77,10 +60,6 @@ else:
 config["outdir"] = SAMPLES_DIR     # validate_input / qc_sweep write under the per-sample tree
 
 # ── Sample sheets ────────────────────────────────────────────────────────────
-# CORE sample sheet (technology-agnostic ANCHOR): the authoritative list of
-# samples plus any optional experimental-design columns. The CORE reads ONLY this
-# sheet; the `sample` value need NOT match obs["sample"] inside the contract h5ad.
-# Falls back to the head visiumhd_samples.csv if no core sheet is configured.
 CORE_SAMPLES = None
 _core_sheet = config.get("core_samples", "") or ""
 if _core_sheet:
@@ -95,9 +74,7 @@ if _core_sheet:
     if not SAMPLE_IDS:
         sys.exit(f"[config error] core_samples ({_core_sheet}) has no sample rows.")
 
-# HEAD sample sheet (Visium HD): fastq dirs / slide / area for spaceranger +
-# prepare_input_vhd. Needed only in head mode; guarded so a decoupled run needs no
-# visiumhd_samples.csv on disk.
+# HEAD sample sheet (Visium HD): fastq dirs / slide / area for spaceranger + prepare_input_vhd
 SAMPLES = {}
 _head_sheet = config.get("samples", "") or ""
 if os.path.isfile(_head_sheet):
@@ -109,24 +86,21 @@ if os.path.isfile(_head_sheet):
     validate(samples_df, schema="schemas/samples.schema.yaml")
     SAMPLES = samples_df.to_dict(orient="index")
 
-# Derive the sample list from the head sheet only when no core sheet is set.
+# Derive the sample list from the head sheet only when no core sheet is set
 if CORE_SAMPLES is None:
     if not SAMPLES:
         sys.exit("[config error] No core_samples sheet configured and no readable "
                  "visiumhd_samples.csv found — cannot determine the sample list.")
     SAMPLE_IDS = list(SAMPLES.keys())
 
-# Optional per-column colour palettes (sample + design columns) for downstream viz.
+# Optional per-column colour palettes (sample + design columns) for downstream visualization
 SAMPLE_COLORS = config.get("sample_colors", {}) or {}
 
-# Integration key: the obs column Harmony corrects on in integrate_samples
-# ("sample" = per-sample = current behaviour; e.g. "patient" to correct on that).
+# Integration key on integrate_samples
 INTEGRATION   = config.get("integration", {}) or {}
 INTEGRATE_KEY = str(INTEGRATION.get("integrate_key", "sample") or "sample")
 
-# Extra-annotation columns (core-sheet columns beyond `sample`) surfaced to
-# downstream plots/annotation tracks. NOT DE covariates. `extra_annotations.columns`
-# overrides; otherwise all non-sample core-sheet columns are used.
+# Extra-annotation columns (core-sheet columns beyond `sample`) surfaced to downstream plots/annotation tracks
 EXTRA_ANNOT = config.get("extra_annotations", {}) or {}
 if EXTRA_ANNOT.get("columns"):
     EXTRA_ANNOT_COLUMNS = list(EXTRA_ANNOT["columns"])
@@ -138,8 +112,6 @@ else:
 EXTRA_ANNO_COLS, EXTRA_ANNO_VALS, EXTRA_ANNO_COLORS = _extra_annot_color_triples()
 
 # ── Contract presence gate (decoupled mode) ──────────────────────────────────
-# In decoupled mode the core consumes PRE-EXISTING contract h5ads; abort early —
-# before any job is submitted — listing every sample missing its contract.
 if IS_DECOUPLED:
     _pat = config["contract"]["unfiltered_h5ad"]
     _missing = [(s, _pat.format(sample=s)) for s in SAMPLE_IDS
@@ -162,12 +134,7 @@ RESOLUTIONS = [
     )
 ]
 
-# Primary annotation drives EVERY downstream rule consistently: the annotation TYPE
-# (neighbourhood / pseudobulk, via ANNOT_TYPES) and its obs COLUMN (explore_genes /
-# subcluster, via DEFAULT_ANNOT_COL) both derive from PRIMARY_ANNOT_TYPE. External takes
-# over when enabled — so cells the external tool left unannotated cannot leak (as
-# tsv-cluster-labelled noise) into downstream analyses. Set annotation_types explicitly
-# to compare, e.g. ["tsv_annotation", "external_annotation"].
+# Primary/external annotation
 EXTERNAL_ENABLED   = bool((config.get("external_annotation", {}) or {}).get("enabled", False))
 PRIMARY_ANNOT_TYPE = "external_annotation" if EXTERNAL_ENABLED else "tsv_annotation"
 _ANNOT_TYPE_TO_COL = {
@@ -181,16 +148,12 @@ ANNOT_TYPES = list(config.get("annotation_types") or [PRIMARY_ANNOT_TYPE])
 
 ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"])
 
-# Pseudobulk DESeq2 DE is OPTIONAL and OFF by default (the pseudobulk_aggregate
-# count matrices + PCA QC are still produced; only the R/DESeq2 step is gated).
+# Pseudobulk DESeq2 DE is OPTIONAL and on by default
 RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 
-# Leiden per-resolution PLOTS are diagnostic (clustering itself lives in
-# preprocess_umap); optional so a run using external annotation can skip them.
 RUN_LEIDEN_ANALYSIS = bool(ANALYSIS.get("run_leiden_analysis", True))
 
-# External annotation: fail fast if enabled but the column is not present in every
-# sample's metadata (runs only when the external labels are fully in place).
+# External annotation: fail fast if enabled but the column is not present in every sample's metadata
 check_external_annotation()
 
 # Consistency: analysing the external annotation downstream requires it to be produced.
@@ -213,10 +176,6 @@ SPATIAL_NICHES_ENABLED = bool(SPATIAL_NICHES.get("enabled", False))
 SUBCOMPARTMENTS = list(config.get("subcompartments", {}).keys())
 
 # ── Rules ────────────────────────────────────────────────────────────────────
-# Rule files are included directly (grouped by phase for readability). The Headblock is
-# technology-specific and included only for the matching head; the Coreblock is the same
-# for every technology.
-
 # Headblock (technology-specific): builds the contract h5ad.
 if MODE == "visiumhd":
     include: "rules/spaceranger_count_vhd.smk"
@@ -238,7 +197,7 @@ include: "rules/spatial_niches.smk"
 
 # Coreblock — step 2: postprocessing.
 include: "rules/annotate_cells.smk"
-include: "rules/integrate_samples.smk"      # before pseudobulk (its input = integrated h5ad)
+include: "rules/integrate_samples.smk"
 include: "rules/pseudobulk_aggregate.smk"
 include: "rules/pseudobulk_de.smk"
 include: "rules/neighbourhood_analysis.smk"
@@ -250,8 +209,6 @@ include: "rules/explore_genes.smk"
 
 
 # ── Targets ──────────────────────────────────────────────────────────────────
-# Head-specific "QuPath annotation image" per sample, resolved by mode so the CORE
-# targets stay technology-agnostic (Visium HD hires PNG / Xenium morphology TIFF).
 if MODE == "visiumhd":
     QUPATH_IMAGES = expand(rules.generate_qupath_vhd.output.qupath_image, sample=SAMPLE_IDS)
 elif MODE == "xenium5k":
@@ -259,8 +216,6 @@ elif MODE == "xenium5k":
 else:
     QUPATH_IMAGES = []
 
-# Target input lists reference producing rules by name (rules.<rule>.output.<name>)
-# rather than repeating literal paths, so a path change in a rule propagates here.
 
 rule all:
     input:
