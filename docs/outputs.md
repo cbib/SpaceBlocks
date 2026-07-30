@@ -1,11 +1,3 @@
-# Index
-
-- [Outputs](#outputs)
-    - [Output directory structure](#output-directory-structure)
-- [Preprocessing outputs](#preprocessing-outputs)
-- [Postprocessing outputs](#postprocessing-outputsç)
-- [Exploration outputs](#exploration-outputs)
-
 # Outputs
 
 What each step of the workflow writes, and why it is useful. Everything lands under

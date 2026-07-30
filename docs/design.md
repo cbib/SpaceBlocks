@@ -1,15 +1,3 @@
-# Index
-
-- [Design & architecture](#design--architecture)
-- [Repository structure](#repository-structure)
-- [The Blocks](#the-blocks)
-- [The validation contract](#the-validation-object-contract)
-- [Output structure](#output-structure)
-- [Key design decisions](#key-design-decisions)
-- [Extending SpaceBlocks](#extending-spaceblocks)
-  - [Extending HeadBlocks to a new platform](#extending-headblocks-to-a-new-platform)
-  - [Extending the CoreBlocks](#extending-the-coreblocks)
-
 # Design & architecture
 
 SpaceBlocks is built around one idea: a technology-specific **HeadBlock** turns raw data into a standardized *contract* h5ad AnnData object, and a technology-agnostic **CoreBlock** does all the analysis on top of it.
@@ -145,6 +133,7 @@ SpaceBlocks includes many utilities for ST analyses, but there is room for exten
 
 If you wished to contribute, we will be happy to revise contributions to the SpaceBlocks workflow.
 
----
+
+## Contributing
 
 Want to contribute or extend SpaceBlocks? See [CONTRIBUTING.md](https://github.com/cbib/SpaceBlocks/blob/main/CONTRIBUTING.md) for the conventions and validation workflow.

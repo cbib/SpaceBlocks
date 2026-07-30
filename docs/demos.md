@@ -2,16 +2,8 @@
 
 This page shows how to run SpaceBlocks end-to-end on **public data** for each supported technology, and documents how to prepare your own inputs for `mode: decoupled`.
 
-> [!WARNING]
-> The tiny case in `.tests/` exists only to exercise the DAG in CI, and to render the workflow's tube map on the Snakemake catalog.
-
-- [Technical notes](#technical-notes)
-- [Visium HD example (mouse brain)](#visium-hd-example-mouse-brain)
-- [Xenium 5K example (human melanoma)](#xenium-5k-example-human-melanoma)
-  - [Configure and run the examples](#configure-and-run-the-examples)
-  - [What preconfigured files exercise](#what-preconfigured-files-exercise)
-- [Preparing other inputs for decoupled mode](#preparing-inputs-for-decoupled-mode)
-
+!!! warning "Repository synthetic data"
+    The tiny case in `.tests/` exists only to exercise the DAG in CI, and to render the workflow's tube map on the Snakemake catalog.
 
 ## Technical notes
 
@@ -39,8 +31,8 @@ Our HPC specifications
 
 SpaceBlocks is built to analyse single-cell resolution Spatial Transcriptomics data, so Visium HD data needs to be preprocessed via [bin2cell](https://github.com/Teichlab/bin2cell), [ENACT](https://github.com/Sanofi-Public/enact-pipeline) or, as in the Visium HD HeadBlock, Space Ranger >= v4.0.1 (internally implementing StarDist segmentation).
 
-> [!IMPORTANT]
-> We use a **Space Ranger ≥ 4.0.1** Visium HD dataset (one that ships `segmented_outputs/`). The older Space Ranger 3.x Mouse Brain release has **no** segmentation, so `format_visiumhd.py` would > find no cell table.
+!!! important "Space Ranger version matters"
+    We use a **Space Ranger ≥ 4.0.1** Visium HD dataset (one that ships `segmented_outputs/`). The older Space Ranger 3.x Mouse Brain release has **no StarDist segmentation**, so `format_visiumhd.py` would > find no cell table.
 
 For the example here presented, you may download the Visium HD dataset from the [10x Genomics web](https://www.10xgenomics.com/datasets/visium-hd-cytassist-gene-expression-libraries-of-mouse-brain-he-v4), or via terminal using curl or wget. This dataset has been processed with Space Ranger v4.0.1:
 
@@ -106,9 +98,8 @@ To use one, comment the default `configfile:` line in `workflow/Snakefile` and u
 configfile: "demos/xenium5k/xenium5k_config.yaml"
 ```
 
-> [!WARNING]
-> **Make sure to only have one uncommented config file in the Snakefile.**
-> Snakemake allows the Snakefile to reference multiple config files, so having multiple config files would lead to unexpected results.
+!!! warning "DO NOT INCLUDE several config files"
+    **Make sure to only have one uncommented config file in the Snakefile.** Snakemake allows the Snakefile to reference multiple config files, so having multiple config files would lead to unexpected results.
 
 Then launch the core:
 

@@ -48,10 +48,11 @@ plugins:
 
 nav:
   - Home: index.md
-  - Get started: getting-started.md
-  - Design & architecture: design.md
-  - Rule reference: rules.md
   - Configuration: configuration.md
-  - QuPath annotation: qupath-tutorial.md
-  - Environments: environments.md
+  - Get started: getting-started.md
   - Demos: demos.md
+  - QuPath annotation: qupath-tutorial.md
+  - Design & architecture: design.md
+  - Outputs: outputs.md
+  - Rule reference: rules.md
+  - Environments: environments.md

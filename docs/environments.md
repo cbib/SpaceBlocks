@@ -1,11 +1,10 @@
-# Index
+# Environments
 
-- [Conda environments & version pinning](#conda-environments--version-pinning)
-  - [Generating exact pins from the Snakemake-managed environments](#generating-exact-pins-from-the-snakemake-managed-environments)
-  - [Alternative: conda-lock (multi-platform locks)](#alternative-conda-lock-multi-platform-locks)
-  - [Note on the DE environment](#note-on-the-de-environment)
+SpaceBlocks has dedicated conda environments shared between workflow rules.
 
-# Conda environments & version pinning
+This page summarizes which rules are controled by which environments, and provides reproducibility guidelines.
+
+## Conda environments & version pinning
 
 The pipeline provisions one conda environment per rule group (run with `--use-conda`):
 
@@ -20,13 +19,13 @@ The pipeline provisions one conda environment per rule group (run with `--use-co
 
 `>=` bounds are reproducible enough for day-to-day use but not for archival reproducibility (a future solve may pick newer, potentially breaking versions). For a publication release, we recommend to generate and share the **exact** locks from the environments you actually tested, as below.
 
-> [!TIP]
-> For a reproducible release, commit one **lock file per environment** next to the
-> `envs/*.yaml`. Generate them from the environments you actually tested (see below),
-> e.g. `conda list -p .snakemake/conda/<hash>_ --explicit > envs/<env>_linux-64.lock`,
-> and use `conda create --file envs/<env>_linux-64.lock` to rebuild the exact stack.
-> Keep the loose `envs/*.yaml` as the maintainable/reusable surface and the locks as
-> the exact-reproducibility surface.
+!!! tip "Lock your environments"
+    For a reproducible release, commit one **lock file per environment** next to the
+    `envs/*.yaml`. Generate them from the environments you actually tested (see below),
+    e.g. `conda list -p .snakemake/conda/<hash>_ --explicit > envs/<env>_linux-64.lock`,
+    and use `conda create --file envs/<env>_linux-64.lock` to rebuild the exact stack.
+    Keep the loose `envs/*.yaml` as the maintainable/reusable surface and the locks as
+    the exact-reproducibility surface.
 
 ## Generating exact pins from the Snakemake-managed environments
 

@@ -1,5 +1,3 @@
-# Configuration
-
 This page explains how to fully set up the config files to run SpaceBlocks. Full documentation can be found at https://cbib.github.io/SpaceBlocks/configuration/.
 
 SpaceBlocks is configured through **`config/config.yaml`**, which contains all the parameters needed for the run, plus one or two **sample sheets**.

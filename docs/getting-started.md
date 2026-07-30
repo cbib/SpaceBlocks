@@ -1,32 +1,11 @@
-# Index 
-
-- [0. Get started: a full run](#0-get-started-a-full-run)
-- [1. Prerequisites](#1-prerequisites)
-- [2. Configure](#2-configure)
-- [3. Region annotation](#3-region-annotation-optional-but-recommended)
-  - [3.1. Region annotation in decoupled mode](#31-region-annotation-in-decoupled-mode)
-- [4. Preprocess, then look before you filter](#4-preprocess-then-look-before-you-filter)
-- [5. Annotate cell types](#5-annotate-cell-types)
-  - [5.1. Manual annotation](#51-manual-annotation)
-  - [5.2. External annotation](#52-external-annotation)
-- [6. Postprocessing and report](#6-postprocessing-and-report)
-- [7. Explore genes and signatures](#7-explore-genes-and-signatures)
-- [8. Reproducibility](#8-reproducibility)
-  - [8.1. Recommendations at a glance](#81-recommendations-at-a-glance)
-  - [8.2. Files to ensure reproducibility](#82-files-to-ensure-reproducibility)
-- [9. Example runs](#9-example-runs)
-
-
-# 0. Get started: a full run
+# Get started: a full run
 
 This page walks through a complete SpaceBlocks run and the recommendations to make it smooth. For the exhaustive key reference see [Configuration](configuration.md); for what each rule does, [Rule reference](rules.md).
 
 If you want to see an example run on public data, see the [public data end-to-end example runs](demos.md) page — Visium HD and Xenium 5K worked examples can be found there.
-
-> [!TIP]
-> A run is defined almost entirely by two things: your **experimental design**
-> (`core_samples.tsv`) and your **cell-type annotations**. Everything else has sensible
-> defaults. Keep those two under version control and your run will be reproducible end-to-end.
+2
+!!! tip "Double check your Snakemake run"
+    A run is defined almost entirely by two things: your **experimental design** (`core_samples.tsv`) and your **cell-type annotations**. Everything else has sensible defaults. Keep those two under version control and your run will be reproducible end-to-end.
 
 ## 1. Prerequisites
 
@@ -64,8 +43,8 @@ You may then manually annotate spatial regions in QuPath, export GeoJSONs and ma
 
 Then follow the [QuPath annotation tutorial](qupath-tutorial.md), saving each file as `{sample}_tissue_hires_image.geojson` (Visium HD) or `{sample}_morphology.geojson` (Xenium 5K) into `config["geojson_path"]`.
 
-> [!NOTE]
-> We provide instructions for GeoJSON generation via QuPath, but alternative software (i.e. Napari) could be used to generate the region annotation files.
+!!! note  "Alternatives for region annotation"
+    We provide instructions for GeoJSON generation via QuPath, but alternative software (i.e. Napari) could be used to generate the region annotation files.
 
 While this step is optional (without it, all observations will become annotated as `Unlabeled` region), it is extremely powerful to discriminate between morphologically different areas of the tissue across your samples. We strongly encourage users to make use of this SpaceBlocks feature.
 
@@ -75,8 +54,8 @@ In `mode: decoupled` there is no Headblock, so `qupath_images` produces nothing 
 
 Your provided contract h5ads should therefore already carry `obs["region_annotation"]`; otherwise every cell is `Unlabeled`.
 
-> [!WARNING]
-> Make sure the pixel size and coordinate system of the image you annotate match the contract's `obsm["spatial"]`. In head modes the `generate_qupath_*` rules export a correctly-scaled image; in `mode: decoupled` you are responsible for annotating on an image consistent with the coordinates you embedded.
+!!! warning "Coordinate scale divergence"
+    Make sure the pixel size and coordinate system of the image you annotate match the contract's `obsm["spatial"]`. In head modes the `generate_qupath_*` rules export a correctly-scaled image; in `mode: decoupled` you are responsible for annotating on an image consistent with the coordinates you embedded.
 
 ## 4. Preprocess, then look before you filter
 
@@ -93,8 +72,8 @@ You can next use the same thresholds for all samples or use a `sample_qc_thresho
 
 After defining your general (*default*) or sample-specific thresholds, you should specify the preprocessing parameters (under `analysis:` in the config).
 
-> [!TIP]
-> We **strongly recommend** to include some literature predefined markers to screen for cell types present in your samples (defined via `snakemake_cell_markers`).
+!!! tip "Include literature markers during preprocessing
+    We **strongly recommend** to include some literature predefined markers to screen for cell types present in your samples (defined via `snakemake_cell_markers`).
 
 Next, you may run the preprocessing CoreBlock:
 

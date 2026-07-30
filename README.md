@@ -2,7 +2,7 @@
 
 SpaceBlocks is a technology-agnostic Snakemake workflow to **semi-automatically analyse single-cell-resolution spatial transcriptomics (ST).**
 
-SpaceBlocks allows **easy, customisable, shareable and fully reproducible** quality control, clustering, annotation, integration, differential expression, and spatial neighbourhood/niche analysis.
+SpaceBlocks allows **easy, scalable, customisable, shareable and fully reproducible ST** quality control, clustering, annotation, integration, differential expression, and spatial neighbourhood/niche analysis.
 
 The architechture is meant to allow the analysis of public and *in house* generated ST datasets, with a modular and long-term maintainable design.
 
@@ -33,7 +33,7 @@ SpaceBlocks provides tools to ease region annotation via QuPath (ideal if collab
 
 ## Quickstart
 
-SpatialBlocks requires [Snakemake](https://snakemake.readthedocs.io) ≥ 8 and Conda/Mamba. The **Visium HD** HeadBlock additionally needs an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1 installation.
+SpatialBlocks requires [Snakemake](https://snakemake.readthedocs.io) and Conda/Mamba. The pipeline was developed under Snakemake v9.13.7. The **Visium HD** HeadBlock additionally needs an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1 installation.
 
 If you are not familiar with Snakemake, there are three key files to configure:
 
@@ -43,10 +43,11 @@ If you are not familiar with Snakemake, there are three key files to configure:
 
 The full [configuration reference](https://cbib.github.io/SpaceBlocks/configuration/) presents a detailed explanation on how to set `config.yaml`.
 
-We recommend reading the configuration reference first, and then starting with the tutorial on [how to streamline a full run](https://cbib.github.io/SpaceBlocks/getting-started), and an [example with public data](https://cbib.github.io/SpaceBlocks/demos/).
+We recommend reading the [configuration reference](https://cbib.github.io/SpaceBlocks/configuration/) first, and then starting with the tutorial on [how to streamline a full run](https://cbib.github.io/SpaceBlocks/getting-started), and an [example with public data](https://cbib.github.io/SpaceBlocks/demos/).
 
 > [!TIP]
 > Any run can be fully reproduced end-to-end only with the experimental design and cell type annotations.
+>
 > Color palettes for sample metadata, cell type annotations and spatial niches are fully customizable from `config/config.yaml`.
 
 In short, to run the workflow:
@@ -75,13 +76,13 @@ snakemake run_exploration         --sdm conda   # explore genes (integrated and 
 
 Full, searchable documentation lives at **https://cbib.github.io/SpaceBlocks/**:
 
-- **[Workflow design, architectural decisions and output structure](https://cbib.github.io/SpaceBlocks/design/)** — a brief explanation on the HeadBlock/CoreBlock split, the standardized *contract* h5ad AnnData object, and output tree.
+- **[Configuration](https://cbib.github.io/SpaceBlocks/configuration/)** — explanation of all config keys and sample sheets.
 - **[Get started: recommendations for a full run](https://cbib.github.io/SpaceBlocks/getting-started/)** — how to streamline a full run.
 - **[Demos](https://cbib.github.io/SpaceBlocks/demos/)** — public data end-to-end example runs.
+- **[QuPath annotation](https://cbib.github.io/SpaceBlocks/qupath-tutorial/)** — tutorial to easily draw and export the region annotations.
+- **[Workflow design, architectural decisions and output structure](https://cbib.github.io/SpaceBlocks/design/)** — a brief explanation on the HeadBlock/CoreBlock split, the standardized *contract* h5ad AnnData object, and output tree.
 - **[Rule reference](https://cbib.github.io/SpaceBlocks/rules/)** — every rule explained briefly, grouped by HeadBlock/CoreBlock phase.
 - **[Outputs](https://cbib.github.io/SpaceBlocks/outputs/)** — what each step produces and why it is useful.
-- **[Configuration](https://cbib.github.io/SpaceBlocks/configuration/)** — explanation of all config keys and sample sheets.
-- **[QuPath annotation](https://cbib.github.io/SpaceBlocks/qupath-tutorial/)** — tutorial to easily draw and export the region annotations.
 - **[Environments](https://cbib.github.io/SpaceBlocks/environments/)** — the Conda environments and how to lock them.
 
 ## Citing SpaceBlocks
