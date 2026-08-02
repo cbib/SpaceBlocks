@@ -3,7 +3,7 @@
 This page walks through a complete SpaceBlocks run and the recommendations to make it smooth. For the exhaustive key reference see [Configuration](configuration.md); for what each rule does, [Rule reference](rules.md).
 
 If you want to see an example run on public data, see the [public data end-to-end example runs](demos.md) page — Visium HD and Xenium 5K worked examples can be found there.
-2
+
 !!! tip "Double check your Snakemake run"
     A run is defined almost entirely by two things: your **experimental design** (`core_samples.tsv`) and your **cell-type annotations**. Everything else has sensible defaults. Keep those two under version control and your run will be reproducible end-to-end.
 
@@ -68,11 +68,11 @@ snakemake qc_sweep_all      --sdm conda   # OPTIONAL: see where each candidate t
 ```
 
 We recommend to run `qc_sweep` **first** to choose QC thresholds from your own data rather than the defaults.
-You can next use the same thresholds for all samples or use a `sample_qc_thresholds` TSV if samples need different cut-offs.
+You can next use the same thresholds for all samples or use a `per_sample_qc` TSV if samples need different cut-offs.
 
 After defining your general (*default*) or sample-specific thresholds, you should specify the preprocessing parameters (under `analysis:` in the config).
 
-!!! tip "Include literature markers during preprocessing
+!!! tip "Include literature markers during preprocessing"
     We **strongly recommend** to include some literature predefined markers to screen for cell types present in your samples (defined via `snakemake_cell_markers`).
 
 Next, you may run the preprocessing CoreBlock:

@@ -29,7 +29,7 @@ workflow/
 config/               config.yaml, README.md (config reference), sample sheets
 docs/                 the MkDocs site
 .tests/               tiny synthetic decoupled fixture for CI
-reproduction/         public-data worked examples
+demos/         public-data worked examples
 ```
 
 ## Development setup
