@@ -6,7 +6,7 @@ rule annotate_cells:
     input:
         adata=_annotate_input_adata,
         metadata=rules.preprocess_umap.output.metadata,
-        cluster_annotations=config.get("cluster_annotations", ""),
+        cluster_annotations=config.get("cluster_annotations", "") or [],
         spatial_niche=_annotate_niche_input,
     output:
         adata_annot=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
