@@ -21,6 +21,7 @@ rule preprocess_umap:
         resolution_scan_min=ANALYSIS.get("resolution_scan_min", 0.2),
         resolution_scan_max=ANALYSIS.get("resolution_scan_max", 0.8),
         resolution_scan_step=ANALYSIS.get("resolution_scan_step", 0.1),
+        mito_prefix=config.get("contract", {}).get("mito_prefix", ["MT-", "mt-"]),
         random_seed=RANDOM_SEED,
         use_precomputed=USE_PRECOMPUTED,
         precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),

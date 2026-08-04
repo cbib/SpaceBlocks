@@ -52,6 +52,10 @@ RANDOM_SEED    = int(snakemake.params.random_seed)
 USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
 PRECOMPUTED_DIR = str(snakemake.params.precomputed_metadata_dir)
 REGION_COLORS   = snakemake.params.region_colors
+# Mitochondrial gene prefixes. Honour contract.mito_prefix when the rule passes it,
+# else default to human + mouse. The old hardcoded "MT-" silently disabled the
+# max_pct_mt filter on mouse ("mt-") data, even though the config advertises the key.
+MITO_PREFIXES   = tuple(getattr(snakemake.params, "mito_prefix", None) or ("MT-", "mt-"))
 
 # External-annotation cell mask: when enabled with keep_unannotated=false, keep ONLY
 # externally-annotated cells and skip the pipeline QC thresholds (external labels drive QC).
@@ -135,6 +139,8 @@ try:
 
     # ── 1. Load the validated, unfiltered contract h5ad ──────────────────
     adata = sc.read_h5ad(in_h5ad)
+    from contract_io import normalize_contract_dtypes
+    adata = normalize_contract_dtypes(adata, log)   # pandas extension dtypes -> numpy
     if "sample" not in adata.obs.columns:
         adata.obs["sample"] = sample_id
     log.info("  loaded %d cells, %d genes (raw, unfiltered)", adata.n_obs, adata.n_vars)
@@ -148,8 +154,15 @@ try:
         log.info("  stamped sample-sheet columns into obs: %s", list(SAMPLE_META))
 
     # ── 2. QC metrics + filter ───────────────────────────────────────────
-    adata.var["mt"] = adata.var_names.str.startswith("MT-")
-    adata.var["hb"] = adata.var_names.str.contains("^HB[^(P)]")
+    # np.asarray(..., bool): a contract whose var_names carry a pandas StringDtype
+    # (newer anndata/pandas write one) makes .str return a nullable BooleanArray, and
+    # scipy sparse column indexing inside calculate_qc_metrics then raises
+    # "'BooleanArray' object has no attribute 'nonzero'". Harmless for numpy indices.
+    _mt = np.zeros(adata.n_vars, dtype=bool)
+    for _p in MITO_PREFIXES:
+        _mt |= np.asarray(adata.var_names.str.startswith(_p), dtype=bool)
+    adata.var["mt"] = _mt
+    adata.var["hb"] = np.asarray(adata.var_names.str.contains("^HB[^P]"), dtype=bool)
     sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "hb"], inplace=True, log1p=False)
 
     # Pre-filter snapshot for the per-sample report (observed feature ranges are

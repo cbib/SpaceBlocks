@@ -228,51 +228,70 @@ try:
                     adata.obs[col] = pd.Categorical(saved[col].reindex(adata.obs_names).astype(int))
                     log.info("  Loaded %s from metadata", col)
 
+    # cell_type_tsv annotation may be skipped entirely (external-only runs). Define
+    # the leiden key it would have chosen up-front so uns['annotation_leiden_key'] is
+    # always writable — otherwise the external-only path NameErrors at save time.
+    leiden_key = None
+
     # ── 1. TSV-based annotation ──────────────────────────────────────────
-    annot_df = pd.read_csv(annot_tsv_path, sep="\t", index_col=0)
-    log.info("Annotation TSV columns: %s", list(annot_df.columns))
-
-    annot_col, resolution = find_sample_column(annot_df, sample_id)
-
-    if annot_col is None:
-        log.warning("Sample '%s' not found in TSV. All cells → 'Unannotated'.", sample_id)
-        adata.obs["cell_type_tsv"] = "Unannotated"
-        Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)
-        adata.write(out_adata_path)
-        sys.exit(0)
-
-    log.info("Using column '%s' (resolution: %s)", annot_col,
-             resolution if resolution else "not specified")
-
-    if resolution is not None:
-        leiden_key = f"leiden_{resolution.replace('.', '_')}"
+    # cluster_annotations is OPTIONAL: it is the MANUAL cluster -> cell-type mapping.
+    # A run annotated purely from an external source
+    # (annotation_types: ["external_annotation"]) legitimately has no such file, in
+    # which case the rule input resolves to an empty list and str() renders it "[]".
+    # Skip this section instead of failing, and let the external block below supply the
+    # labels — the Snakefile already advertises that route and validates it.
+    _have_annot_tsv = (annot_tsv_path not in ("", "[]", "None")
+                       and os.path.isfile(annot_tsv_path))
+    if not _have_annot_tsv:
+        log.info("No cluster_annotations TSV configured — cell_type_tsv set to "
+                 "'Unannotated'; annotation will come from the external/ingest "
+                 "source(s).")
+        adata.obs["cell_type_tsv"] = pd.Categorical(["Unannotated"] * adata.n_obs)
     else:
-        leiden_cols = [c for c in adata.obs.columns if c.startswith("leiden_")]
-        if leiden_cols:
-            leiden_key = leiden_cols[0]
-        else:
-            raise ValueError("No leiden columns found in adata.")
+        annot_df = pd.read_csv(annot_tsv_path, sep="\t", index_col=0)
+        log.info("Annotation TSV columns: %s", list(annot_df.columns))
 
-    if leiden_key not in adata.obs.columns:
-        available = [c for c in adata.obs.columns if c.startswith("leiden_")]
-        raise ValueError(
-            f"Leiden column '{leiden_key}' not found. Available: {available}."
+        annot_col, resolution = find_sample_column(annot_df, sample_id)
+
+        if annot_col is None:
+            log.warning("Sample '%s' not found in TSV. All cells → 'Unannotated'.", sample_id)
+            adata.obs["cell_type_tsv"] = "Unannotated"
+            Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)
+            adata.write(out_adata_path)
+            sys.exit(0)
+
+        log.info("Using column '%s' (resolution: %s)", annot_col,
+                 resolution if resolution else "not specified")
+
+        if resolution is not None:
+            leiden_key = f"leiden_{resolution.replace('.', '_')}"
+        else:
+            leiden_cols = [c for c in adata.obs.columns if c.startswith("leiden_")]
+            if leiden_cols:
+                leiden_key = leiden_cols[0]
+            else:
+                raise ValueError("No leiden columns found in adata.")
+
+        if leiden_key not in adata.obs.columns:
+            available = [c for c in adata.obs.columns if c.startswith("leiden_")]
+            raise ValueError(
+                f"Leiden column '{leiden_key}' not found. Available: {available}."
+            )
+
+        cluster_to_celltype = annot_df[annot_col].dropna().to_dict()
+        cluster_to_celltype = {str(k): str(v) for k, v in cluster_to_celltype.items()}
+        log.info("Cluster → cell type mapping (%d entries): %s",
+                 len(cluster_to_celltype), cluster_to_celltype)
+
+        adata.obs["cell_type_tsv"] = (
+            adata.obs[leiden_key].astype(str)
+            .map(cluster_to_celltype)
+            .fillna("Unannotated")
+            .astype("category")
         )
 
-    cluster_to_celltype = annot_df[annot_col].dropna().to_dict()
-    cluster_to_celltype = {str(k): str(v) for k, v in cluster_to_celltype.items()}
-    log.info("Cluster → cell type mapping (%d entries): %s",
-             len(cluster_to_celltype), cluster_to_celltype)
-
-    adata.obs["cell_type_tsv"] = (
-        adata.obs[leiden_key].astype(str)
-        .map(cluster_to_celltype)
-        .fillna("Unannotated")
-        .astype("category")
-    )
-
-    tsv_counts = adata.obs["cell_type_tsv"].value_counts()
-    log.info("TSV annotation distribution:\n%s", tsv_counts.to_string())
+        tsv_counts = adata.obs["cell_type_tsv"].value_counts()
+        log.info("TSV annotation distribution:\n%s", tsv_counts.to_string())
 
     # ── 2. External annotation (from metadata TSV column) ────────────────
     # When enabled the pipeline MUST find the column for this sample — a missing
@@ -442,7 +461,10 @@ try:
 
     # ── 4. Save ──────────────────────────────────────────────────────────
     log.info("Saving annotated adata → %s", out_adata_path)
-    adata.uns["annotation_leiden_key"] = leiden_key   # the TSV-annotation res
+    if leiden_key is None:                        # external-only / no TSV mapping
+        _lc = [c for c in adata.obs.columns if c.startswith("leiden_")]
+        leiden_key = _lc[0] if _lc else ""
+    adata.uns["annotation_leiden_key"] = leiden_key   # TSV-annotation res, or fallback
     Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)
     adata.write(out_adata_path)
 

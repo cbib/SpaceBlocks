@@ -63,6 +63,8 @@ try:
     log.info("=" * 70)
 
     adata = sc.read_h5ad(h5ad_path)
+    from contract_io import normalize_contract_dtypes
+    adata = normalize_contract_dtypes(adata, log)   # pandas extension dtypes -> numpy
     adata.obs["sample"] = sample_id
     log.info("  loaded %d cells × %d genes (unfiltered)", adata.n_obs, adata.n_vars)
 

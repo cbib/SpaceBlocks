@@ -72,15 +72,30 @@ SAMPLE_COLORS     = getattr(snakemake.params, "sample_colors", {}) or {}
 INTEGRATE_KEY     = str(getattr(snakemake.params, "integrate_key", "sample") or "sample")
 
 
+def _has_real_annotation(ad, col):
+    """True when an annotation column carries at least one meaningful label. External-only
+    runs leave cell_type_tsv all-'Unannotated', so colouring by it yields a single grey,
+    meaningless UMAP/barplot — skip those rather than emit them."""
+    if not col or col not in ad.obs.columns:
+        return False
+    vals = set(ad.obs[col].astype(str).str.strip().unique())
+    return len(vals - {"Unannotated", "", "nan", "NA", "None"}) > 0
+
+
 def _apply_design_palette(ad, col):
-    """Colour an obs design column from SAMPLE_COLORS, grey (#cccccc) for
-    values absent from the config palette."""
+    """Colour an obs design column from SAMPLE_COLORS. Values absent from a CONFIGURED
+    palette fall back to grey (#cccccc); when NO palette is configured for the column,
+    leave the colours to scanpy (drop any stale *_colors) instead of painting everything
+    grey — matching the project-wide palette convention."""
     if col not in ad.obs.columns:
         return False
     ad.obs[col] = ad.obs[col].astype(str).astype("category")
     cats = ad.obs[col].cat.categories
     pal = SAMPLE_COLORS.get(col, {}) if isinstance(SAMPLE_COLORS, dict) else {}
-    ad.uns[f"{col}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
+    if not pal:
+        ad.uns.pop(f"{col}_colors", None)     # no palette -> scanpy default colours
+    else:
+        ad.uns[f"{col}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
     return True
 
 
@@ -167,7 +182,7 @@ try:
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
-    if "cell_type_tsv" in adata.obs.columns:
+    if _has_real_annotation(adata, "cell_type_tsv"):
         sc.pl.umap(adata, color=["cell_type_tsv"], size=2, frameon=False,
                    title="Uncorrected – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_uncorrected_by_celltype.png"),
@@ -224,7 +239,7 @@ try:
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
-    if "cell_type_tsv" in adata_harmony.obs.columns:
+    if _has_real_annotation(adata_harmony, "cell_type_tsv"):
         sc.pl.umap(adata_harmony, color=["cell_type_tsv"], size=2, frameon=False,
                    title="Harmony – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype.png"),
@@ -252,7 +267,7 @@ try:
     os.makedirs(bar_dir, exist_ok=True)
     annot_cols = [c for c in ["cell_type_tsv", "cell_type_ingest",
                               "cell_type_external"]
-                  if c in adata.obs.columns]
+                  if _has_real_annotation(adata, c)]
     has_regions = ("region_annotation" in adata.obs.columns
                    and adata.obs["region_annotation"].nunique() > 1
                    and not all(adata.obs["region_annotation"] == "Unlabeled"))
