@@ -86,15 +86,74 @@ Notice that the Xenium GeoJSON is annotated in pixels, while cells are in micron
 
 Importantly, **`format_xenium.py` embeds a greyscale composite of the `morphology_focus` channels in `uns["spatial"]`**, so spatial plots are drawn over the tissue instead of on a bare scatter. Set `HIRES_LEVEL` in the script to trade resolution for file size.
 
+## Atera HeadBlock test (human breast cancer, alpha)
+
+!!! warning "Alpha support"
+    Atera is expected to ship in the second half of 2026. The dataset below is a public
+    **preview**, generated with development software, and 10x state its output format will
+    change at commercial release. This is a HeadBlock test rather than a polished demo, and
+    it is expected to need revision once the final format lands.
+
+Unlike the two examples above, this one runs a HeadBlock rather than `mode: decoupled`: the contract h5ad is built by `prepare_input_ate` from the raw bundle, so it exercises the whole head chain. The [dataset](https://www.10xgenomics.com/datasets/atera-wta-ffpe-human-breast-cancer) is 18,028 genes over 170,057 cells (CC BY 4.0).
+
+```bash
+# at the workflow dir, build the environment
+cd SpaceBlocks/
+conda env create --file=workflow/envs/atera.yaml
+conda activate atera
+# download into a scratch dir with ~120 GB free: the bundle alone is ~55 GB zipped
+mkdir -p /path/to/atera && cd /path/to/atera
+BASE=https://s3-us-west-2.amazonaws.com/10x.files/samples/atera/dev/WTA_Preview_FFPE_Breast_Cancer
+curl -O $BASE/WTA_Preview_FFPE_Breast_Cancer_outs.zip
+unzip WTA_Preview_FFPE_Breast_Cancer_outs.zip -d outs
+# optional but recommended: the registered H&E and its alignment
+SUP=https://cf.10xgenomics.com/samples/atera/dev/WTA_Preview_FFPE_Breast_Cancer
+curl -O $SUP/WTA_Preview_FFPE_Breast_Cancer_he_image.ome.tif
+curl -O $SUP/WTA_Preview_FFPE_Breast_Cancer_he_alignment.csv
+curl -O $SUP/WTA_Preview_FFPE_Breast_Cancer_keypoints.csv
+```
+
+Then point `atera.atera_dir` (and, if you fetched them, the three `he_*` keys) in `demos/atera/atera_config.yaml` at that directory, and run the head:
+
+```bash
+snakemake qupath_images qc_sweep_all    --sdm conda   # OPTIONAL regions: annotate a QuPath TIFF (see below), export the GeoJSON
+snakemake run_preprocessing             --sdm conda
+```
+
+The shipped config annotates cells directly from 10x's own per-cell calls (`annotation_types: [external_annotation]`), so the run needs no manual annotation step and postprocessing is reproducible from the supplemental CSVs alone. Convert them with the helper that ships next to the config:
+
+```bash
+# before the run: 10x's own cell calls -> external-annotation metadata
+python demos/atera/format_atera.py metadata \
+    /path/to/atera/WTA_Preview_FFPE_Breast_Cancer_cell_groups.csv \
+    --sample WTA_Preview_FFPE_Breast_Cancer --outdir demos/atera/external_metadata
+
+snakemake run_postprocessing --sdm conda
+```
+
+The helper also prints the `annotation_colors` block using 10x's own display colours, already pasted into the shipped config.
+
+The usual SpaceBlocks route — a human mapping Leiden clusters to cell types in `cluster_annotations.tsv` is to be implemented post-alpha. Note that `leiden_analysis` stays **on** to showcase 10x Genomics marker table `demos/atera/snakemake_cell_markers.tsv`, which is the supplemental `gene_groups.csv` pivoted to one column per group.
+
+Region annotation is optional here (the demo annotates cells from 10x's own calls). If you do want regions, `qupath_images` exports two annotatable TIFFs per sample, and `prepare_input_ate` reads whichever GeoJSON you export **named after the image stem** (`{sample}_<image>.geojson`), preferring them in this order:
+
+- `{sample}_he_background.tiff` — the registered H&E resampled onto the morphology grid (also the embedded contract background). **Recommended**: it sits on the cells' coordinate grid, so regions map back with a single scalar (no affine). Export as `{sample}_he_background.geojson`.
+- `{sample}_morphology.tiff` — the fluorescence composite (the fallback when no H&E is configured). Export as `{sample}_morphology.geojson`.
+
+Importantly, the registered H&E is not the raw whole-slide scan, which covers a second tissue section that Atera never imaged.
+
+The bundle holds a single sample, so `run_postprocessing` is not meaningful/complete here because integration, pseudobulk DE and composition comparisons all need replicates. The shipped config therefore trims those options; see `demos/xenium5k/xenium5k_config.yaml` for a config that exercises them.
+
 ## Configure and run the examples
 
-A ready-to-run config ships next to each example: `demos/xenium5k/xenium5k_config.yaml` and `demos/visiumhd/visiumhd_config.yaml`. Optionally, you may use an external reference for the `ingest` rule, we provide external links to set in the example config files.
+A ready-to-run config ships next to each example: `demos/xenium5k/xenium5k_config.yaml`, `demos/visiumhd/visiumhd_config.yaml` and `demos/atera/atera_config.yaml`. Optionally, you may use an external reference for the `ingest` rule, we provide external links to set in the example config files.
 
 To use one, comment the default `configfile:` line in `workflow/Snakefile` and uncomment the matching example line (all are already present):
 
 ```python
 # configfile: "config/config.yaml"
 # configfile: demos/visiumhd/visiumhd_config.yaml      # alternative for visiumhd
+# configfile: "demos/atera/atera_config.yaml"          # alpha: Atera HeadBlock test
 configfile: "demos/xenium5k/xenium5k_config.yaml"
 ```
 

@@ -12,6 +12,8 @@ This site documents SpaceBlocks, a technology-agnostic Snakemake workflow to **s
 - **CoreBlocks** — technology-agnostic sets of rules that streamline ST processing steps.
 - **Contract** — the standardized AnnData h5ad files, validated before running the CoreBlocks.
 
+Implemented HeadBlocks: **Visium HD**, **Xenium 5K**, and **Atera** (alpha — the platform has not shipped yet; see the [rule reference](rules.md)).
+
 ## Full documentation:
 
 - **[Configuration](configuration.md)** — explanation of all config keys and sample sheets.
