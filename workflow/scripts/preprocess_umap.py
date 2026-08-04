@@ -163,7 +163,12 @@ try:
         _mt |= np.asarray(adata.var_names.str.startswith(_p), dtype=bool)
     adata.var["mt"] = _mt
     adata.var["hb"] = np.asarray(adata.var_names.str.contains("^HB[^P]"), dtype=bool)
-    sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "hb"], inplace=True, log1p=False)
+    # percent_top bins must not exceed the gene count: targeted panels (e.g. MERFISH,
+    # ~500 genes) are smaller than scanpy's default top-500 bin, which would otherwise
+    # raise "Positions outside range of features". Clamp to the panel size.
+    _percent_top = [p for p in (50, 100, 200, 500) if p <= adata.n_vars] or None
+    sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "hb"], percent_top=_percent_top,
+                               inplace=True, log1p=False)
 
     # Pre-filter snapshot for the per-sample report (observed feature ranges are
     # taken on the full, unfiltered dataset).

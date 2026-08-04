@@ -92,8 +92,12 @@ def recalculate_qc_metrics(adata):
         "pct_counts_in_top_200_genes", "pct_counts_in_top_500_genes",
     ]]
     adata.obs.drop(columns=qc_cols_to_drop, inplace=True, errors="ignore")
+    # clamp percent_top to the panel size (small targeted panels < 500 genes) so scanpy
+    # does not raise "Positions outside range of features".
+    _percent_top = [p for p in (50, 100, 200, 500) if p <= adata.n_vars] or None
     sc.pp.calculate_qc_metrics(
-        adata, qc_vars=["mt", "hb"], inplace=True, log1p=False, layer=layer,
+        adata, qc_vars=["mt", "hb"], percent_top=_percent_top,
+        inplace=True, log1p=False, layer=layer,
     )
 
 
