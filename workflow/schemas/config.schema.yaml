@@ -56,6 +56,67 @@ properties:
 
         description: Xenium pixel size in microns.
         default: 0.2125
+
+  atera:
+    type: ["object", "null"]
+    description: >
+      Atera head settings (used only when mode == "atera"). ALPHA support — validated
+      against the 10x WTA preview bundle, whose format is not final.
+    properties:
+      atera_dir:
+        type: string
+        description: "{sample} pattern to each Atera outs/ bundle."
+      zarr_dir:
+        type: string
+        description: Where {sample}.zarr stores are written ("" -> spaceranger_processing_outdir).
+      qupath_pyramid_level:
+        type: integer
+        minimum: 0
+        description: Pyramid level of the morphology image used for the QuPath composite TIFF.
+        default: 3
+      hires_pyramid_level:
+        type: integer
+        minimum: 0
+        description: >
+          Pyramid level embedded as the uns["spatial"] background image. Also the grid
+          the registered H&E background is resampled onto, when one is configured.
+        default: 3
+      pixel_size_um:
+        type: number
+        exclusiveMinimum: 0
+        description: Microns per full-resolution morphology pixel (experiment.xenium pixel_size).
+        default: 0.2125
+      he_image:
+        type: string
+        description: >
+          OPTIONAL absolute {sample} pattern to the registered H&E OME-TIFF, which ships
+          separately from the outs/ bundle. When set together with he_alignment, a second
+          QuPath image is produced, region annotations may be drawn on either image, and
+          the H&E becomes the embedded contract background.
+      he_alignment:
+        type: string
+        description: >
+          OPTIONAL absolute {sample} pattern to the 10x 3x3 he_alignment.csv mapping
+          full-resolution H&E pixels onto full-resolution morphology pixels. Required
+          whenever he_image is set.
+      he_keypoints:
+        type: string
+        description: >
+          OPTIONAL absolute {sample} pattern to the 10x keypoints.csv. Not required, but
+          without it the H&E transform is applied unverified.
+      he_pyramid_level:
+        type: integer
+        minimum: 0
+        description: Pyramid level of the H&E read for the QuPath TIFF and the background warp.
+        default: 4
+      he_residual_warn_px:
+        type: number
+        exclusiveMinimum: 0
+        description: >
+          Warn when the largest keypoint residual exceeds this many morphology pixels —
+          the tripwire for a changed alignment convention.
+        default: 50
+
   cluster_annotations:
     type: string
     description: >
@@ -75,13 +136,15 @@ properties:
 
   mode:
     type: string
-    enum: ["visiumhd", "xenium5k", "decoupled"]
+    enum: ["visiumhd", "xenium5k", "atera", "decoupled"]
     default: "visiumhd"
     description: >
       A HEAD technology name (that head builds the contract h5ads in this run) or
       "decoupled" (the core consumes pre-existing contracts from contract_dir; head
       rules skipped; validation aborts if any core_samples sample is missing its
-      contract). Extend the enum as new heads are added (e.g. xenium5k).
+      contract). Extend the enum as new heads are added (e.g. xenium5k). "atera" is
+      ALPHA support: the platform ships in H2 2026 and the public data is a preview
+      whose output format 10x state will change at commercial release.
 
   core_samples:
     type: string
