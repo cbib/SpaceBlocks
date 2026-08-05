@@ -117,6 +117,29 @@ properties:
           the tripwire for a changed alignment convention.
         default: 50
 
+  merscope:
+    type: ["object", "null"]
+    description: MERSCOPE (Vizgen MERFISH) head settings (used only when mode == "merscope").
+    properties:
+      merscope_dir:
+        type: string
+        description: "{sample} pattern to each MERSCOPE region directory (holds the two Vizgen CSVs and the images/ folder)."
+      z_index:
+        type: integer
+        minimum: 0
+        description: Mosaic z-plane used for the QuPath composite and embedded background (DAPI/PolyT always present).
+        default: 3
+      hires_pixel_size_um:
+        type: number
+        exclusiveMinimum: 0
+        description: Target microns-per-pixel of the downsampled background embedded in uns["spatial"] and annotated in QuPath.
+        default: 1.0
+      channels:
+        type: array
+        items:
+          type: string
+        description: Mosaic stains to composite, in order; channels absent on disk are skipped (default DAPI, PolyT, Cellbound1-3).
+
   cluster_annotations:
     type: string
     description: >
@@ -136,7 +159,7 @@ properties:
 
   mode:
     type: string
-    enum: ["visiumhd", "xenium5k", "atera", "decoupled"]
+    enum: ["visiumhd", "xenium5k", "atera", "merscope", "decoupled"]
     default: "visiumhd"
     description: >
       A HEAD technology name (that head builds the contract h5ads in this run) or
@@ -523,3 +546,12 @@ allOf:
   then:
     required:
     - xenium5k
+- if:
+    properties:
+      mode:
+        const: merscope
+    required:
+    - mode
+  then:
+    required:
+    - merscope

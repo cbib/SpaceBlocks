@@ -180,6 +180,19 @@ def _ate_prepare_inputs(wildcards):
             break
     return inputs
 
+# ── HEAD (MERSCOPE) input helper ─────────────────────────────────────────────
+def merscope_dir_for(sample):
+    """MERSCOPE region directory for a sample, from the merscope.merscope_dir
+    {sample} pattern (e.g. 'data/merscope/{sample}'). The region dir holds the two
+    Vizgen CSVs (cell_by_gene, cell_metadata) and the images/ folder (mosaic TIFFs +
+    micron_to_mosaic_pixel_transform.csv)."""
+    pat = (config.get("merscope", {}) or {}).get("merscope_dir", "")
+    if not pat:
+        sys.exit("[config error] mode 'merscope' requires merscope.merscope_dir "
+                 "(a {sample} pattern to each MERSCOPE region directory).")
+    return pat.format(sample=sample)
+
+
 # ── CORE per-rule input functions ────────────────────────────────────────────
 def _thresholds_for(sample):
     """Global candidate threshold lists for qc_sweep (flat: feature -> list of

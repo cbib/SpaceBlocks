@@ -14,13 +14,15 @@ from snakemake.utils import validate, min_version
 
 min_version("8.0")
 
-# configfile: "config/config.yaml"
+configfile: "config/config.yaml"
 # --- Public-data examples (mode: decoupled) -------------------------------------
 # To run a worked example instead of your own data, comment the line above and
 # uncomment ONE of these (see docs -> Reproduce & examples):
 # configfile: "demos/xenium5k/xenium5k_config.yaml"
 # configfile: "demos/visiumhd/visiumhd_config.yaml"
-configfile: "demos/atera/atera_config.yaml"        # alpha: Atera HeadBlock test
+# configfile: "demos/atera/atera_config.yaml"        # alpha: Atera HeadBlock test
+# configfile: "demos/merscope/merscope_config.yaml"
+
 validate(config, schema="schemas/config.schema.yaml")
 
 # Helper functions
@@ -50,10 +52,14 @@ ATERA_ZARR_DIR = ATERA.get("zarr_dir", "") or OUTDIR_SR
 # H&E QuPath rule is included only when both are configured.
 ATERA_HAS_HE   = bool(ATERA.get("he_image")) and bool(ATERA.get("he_alignment"))
 
+# MERSCOPE (Vizgen MERFISH) head specifics
+MERSCOPE = config.get("merscope", {}) or {}
+DEFAULT_MER_CHANNELS = ["DAPI", "PolyT", "Cellbound1", "Cellbound2", "Cellbound3"]
+
 # Run mode (HeadBlocks or decoupled)
 # Add new heads to KNOWN_HEADS as implemented.
 MODE = str(config.get("mode", "visiumhd")).lower()
-KNOWN_HEADS = ("visiumhd", "xenium5k", "atera")
+KNOWN_HEADS = ("visiumhd", "xenium5k", "atera", "merscope")
 if MODE != "decoupled" and MODE not in KNOWN_HEADS:
     sys.exit(f"[config error] mode must be 'decoupled' or a head technology "
              f"{list(KNOWN_HEADS)}, got '{MODE}'.")
@@ -207,6 +213,9 @@ elif MODE == "atera":
     if ATERA_HAS_HE:
         include: "rules/generate_qupath_he_ate.smk"
     include: "rules/prepare_input_ate.smk"
+elif MODE == "merscope":
+    include: "rules/generate_qupath_mer.smk"
+    include: "rules/prepare_input_mer.smk"
 
 # Coreblock — step 1: preprocessing.
 include: "rules/validate_input.smk"
@@ -242,6 +251,8 @@ elif MODE == "atera":
         # the cells; the raw _he.tiff was dropped as a distracting, error-prone output).
         QUPATH_IMAGES += expand(rules.generate_qupath_he_ate.output.he_background,
                                 sample=SAMPLE_IDS)
+elif MODE == "merscope":
+    QUPATH_IMAGES = expand(rules.generate_qupath_mer.output.qupath_image, sample=SAMPLE_IDS)
 else:
     QUPATH_IMAGES = []
 
