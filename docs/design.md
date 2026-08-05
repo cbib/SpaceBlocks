@@ -18,7 +18,7 @@ SpaceBlocks/
 │   └── schemas/*.yaml        config + sample-sheet validation
 ├── config/                   config.yaml, README.md (config reference), sample sheets
 ├── docs/                     this documentation site (MkDocs)
-├── .tests/                   tiny synthetic decoupled dataset for CI
+├── .test/                   tiny synthetic decoupled dataset for CI
 ├── demos/             full public-data runs (data fetched, not committed)
 ├── tools/                    stand-alone helper scripts
 └── profiles/default/         SLURM profile (retries, resources)

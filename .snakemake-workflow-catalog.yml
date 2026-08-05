@@ -4,11 +4,12 @@
 usage:
   mandatory-flags:
     desc: >
-      The pipeline uses a SLURM profile for cluster execution.
-      Space Ranger must be installed locally (licence does not permit
-      redistribution).  Configure its path in config.yaml.
-    flags: "--profile profiles/default"
+      Configure config/config.yaml and the required sample sheets before
+      execution. Space Ranger must be installed separately when required.
+    flags: []
+
   software-stack-deployment:
     conda: true
-    singularity: false
-    singularity+conda: false
+    apptainer: false
+    apptainer+conda: false
+    report: false

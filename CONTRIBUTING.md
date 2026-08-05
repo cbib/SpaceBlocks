@@ -28,7 +28,7 @@ workflow/
 └── schemas/*.yaml    config + sample-sheet validation
 config/               config.yaml, README.md (config reference), sample sheets
 docs/                 the MkDocs site
-.tests/               tiny synthetic decoupled fixture for CI
+.test/               tiny synthetic decoupled fixture for CI
 reproduction/         public-data worked examples
 ```
 
@@ -83,10 +83,11 @@ Run these locally before pushing, they mirror CI:
 
 ```bash
 # 1. Workflow parses + lints (against the committed test fixture)
-snakemake --lint --configfile .tests/integration/config/config.yaml --workflow-profile none
+snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
 
 # 2. The DAG builds. These are decoupled smoke test, and each head mode
-snakemake --configfile .tests/integration/config/config.yaml -n --workflow-profile none
+snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
+snakemake -s workflow/Snakefile -d .test --rulegraph --workflow-profile none | dot -Tsvg > pipeline_rulegraph.svg
 snakemake -n --config mode=visiumhd  --workflow-profile none
 snakemake -n --config mode=xenium5k  --workflow-profile none
 
@@ -114,7 +115,7 @@ self-contained.
 
 Two workflows run on every PR and must pass:
 
-- **`tests`** — `snakemake --lint` + a decoupled dry-run against the `.tests/` fixture.
+- **`tests`** — `snakemake --lint`, a decoupled dry-run, fixture regeneration, and catalogue rule-graph generation against `.test/`.
 - **`docs`** — `mkdocs build --strict`. Deployment to GitHub Pages is gated behind the repo variable
   `PUBLISH_DOCS=true` and only runs on `main`.
 

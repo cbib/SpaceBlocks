@@ -1,14 +1,14 @@
-# CI smoke-test config (mode: decoupled). Tiny synthetic contracts in ../data.
+# Canonical catalogue/CI fixture (mode: decoupled). Paths are relative to .test/.
 mode: decoupled
-post_processing_outdir: .tests/integration/output
-logdir: .tests/integration/logs
-spaceranger_processing_outdir: .tests/integration/sr
-geojson_path: .tests/integration/geojson
-contract_dir: .tests/integration/data
+post_processing_outdir: output
+logdir: logs
+spaceranger_processing_outdir: sr
+geojson_path: geojson
+contract_dir: data
 random_seed: 0
 use_precomputed_clusters: false
 precomputed_metadata_dir: ''
-core_samples: .tests/integration/config/core_samples.tsv
+core_samples: config/core_samples.tsv
 xenium5k:
   xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
   zarr_dir: ''
@@ -86,8 +86,8 @@ qc_sweep:
     - 10
     - 15
     - 20
-cluster_annotations: .tests/integration/config/cluster_annotations.tsv
-snakemake_cell_markers: .tests/integration/config/snakemake_cell_markers.tsv
+cluster_annotations: config/cluster_annotations.tsv
+snakemake_cell_markers: config/snakemake_cell_markers.tsv
 external_annotation:
   enabled: false
   column: manual_celltype
@@ -120,7 +120,7 @@ spatial_niches:
   compute_umap: false
 subcompartments: {}
 gene_exploration:
-  queries: .tests/integration/config/gene_queries.tsv
+  queries: config/gene_queries.tsv
   aucell_max_rank_fraction: 0.05
   niche_column: spatial_niche
   dpi: 300

@@ -6,7 +6,7 @@
 
 <!-- Exact commands in CONTRIBUTING.md. Tick what applies. -->
 
-- [ ] `snakemake --lint` passes (against the `.tests/` config)
+- [ ] `snakemake --lint` passes (against the `.test/` config)
 - [ ] DAG builds — decoupled smoke test + any affected head mode (`snakemake -n`)
 - [ ] Config still validates against `workflow/schemas/config.schema.yaml`
 - [ ] `mkdocs build --strict` passes (if `docs/` was touched)

@@ -3,7 +3,7 @@
 This page shows how to run SpaceBlocks end-to-end on **public data** for each supported technology, and documents how to prepare your own inputs for `mode: decoupled`.
 
 !!! warning "Repository synthetic data"
-    The tiny case in `.tests/` exists only to exercise the DAG in CI, and to render the workflow's tube map on the Snakemake catalog.
+    The tiny case in `.test/` exists only to exercise the DAG in CI, and to render the workflow's tube map on the Snakemake catalog.
 
 ## Technical notes
 

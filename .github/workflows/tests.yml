@@ -3,8 +3,26 @@ name: tests
 on:
   push:
     branches: [main]
+    paths:
+      - "workflow/**"
+      - "config/**"
+      - ".test/**"
+      - "profiles/**"
+      - ".snakemake-workflow-catalog.yml"
+      - ".github/workflows/tests.yml"
   pull_request:
+    paths:
+      - "workflow/**"
+      - "config/**"
+      - ".test/**"
+      - "profiles/**"
+      - ".snakemake-workflow-catalog.yml"
+      - ".github/workflows/tests.yml"
   workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-dryrun:
@@ -17,10 +35,13 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install snakemake pandas jsonschema
-      - name: Lint
+          cache: pip
+      - name: Install validation dependencies
+        run: pip install snakemake pandas jsonschema
         # Pin to the committed .tests fixture so editing the shipped default config
         # (or an example config pointing at generated paths) cannot break CI.
-        run: snakemake --lint --configfile .tests/integration/config/config.yaml --workflow-profile none
+      - name: Lint workflow
+        run: snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
       - name: Dry-run (decoupled smoke test)
-        run: snakemake --configfile .tests/integration/config/config.yaml -n --workflow-profile none
+        run: snakemake -s workflow/Snakefile -d .test --dry-run --workflow-profile none
+  
