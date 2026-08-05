@@ -32,6 +32,7 @@ SpaceBlocks/
   mode: xenium5k      convert_zarr_x5k      → generate_qupath_x5k  → prepare_input_x5k
   mode: atera         convert_zarr_ate      → generate_qupath_ate  → prepare_input_ate
     (alpha)                                 ↘ generate_qupath_he_ate (opt.) ↗
+  mode: merscope                            → generate_qupath_mer  → prepare_input_mer
   mode: decoupled     (no HeadBlock — you provide the contract h5ads)
         │  ‖ COREBLOCK INPUT POINT (validate_input): contract h5ad structure validation
         ▼  each HeadBlock writes the unfiltered contract h5ad; although these can also be prepared manually (mode: decoupled)

@@ -6,20 +6,9 @@ The explanations in this page are divided by type (dir, parameter, color, etc.).
 
 **Every key in `config/config.yaml` is validated** against `workflow/schemas/config.schema.yaml` before the run starts, so a typo or a missing required field fails immediately with a clear message.
 
-> [!NOTE]
-> The full, always-updated table of every parameter (type, default, required) is generated automatically from the schema and shown on the workflow's Snakemake-catalog page.
-> This page covers the *how* and the *why*; the schema is the exhaustive reference.
-
-**On this page:**
-
-1. [Choose a mode](#1-choose-a-mode)
-2. [Paths, files and sample sheets](#2-paths-files-and-sample-sheets)
-3. [Parameters](#3-parameters)
-4. [Color scale customization](#4-color-scale-customization)
-5. [Key sections](#5-key-sections)
-6. [Reproducibility & reusability](#6-advanced-reproducibility-and-reusability)
-7. [Example use cases](#7-example-use-case-configurations)
-8. [Minimal example](#8-minimal-example)
+!!! note "Snakemake-catalog page"
+    The full, always-updated table of every parameter (type, default, required) is generated automatically from the schema and shown on the workflow's Snakemake-catalog page.
+    This page covers the *how* and the *why*; the schema is the exhaustive reference.
 
 ## 1. Choose a mode
 
@@ -60,8 +49,8 @@ You only need one sample sheet (`core_samples.tsv`) for `mode: decoupled` and `m
 
 For `xenium5k`, the per-sample input bundles come from `xenium5k.xenium_dir` (filenames with a `{sample}` pattern), not a separate sheet.
 
-> [!TIP]
-> You can customize the color scale for any sample metadata in `core_samples.tsv` as additional columns. See [section 3](#3-parameters) and [section 4](#4-color-scale-customization) for details.
+!!! tip "Color customization for result visualization"
+    You can customize the color scale for any sample metadata in `core_samples.tsv` as additional columns. See [section 3](#3-parameters) and [section 4](#4-color-scale-customization) for details.
 
 | Sample sheet | Condition | Role |
 | --- | --- | --- |
@@ -85,8 +74,8 @@ Parameters are settings that live exclusively in `config/config.yaml` and determ
 
 In SpaceBlocks, color scales are fully customizable and consistent across analysis plots.
 
-> [!WARNING]
-> When customizing color palettes, levels not explicitly listed fall back to grey, so a value that renders grey usually means a missing key.
+!!! warning "Undefined variable levels are colored in grey"
+    When customizing color palettes, levels not explicitly listed fall back to grey, so a value that renders grey usually means a missing key. If you wish to customize visualization, list all levels in a variable and assign a color for each of them.
 
 To set a given color scale, you just need to specify the HEX color code for each level in `config/config.yaml`. There are three palette families, each keyed by *column → level → hex*:
 
@@ -132,8 +121,8 @@ The rest of the configuration lives in nested blocks. Files and single parameter
 | `subcompartments` | *optional* | Named cell-type subsets to re-cluster in `subcluster`. |
 | `gene_exploration` | Exploration CoreBlock | Genes / gene sets to score (AUCell) and plot in the exploration block, plus its `niche_column` and rank fraction. |
 
-> [!NOTE]
-> A few one-key blocks are documented elsewhere for readability: `integration` (`integrate_key`) and `extra_annotations` (`columns`) are parameters in [section 3](#3-parameters); `cluster_annotations` is a file in [section 2](#2-paths-files-and-sample-sheets); and the colour blocks (`sample_colors`, `annotation_colors`, `analysis.region_colors`) are in [section 4](#4-color-scale-customization).
+!!! note
+    A few one-key blocks are documented elsewhere for readability: `integration` (`integrate_key`) and `extra_annotations` (`columns`) are parameters in [section 3](#3-parameters); `cluster_annotations` is a file in [section 2](#2-paths-files-and-sample-sheets); and the colour blocks (`sample_colors`, `annotation_colors`, `analysis.region_colors`) are in [section 4](#4-color-scale-customization).
 
 ## 6. Advanced: Reproducibility and reusability
 

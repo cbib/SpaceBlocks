@@ -14,7 +14,7 @@ The pipeline provisions one conda environment per rule group (run with `--use-co
 | `envs/pseudobulk_aggregate.yaml` | pseudobulk aggregation, gene exploration (decoupler) | `>=` lower bounds |
 | `envs/pseudobulk_de.yaml` | pseudobulk DE (R / DESeq2) | pinned to Bioconductor 3.18 / R 4.3 |
 | `envs/spatial_niches.yaml` | `spatial_niches` rule | `>=` lower bounds |
-| `envs/xenium5k.yaml` | xenium5k HeadBlocks | `>=` lower bounds |
+| `envs/xenium5k.yaml` | xenium5k and merscope HeadBlocks | `>=` lower bounds |
 | `envs/atera.yaml` | atera HeadBlocks (alpha) | pinned `spatialdata-io >=0.7,<0.8` |
 
 
