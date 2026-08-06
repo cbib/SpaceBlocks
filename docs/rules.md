@@ -13,7 +13,7 @@ Inputs/outputs are summarised; the `.smk` files and `config["resources"]` are th
 
 HeadBlocks are *optional* technology-specific modules, selected in `config["mode"]`. Each
 one produces the standardized **contract h5ad** the CoreBlocks start from; the rules within
-a headBlock carry a 3-letter technology suffix (`_vhd`, `_x5k`) so the organization stays
+a headBlock carry a 3-letter technology suffix (`_vhd`, `_x5k`, `_ate`, `_mer`) so the organization stays
 easy to follow.
 
 The pipeline can also run in `mode: decoupled`, without any headBlock — the CoreBlocks then
@@ -63,6 +63,43 @@ Analogous to `generate_qupath_vhd`. Channel colours are assigned by **name** (nu
 #### Xenium 5K: `prepare_input_x5k`
 Takes the zarr and the QuPath GeoJSON, and writes the **unfiltered contract h5ad** for the CoreBlocks.
 Extracts the raw count table, embeds a channel-agnostic greyscale morphology image + scalefactors into `uns["spatial"]`, joins the GeoJSON into `obs["region_annotation"]`, and writes raw counts with **no filtering/normalisation/clustering** — that is deliberately the CoreBlock's job, so a Xenium run and a Visium HD run reach the core identically. Analogous to `prepare_input_vhd`.
+
+### MERSCOPE
+
+Included only when `mode: merscope`. Produces the *same* standardized contract h5ad as the other heads, so the CoreBlocks run identically. Shares environment with Xenium 5K (`envs/xenium5k.yaml`).
+
+#### MERSCOPE: `generate_qupath_mer`
+Similarly to the Xenium 5K rule, generates an image from the fluorescent channels available (`DEFAULT_MER_CHANNELS = ["DAPI","PolyT","Cellbound1","Cellbound2","Cellbound3"]`). Zarr rule was ommitted to keep the HeadBlock output lightweight.
+
+#### MERSCOPE: `prepare_input_mer`
+Similarly to the Xenium 5K rule, writes the **unfiltered contract h5ad** for the CoreBlocks.
+
+### Atera (*alpha support*)
+
+Included only when `mode: atera`. Produces the *same* standardized contract h5ad as the other heads, so the CoreBlocks run identically. Uses its own environment (`envs/atera.yaml`), kept separate from `envs/xenium5k.yaml` so that the tighter pins Atera needs cannot destabilise the Xenium head.
+
+!!! caution "Alpha support"
+    Atera is a 10x Genomics in-situ platform announced in April 2026 and expected to ship in the second half of 2026. This headBlock was developed against the public **preview** WTA dataset, which 10x describe as generated with development software and whose output format (they state) will change at commercial release. Treat `mode: atera` as alpha: it is expected to need revision once the final format lands.
+
+Atera is built on the Xenium platform, so its `outs/` bundle follows the Xenium Onboard Analysis v4 layout and is read by the same `spatialdata_io` reader. Two differences drive the head: the morphology channels are named (`morphology_focus/chNNNN_<stain>.ome.tif`), and a registered H&E whole-slide image ships as a *separate* download rather than inside the bundle.
+
+#### Atera: `convert_zarr_ate`
+Converts an Atera output bundle to a [SpatialData](https://spatialdata.scverse.org/) zarr store via `spatialdata_io`, which becomes the canonical object holding the morphology image, cell masks, boundaries, and the raw count table. Analogous to `convert_zarr_x5k`.
+
+#### Atera: `generate_qupath_ate`
+Reads the `morphology_focus` channels from the zarr at a configurable pyramid level and composites them into an RGB TIFF for QuPath, plus a scale-factor JSON for QuPath-pixel → micron coordinate mapping.
+Analogous to `generate_qupath_x5k`, and sharing its name-aware channel colouring. This is the **default annotation image** and is always produced. The GeoJSON files follow the naming convention `{sample}_morphology.geojson` (read from `config["geojson_path"]`).
+
+#### Atera: `generate_qupath_he_ate` *(optional)*
+Included only when `atera.he_image` and `atera.he_alignment` are both set. Reads the registered H&E at a configurable pyramid level (the full-resolution image is tens of GB and never enters the zarr) and writes a second QuPath TIFF, so regions may be drawn on histology instead of fluorescence. GeoJSONs from this image follow the naming convention `{sample}_he.geojson`.
+It also composes the QuPath-pixel → micron transform from the 10x 3×3 alignment matrix and stores it in the scale-factor JSON, and resamples the H&E onto the morphology pixel grid to produce the contract background image. That resampling is required: `sc.pl.spatial` positions cells with a single scalar factor and no rotation, while the H&E and morphology frames differ by roughly 90°.
+
+!!! tip "Supply the keypoints file"
+    When `atera.he_keypoints` points at the 10x `keypoints.csv`, the rule pushes every keypoint through the alignment matrix and reports the residuals, warning above `atera.he_residual_warn_px`. The alignment convention is undocumented, so this is the tripwire that catches a change of convention before it silently displaces every region annotation. Without it the transform is applied unverified.
+
+#### Atera: `prepare_input_ate`
+Takes the zarr and the QuPath GeoJSON, and writes the **unfiltered contract h5ad** for the CoreBlocks. Analogous to `prepare_input_x5k`.
+It accepts a GeoJSON drawn on *either* annotation image, preferring `{sample}_he.geojson` when both exist and applying the matching transform. The embedded background likewise prefers the registered H&E, which is more informative histologically, and falls back to the channel-agnostic greyscale morphology composite whenever no H&E is configured.
 
 ---
 

@@ -8,7 +8,7 @@ rule explore_genes_integrated:
     """
     input:
         integrated=rules.integrate_samples.output.harmony,
-        queries=GENE_EXPLORATION.get("queries", ""),
+        queries=GENE_EXPLORATION.get("queries", "") or [],
     output:
         ranges=f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
         done=touch(f"{OUTDIR_PP}/gene_exploration/.integrated_done"),
@@ -51,7 +51,7 @@ rule explore_genes_sample:
     input:
         adata=rules.annotate_cells.output.adata_annot,
         ranges=rules.explore_genes_integrated.output.ranges,
-        queries=GENE_EXPLORATION.get("queries", ""),
+        queries=GENE_EXPLORATION.get("queries", "") or [],
     output:
         done=touch(f"{OUTDIR_PP}/gene_exploration/.sentinels/{{sample}}.done"),
     params:

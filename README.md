@@ -1,10 +1,26 @@
-# SpaceBlocks: streamlined, reproducible, spatial transcriptomics analyses
+<p align="center">
+  <img src="docs/img/spaceblocks_logo.svg" alt="SpaceBlocks" width="640">
+</p>
+<p align="center">
+  <a href="https://cbib.github.io/SpaceBlocks/"><img src="https://img.shields.io/badge/docs-online-blue" alt="Documentation"></a>
+  <a href="https://github.com/cbib/SpaceBlocks/actions/workflows/tests.yml"><img src="https://github.com/cbib/SpaceBlocks/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/cbib/SpaceBlocks/blob/main/LICENSE.md"><img src="https://img.shields.io/github/license/cbib/SpaceBlocks" alt="License"></a>
+  <a href="https://snakemake.github.io/snakemake-workflow-catalog/"><img src="https://img.shields.io/badge/Snakemake-workflow-039475" alt="Snakemake workflow"></a>
+</p>
 
-SpaceBlocks is a technology-agnostic Snakemake workflow to **semi-automatically analyse single-cell-resolution spatial transcriptomics (ST).**
+<p align="center">
+  <a href="https://cbib.github.io/SpaceBlocks/">Read the online documentation</a> ·
+  <a href="https://cbib.github.io/SpaceBlocks/demos/">Demos</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-SpaceBlocks allows **easy, scalable, customisable, shareable and fully reproducible ST** quality control, clustering, annotation, integration, differential expression, and spatial neighbourhood/niche analysis.
+## Streamlined, reproducible, spatial transcriptomics analyses with Snakemake
 
-The architechture is meant to allow the analysis of public and *in house* generated ST datasets, with a modular and long-term maintainable design.
+SpaceBlocks is a technology-agnostic Snakemake workflow for **semi-automated analysis of single-cell-resolution spatial transcriptomics (ST)**.
+
+It supports scalable and reproducible quality control, clustering, annotation, integration, differential expression, and spatial neighbourhood or niche analysis.
+
+Its modular architecture supports both public and in-house ST datasets while remaining maintainable and extensible.
 
 ## Quickstart glossary
 
@@ -17,7 +33,7 @@ The architechture is meant to allow the analysis of public and *in house* genera
 
 The workflow is divided into (optional) technology-specific **HeadBlocks** and common **CoreBlocks** that streamline pre-, post-processing, and informative exploration of results.
 
-<p align="center"><img src="docs/img/overview.svg" alt="SpaceBlocks workflow overview" width="760"></p>
+<p align="center"><img src="images/main.png" alt="SpaceBlocks workflow overview"><figcaption>Workflow overview and partial output from Xenium 5K demo example.</figcaption><width="700"></p>
  
 A full SpaceBlocks run takes three inputs:
 
@@ -33,13 +49,13 @@ SpaceBlocks provides tools to ease region annotation via QuPath (ideal if collab
 
 ## Quickstart
 
-SpatialBlocks requires [Snakemake](https://snakemake.readthedocs.io) and Conda/Mamba. The pipeline was developed under Snakemake v9.13.7. The **Visium HD** HeadBlock additionally needs an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1 installation.
+SpaceBlocks requires [Snakemake](https://snakemake.readthedocs.io) and Conda/Mamba. The pipeline was developed under Snakemake v9.13.7. The **Visium HD** HeadBlock additionally needs an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1 installation.
 
 If you are not familiar with Snakemake, there are three key files to configure:
 
-1. `workflow/Snakefile` — loads the config file/s (normally, at `config/config.yaml`), and has the instructions to execute the workflow. It is normaly static, so you should not modify it.
-2. The `config.yaml` — defines the parameters for your workflow run (i.e. where the input and output should be found, whether to use a external reference for cell type annotation, etc.). **It needs to be configured.** The config may require other files needed for the run (in the case of SpaceBlocks, `config/core_samples.tsv`).
-3. The `profile/config.yaml` — Snakemake is a workflow manager that allows parallelization in systems with job schedulers (i.e. `slurm`), or local execution. **The profile needs to be adapted to your system.**
+1. `workflow/Snakefile` — loads the config file/s (normally, at `config/config.yaml`), and has the instructions to execute the workflow. It is normally static, so you should not modify it.
+2. The `config.yaml` — defines the parameters for your workflow run (i.e. where the input and output should be found, whether to use an external reference for cell type annotation, etc.). **It needs to be configured.** The config may require other files needed for the run (in the case of SpaceBlocks, `config/core_samples.tsv`).
+3. The `profiles/config.yaml` — Snakemake is a workflow manager that allows parallelization in systems with job schedulers (i.e. `slurm`), or local execution. **The profile needs to be adapted to your system.**
 
 The full [configuration reference](https://cbib.github.io/SpaceBlocks/configuration/) presents a detailed explanation on how to set `config.yaml`.
 

@@ -23,7 +23,7 @@ __pycache__/
 Thumbs.db
 
 # Test outputs
-.tests/output/
+.test/output/
 
 # visualization
 pipeline_rulegraph.svg

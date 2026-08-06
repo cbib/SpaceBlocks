@@ -1,0 +1,50 @@
+name: atera
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # NOTE ON PINS — these deliberately differ from envs/xenium5k.yaml.
+  #
+  # xenium5k.yaml runs python=3.10 with numpy<2, which suits the spatialdata 0.2-era
+  # stack it pins. Atera needs spatialdata-io >= 0.7, and that stack cannot be built
+  # under those pins:
+  #   * spatialdata 0.7.3 -> multiscale-spatial-image 2.0.3 -> xarray-dataclass >= 3.0
+  #     -> numpy >= 2.0        (so numpy<2 is unsatisfiable)
+  #   * spatialdata 0.8.0 and zarr >= 3.2 both require python >= 3.12
+  #     (so python=3.11 is unsatisfiable)
+  # Hence python 3.12 and numpy 2. Isolating this env is precisely what lets the two
+  # coexist — do not sync these pins back to xenium5k.yaml.
+  - python=3.12
+  - numpy>=2.0
+  - anndata>=0.11
+  - scanpy>=1.11
+  # SpatialData stack.
+  #
+  # Lower bound: the Atera bundle uses the XOA v4 morphology layout
+  # (morphology_focus/chNNNN_<name>.ome.tif). Only spatialdata-io >= 0.7 detects that
+  # layout and reads channel names from the OME XML; older versions expect
+  # morphology_focus_0000.ome.tif and will fail to find the images.
+  #
+  # Upper bound: experiment.xenium reports analysis_sw_version 'xenium-9.9.9.9', a
+  # sentinel meaning "newest". Every version branch in the reader is currently
+  # lower-bounded, so 9.9.9.9 routes correctly — but a future release adding an
+  # upper-bounded branch would silently misroute Atera data. Re-test before relaxing.
+  - spatialdata-io>=0.7,<0.8
+  - spatialdata>=0.7.3
+  # Pulled in by spatialdata-io, but load-bearing here: the v4 branch imports
+  # ome_types to recover the morphology channel names. Pinned explicitly so a solver
+  # change cannot drop it silently.
+  - ome-types>=0.5
+  # Spatial handling / annotation. Lower bounds are the first numpy-2-compatible
+  # releases, so the solver cannot satisfy numpy>=2 by downgrading these instead.
+  - geopandas>=1.0
+  - shapely>=2.0.4
+  # Imaging / I/O
+  - tifffile>=2024.5.22
+  - imagecodecs>=2024.1        # JPEG compression for the QuPath TIFFs
+  - h5py>=3.11
+  # Numerical / viz
+  - scipy>=1.13                # ndimage.affine_transform for the H&E background warp
+  - pandas>=2.2.2
+  - matplotlib-base>=3.9
+  - pip

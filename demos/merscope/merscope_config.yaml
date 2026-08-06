@@ -1,0 +1,148 @@
+# Ready-to-run config for the MERSCOPE public-data example (mode: merscope).
+# Unlike the visiumhd/xenium5k examples (mode: decoupled), this one runs the HEAD:
+# generate_qupath_mer + prepare_input_mer build the contract h5ad straight from a raw
+# Vizgen region, so it exercises the whole MERSCOPE head chain (like the Atera test).
+#
+# One public region = one sample (Vizgen Mouse Brain Receptor Map, Slice 1 Replicate 1).
+# The single-sample run targets `qupath_images` (optional) + `run_preprocessing`;
+# postprocessing (integration / pseudobulk / composition) needs replicates, so those
+# options are trimmed here — add Rep2/Rep3 as extra core_samples rows to enable them.
+mode: merscope
+
+post_processing_outdir: /scratch/CBiB/soterino/demos/merscope/results
+logdir: /scratch/CBiB/soterino/demos/merscope/logs
+spaceranger_processing_outdir: /scratch/CBiB/soterino/demos/merscope/_unused
+geojson_path: demos/merscope/geojson            # optional: {sample}_morphology.geojson
+contract_dir: ''                                # '' → contracts under results/Samples/
+random_seed: 0
+use_precomputed_clusters: false
+
+core_samples: demos/merscope/core_samples.tsv
+
+# ── MERSCOPE head ────────────────────────────────────────────────────────────
+merscope:
+  merscope_dir: /scratch/CBiB/soterino/demos/merscope/data/{sample}   # region dir per sample
+  z_index: 3                     # mosaic z-plane (DAPI/PolyT always present); set to a
+                                 # plane your download actually ships if z3 is absent
+  hires_pixel_size_um: 1.0       # target µm/px of the QuPath + embedded background image
+  channels: [DAPI, PolyT, Cellbound1, Cellbound2, Cellbound3]   # missing ones are skipped
+
+# ── Contract validation ──────────────────────────────────────────────────────
+contract:
+  sample_key: sample
+  spatial_key: spatial
+  require_region: false
+  require_raw_counts: true
+  mito_prefix:                   # MERFISH panels are targeted; no mito genes expected
+  - MT-
+  - mt-
+
+per_sample_qc: ''
+
+# ── Core analysis (single-sample: preprocessing focus) ───────────────────────
+analysis:
+  plot_dpi: 300
+  min_counts: 1
+  min_cells: 3
+  min_genes: 20                  # 483-gene panel — keep the gene floor low
+  n_neighbors: 10
+  n_pcs: 30
+  de_n_genes: 25
+  resolution_scan_min: 0.6
+  resolution_scan_max: 0.8
+  resolution_scan_step: 0.2
+  min_cells_per_type: 15
+  sketch_fraction: 0.25
+  run_pseudobulk_de: false       # needs replicates
+  run_leiden_analysis: true
+  analysis_levels:
+  - by_region
+  - by_celltype_region
+  min_cells_per_pseudobulk: 10
+  min_replicates: 3
+  min_counts_per_pseudobulk: 1000
+  padj_threshold: 0.05
+  lfc_threshold: 0.25
+  region_levels: []              # no GeoJSON by default → region_annotation = Unlabeled
+  region_colors: {}
+
+qc_sweep:
+  ingest_enabled: false
+  ingest_key: cell_type_ingest
+  cell_id_key: cell_id
+  dpi: 300
+  thresholds:
+    min_genes:
+    - 10
+    - 20
+    - 50
+    min_counts:
+    - 1
+    - 10
+    - 50
+    max_counts:
+    - 3000
+    - 5000
+    max_pct_mt:
+    - 10
+    - 15
+    - 20
+
+# Leave cluster_annotations empty for the head/preprocessing test: postprocessing is
+# gated on it (HAS_CLUSTER_ANNOT), so `run_preprocessing` runs and the rest stays off
+# until you map Leiden clusters to cell types (see cluster_annotations_template.tsv).
+cluster_annotations: ''
+snakemake_cell_markers: config/snakemake_cell_markers.tsv
+
+external_annotation:
+  enabled: false
+  column: manual_celltype
+  keep_unannotated: true
+
+ingest_ref: ''
+ingest_ref_label_key: ''
+
+integration:
+  integrate_key: sample
+
+extra_annotations:
+  columns: []
+
+spatial_niches:
+  enabled: false
+
+gene_exploration:
+  queries: ''
+
+sample_colors: {}
+annotation_colors: {}
+
+# ── Resources ────────────────────────────────────────────────────────────────
+# get_resource falls back to `default`; generate_qupath_mer is the memory-heavy step
+# (it reads the whole-slide mosaic before downsampling), so give it more headroom.
+resources:
+  default:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  generate_qupath_mer:
+    mem_mb: 32000
+    runtime: 120
+    threads: 4
+  prepare_input_mer:
+    mem_mb: 16000
+    runtime: 60
+    threads: 4
+  # required by the schema even in non-vhd modes (spaceranger_count_vhd is unused here)
+  spaceranger_count_vhd:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  preprocess_umap:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  leiden_analysis:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4

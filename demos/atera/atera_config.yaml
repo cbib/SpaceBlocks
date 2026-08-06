@@ -1,0 +1,260 @@
+# Ready-to-run config for the Atera HeadBlock test (mode: atera).
+#
+# ALPHA. Atera ships in H2 2026 and the public WTA dataset is a PREVIEW bundle whose
+# output format 10x state will change at commercial release. This config exists to
+# exercise the HeadBlock end to end, not as a polished demo.
+#
+# Unlike demos/visiumhd and demos/xenium5k (which run in mode: decoupled from
+# pre-built contracts), this one runs the HeadBlock itself: the contract h5ad is
+# produced by prepare_input_ate from the raw bundle.
+#
+# Deliberately trimmed: only the keys the head + preprocessing CoreBlock actually
+# read. Postprocessing options (pseudobulk, subcompartments, gene exploration, spatial
+# niches, ingest reference) are omitted because a single sample cannot exercise them
+# meaningfully — see demos/xenium5k/xenium5k_config.yaml for a config that does.
+mode: atera
+
+post_processing_outdir: /scratch/CBiB/soterino/demos/atera/results
+logdir: /scratch/CBiB/soterino/demos/atera/logs
+spaceranger_processing_outdir: /scratch/CBiB/soterino/demos/atera/zarr
+geojson_path: demos/atera/geojson
+random_seed: 0
+
+core_samples: demos/atera/core_samples.tsv
+# Derived from the 10x supplemental WTA_Preview_FFPE_Breast_Cancer_gene_groups.csv:
+# the vendor's own marker groups for this block, pivoted to one column per group.
+# Read ONLY by leiden_analysis, which plots these marker sets against the Leiden
+# clusters. That rule needs no human input, so it stays on: it is the only consumer of
+# 10x's gene_groups.csv, and its output is what a user would read to do the manual
+# cluster mapping later.
+snakemake_cell_markers: demos/atera/snakemake_cell_markers.tsv
+
+# ─── Annotation strategy ─────────────────────────────────────────────────────
+# The alpha demo annotates cells DIRECTLY from 10x's own per-cell calls, so the whole
+# run is reproducible from the two supplemental CSVs with no manual step. Because
+# external_annotation.enabled is true, annotation_types defaults to
+# ["external_annotation"] anyway; it is stated here so the choice is explicit.
+annotation_types:
+- external_annotation
+
+
+# ─── External annotation (10x's own cell calls) ──────────────────────────────
+# `format_atera.py metadata` converts the supplemental cell_groups.csv into
+# metadata_{sample}.tsv here. keep_unannotated stays true so the pipeline runs its own
+# QC and merely overlays the vendor labels; setting it false would hand the cell set
+# over to the vendor file and skip QC entirely.
+precomputed_metadata_dir: demos/atera/external_metadata
+external_annotation:
+  enabled: true
+  column: vendor_celltype
+  keep_unannotated: true
+
+atera:
+  # The preview ships as ONE sample, so atera_dir carries no {sample} placeholder.
+  # For a real multi-sample run use a pattern, e.g. /path/to/atera/{sample}/outs.
+  atera_dir: /scratch/CBiB/soterino/atera/outs
+  zarr_dir: ''                      # '' -> spaceranger_processing_outdir
+  # Level 2 = 0.85 um/px. Both QuPath images (fluorescence composite and registered
+  # H&E) are exported on this morphology grid, so they overlay exactly and share one
+  # pixel->micron scalar. Level 3 halves the resolution and the file size.
+  qupath_pyramid_level: 2
+  hires_pyramid_level: 3
+  pixel_size_um: 0.2125             # experiment.xenium: pixel_size
+
+  # OPTIONAL registered H&E. These three files are SUPPLEMENTAL downloads that sit
+  # next to outs/, not inside it, so they are given as absolute {sample} patterns.
+  # Setting he_image + he_alignment adds a second QuPath annotation image AND makes
+  # the H&E the embedded contract background (resampled onto the morphology grid).
+  # Leave both empty to annotate the fluorescence composite instead.
+  he_image: /scratch/CBiB/soterino/atera/{sample}_he_image.ome.tif
+  he_alignment: /scratch/CBiB/soterino/atera/{sample}_he_alignment.csv
+  he_keypoints: /scratch/CBiB/soterino/atera/{sample}_keypoints.csv
+  # Source level for the H&E warp. Level 2 = 1.10 um/px, fine enough to feed the
+  # 0.85 um/px morphology grid above with only ~1.3x upsampling. Raising this makes the
+  # warped image soft; the rule warns when it has to upsample by more than 5%.
+  he_pyramid_level: 3
+  he_residual_warn_px: 50
+
+contract:
+  sample_key: sample
+  spatial_key: spatial
+  require_region: false
+  require_raw_counts: true
+  mito_prefix:
+  - MT-
+  - mt-
+
+analysis:
+  plot_dpi: 300
+  # WTA is ~18k genes at a median of ~2.1k transcripts/cell, so the count-based
+  # filters are gentler than a 5k-panel run would use.
+  min_counts: 10
+  min_cells: 3
+  min_genes: 50
+  n_neighbors: 10
+  n_pcs: 30
+  de_n_genes: 25
+  resolution_scan_min: 0.6
+  resolution_scan_max: 0.8
+  resolution_scan_step: 0.2
+  min_cells_per_type: 15
+  sketch_fraction: 0.25
+  run_pseudobulk_de: false          # one sample: no replicates
+  run_leiden_analysis: true
+  region_levels:
+  - Invasive
+  - DCIS
+  - Stroma
+  - Normal
+  region_colors:
+    Invasive: '#440154'
+    DCIS: '#31688e'
+    Stroma: '#35b779'
+    Normal: '#fde725'
+
+# ─── Spatial niches (BANKSY) ─────────────────────────────────────────────────
+spatial_niches:
+  enabled: true
+  use_precomputed: false
+  niche_dir: ''
+  lambda: 0.8
+  num_neighbours: 18
+  cluster_n_neighbours: 15
+  n_iterations: 2
+  max_m: 1
+  nbr_weight_decay: scaled_gaussian
+  use_hvg: true
+  n_top_genes: 2000
+  niche_resolution: 0.3
+  refine: false
+  refine_num_neigh: 6
+  refine_iterations: 1
+  refine_auto: false
+  compute_umap: false
+
+# 10x's display colours for their own cell calls, keyed by the obs column each
+# palette applies to (annotate_cells writes cell_type_external for the vendor
+# labels and cell_type_tsv for the cluster_annotations mapping; both carry the
+# same vocabulary here, since the TSV is majority-voted from the vendor calls).
+annotation_colors:
+  cell_type_external:
+    11q13 High Grade DCIS Cells: '#E91E63'
+    11q13 High Grade DCIS Cells (Mitotic): '#880E4F'
+    11q13 High Grade DCIS Tumor Cells (G1/S): '#B71C1C'
+    Apocrine Cells: '#F48FB1'
+    Basal-like Structured DCIS Cells: '#1AFE02'
+    CAFs, High Grade DCIS Associated: '#FF9800'
+    CAFs, Low Grade DCIS Associated: '#FFC107'
+    CXCL14+ Fibroblasts: '#C2640E'
+    Dendritic Cells: '#00BCD4'
+    Endothelial Cells: '#795548'
+    Luminal-like Amorphous DCIS Cells: '#F943D2'
+    Macrophages: '#512DA8'
+    Mast Cells: '#757575'
+    Myeloid Cells: '#9C27B0'
+    Myoepithelial Cells: '#2E7D32'
+    Pericytes: '#8D8D00'
+    Plasma & Mast Cell Mixture: '#6E7CFE'
+    Plasma Cells: '#0F51BD'
+    T Lymphocytes: '#1976D2'
+  cell_type_tsv:
+    11q13 High Grade DCIS Cells: '#E91E63'
+    11q13 High Grade DCIS Cells (Mitotic): '#880E4F'
+    11q13 High Grade DCIS Tumor Cells (G1/S): '#B71C1C'
+    Apocrine Cells: '#F48FB1'
+    Basal-like Structured DCIS Cells: '#1AFE02'
+    CAFs, High Grade DCIS Associated: '#FF9800'
+    CAFs, Low Grade DCIS Associated: '#FFC107'
+    CXCL14+ Fibroblasts: '#C2640E'
+    Dendritic Cells: '#00BCD4'
+    Endothelial Cells: '#795548'
+    Luminal-like Amorphous DCIS Cells: '#F943D2'
+    Macrophages: '#512DA8'
+    Mast Cells: '#757575'
+    Myeloid Cells: '#9C27B0'
+    Myoepithelial Cells: '#2E7D32'
+    Pericytes: '#8D8D00'
+    Plasma & Mast Cell Mixture: '#6E7CFE'
+    Plasma Cells: '#0F51BD'
+    T Lymphocytes: '#1976D2'
+
+qc_sweep:
+  ingest_enabled: false
+  cell_id_key: cell_id
+  dpi: 300
+  thresholds:
+    min_genes:
+    - 25
+    - 50
+    - 100
+    min_counts:
+    - 10
+    - 25
+    - 50
+    max_counts:
+    - 10000
+    - 20000
+    max_pct_mt:
+    - 10
+    - 20
+
+resources:
+  # Schema-mandated (resources.required lists spaceranger_count_vhd) but UNUSED in
+  # mode: atera — the Visium HD head is never included. Kept so config validation
+  # passes without touching the shared schema.
+  spaceranger_count_vhd:
+    mem_mb: 8000
+    runtime: 60
+    threads: 4
+  convert_zarr_ate:
+    mem_mb: 64000
+    runtime: 240
+    threads: 8
+  generate_qupath_ate:
+    mem_mb: 32000
+    runtime: 120
+    threads: 4
+  generate_qupath_he_ate:
+    mem_mb: 48000
+    runtime: 180
+    threads: 4
+  prepare_input_ate:
+    mem_mb: 48000
+    runtime: 120
+    threads: 4
+  validate_input:
+    mem_mb: 32000
+    runtime: 60
+    threads: 4
+  qc_sweep:
+    mem_mb: 32000
+    runtime: 120
+    threads: 4
+  preprocess_umap:
+    mem_mb: 64000
+    runtime: 240
+    threads: 8
+  leiden_analysis:
+    mem_mb: 64000
+    runtime: 240
+    threads: 8
+  annotate_cells:
+    mem_mb: 64000
+    runtime: 180
+    threads: 8
+  neighbourhood_analysis:
+    mem_mb: 64000
+    runtime: 240
+    threads: 8
+  spatial_niches:
+    mem_mb: 128000
+    runtime: 720
+    threads: 16
+  integrate_samples:
+    mem_mb: 64000
+    runtime: 240
+    threads: 8
+  default:
+    mem_mb: 32000
+    runtime: 120
+    threads: 4

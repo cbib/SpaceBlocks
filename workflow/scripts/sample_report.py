@@ -147,14 +147,14 @@ def _build_page1(adata, sample_id, keys, library_id, has_regions=False):
     return fig
 
 
-def _top_markers_by_tsv(adata, tsv_key, n=10):
-    """Top-n DE markers per tsv cell type (deduped, order preserved)."""
+def _top_markers_by(adata, annot_key, n=10):
+    """Top-n DE markers per annotation group (deduped, order preserved)."""
     try:
-        adata.obs[tsv_key] = adata.obs[tsv_key].astype("category")
-        adata.obs[tsv_key] = adata.obs[tsv_key].cat.remove_unused_categories()
-        if adata.obs[tsv_key].nunique() < 2:
+        adata.obs[annot_key] = adata.obs[annot_key].astype("category")
+        adata.obs[annot_key] = adata.obs[annot_key].cat.remove_unused_categories()
+        if adata.obs[annot_key].nunique() < 2:
             return []
-        sc.tl.rank_genes_groups(adata, groupby=tsv_key, method="wilcoxon")
+        sc.tl.rank_genes_groups(adata, groupby=annot_key, method="wilcoxon")
         names = adata.uns["rank_genes_groups"]["names"]
         ordered = []
         for grp in names.dtype.names:
@@ -252,16 +252,29 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
             log.warning("  niche-by-region barplot failed: %s", e)
 
     # ── Horizontal marker dotplot (genes on X), native scanpy legend column ──
-    genes = _top_markers_by_tsv(adata, tsv, n=10) if tsv else []
-    if genes and tsv:
+    # Drive the dotplot off whichever annotation actually carries labels: the manual TSV
+    # mapping when present, else the auto/external annotation (e.g. vendor cell calls) —
+    # so external-only runs still get a meaningful top-markers-per-cell-type dotplot.
+    _marker_labels = {"cell_type_tsv": "TSV cell type",
+                      "cell_type_external": "cell type (external)",
+                      "cell_type_ingest": "cell type (ingest)"}
+    marker_key = next(
+        (k for k in (tsv, auto)
+         if k and k in adata.obs.columns
+         and len(set(adata.obs[k].astype(str).str.strip())
+                 - {"Unannotated", "", "nan", "NA", "None"}) >= 2),
+        None)
+    genes = _top_markers_by(adata, marker_key, n=10) if marker_key else []
+    if genes and marker_key:
         try:
             n_g = len(genes)
-            n_grp = adata.obs[tsv].astype("category").nunique()
+            n_grp = adata.obs[marker_key].astype("category").nunique()
             dp = sc.pl.dotplot(
-                adata, var_names=genes, groupby=tsv, standard_scale="var",
+                adata, var_names=genes, groupby=marker_key, standard_scale="var",
                 swap_axes=False,                          # genes on X → horizontal
                 figsize=(max(9, n_g * 0.34), max(3.0, n_grp * 0.45)),
-                title=f"Sample: {sample_id} — top-10 markers per TSV cell type",
+                title=f"Sample: {sample_id} — top-10 markers per "
+                      f"{_marker_labels.get(marker_key, marker_key)}",
                 return_fig=True)
             dp.legend(width=1.2)                          # compact, vertical colourbar
             dp.make_figure()

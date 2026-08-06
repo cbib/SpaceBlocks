@@ -130,6 +130,68 @@ def xenium_dir_for(sample):
                  "(a {sample} pattern to each Xenium output bundle).")
     return pat.format(sample=sample)
 
+# ── HEAD (Atera) ─────────────────────────────────────────────────────────────
+def atera_dir_for(sample):
+    """Atera output bundle directory for a sample, from the atera.atera_dir
+    {sample} pattern (e.g. 'data/atera/{sample}/outs')."""
+    pat = (config.get("atera", {}) or {}).get("atera_dir", "")
+    if not pat:
+        sys.exit("[config error] mode 'atera' requires atera.atera_dir "
+                 "(a {sample} pattern to each Atera outs/ bundle).")
+    return pat.format(sample=sample)
+
+
+def he_file_for(sample, key, required=True):
+    """Resolve one of the OPTIONAL H&E supplemental files (he_image, he_alignment,
+    he_keypoints) for a sample. These ship as separate downloads from the outs/
+    bundle, so the config gives absolute {sample} patterns rather than the head
+    discovering them. Returns "" when unset and required=False — used for
+    he_keypoints, whose absence only disables the alignment QA."""
+    pat = (config.get("atera", {}) or {}).get(key, "")
+    if not pat:
+        if required:
+            sys.exit(f"[config error] atera.{key} is required when the optional H&E "
+                     "annotation image is enabled (atera.he_image + atera.he_alignment).")
+        return ""
+    return pat.format(sample=sample)
+
+
+def _ate_prepare_inputs(wildcards):
+    """Inputs for prepare_input_ate. The H&E scale-factor JSON and background image are
+    required only when the optional H&E QuPath rule is active, so they are added
+    conditionally — a static input: block cannot express that."""
+    inputs = {
+        "done": rules.convert_zarr_ate.output.done.format(sample=wildcards.sample),
+        "qupath_meta": rules.generate_qupath_ate.output.qupath_meta.format(
+            sample=wildcards.sample),
+    }
+    if ATERA_HAS_HE:
+        # Only the embedded background is consumed here; the raw-H&E QuPath image and its
+        # polygon affine were dropped, so he_meta is no longer an input.
+        inputs["he_background"] = rules.generate_qupath_he_ate.output.he_background.format(
+            sample=wildcards.sample)
+    # Track the region GeoJSON when present, so editing/renaming it retriggers the
+    # contract build. It is read by filename (regions are optional), not hard-required —
+    # same "declare only when present" pattern as _preprocess_inputs' precomputed_meta.
+    for _suffix in ("_he_background.geojson", "_morphology.geojson", "_he.geojson"):
+        _gj = os.path.join(GEOJ_DIR, f"{wildcards.sample}{_suffix}")
+        if os.path.isfile(_gj):
+            inputs["geojson"] = _gj
+            break
+    return inputs
+
+# ── HEAD (MERSCOPE) input helper ─────────────────────────────────────────────
+def merscope_dir_for(sample):
+    """MERSCOPE region directory for a sample, from the merscope.merscope_dir
+    {sample} pattern (e.g. 'data/merscope/{sample}'). The region dir holds the two
+    Vizgen CSVs (cell_by_gene, cell_metadata) and the images/ folder (mosaic TIFFs +
+    micron_to_mosaic_pixel_transform.csv)."""
+    pat = (config.get("merscope", {}) or {}).get("merscope_dir", "")
+    if not pat:
+        sys.exit("[config error] mode 'merscope' requires merscope.merscope_dir "
+                 "(a {sample} pattern to each MERSCOPE region directory).")
+    return pat.format(sample=sample)
+
 
 # ── CORE per-rule input functions ────────────────────────────────────────────
 def _thresholds_for(sample):
