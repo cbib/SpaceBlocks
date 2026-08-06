@@ -4,7 +4,7 @@ SpaceBlocks is built around one idea: a technology-specific **HeadBlock** turns 
 
 Adding a platform means writing a new HeadBlock; the CoreBlock is shared and stable across technologies.
 
-Importantly, the CoreBlocks immediately admit external data, as soon as they pass the `validate_input` rule (see [below](design.md#the-validation-object-contract)).
+Importantly, the CoreBlocks immediately admit external data, as soon as they pass the `validate_input` rule (see [below](#the-validation-object-contract)).
 
 ## Repository structure
 
@@ -80,7 +80,7 @@ For what every file is and why it is useful, see [Outputs](outputs.md); the tree
 ```
 {post_processing_outdir}/
 ├── Samples/{sample}/
-│   ├── {sample}_unfiltered.h5ad                 CONTRACT H5AD (from HadBlocks: prepare_input_{vhd,x5k})
+│   ├── {sample}_unfiltered.h5ad                 CONTRACT H5AD (from HeadBlocks: prepare_input_{vhd,x5k})
 │   ├── QuPath_image/…                            generate_qupath_{vhd,x5k}
 │   ├── validation/input_validation.json         validate_input
 │   ├── qc_sweep/                                 qc_sweep (optional)
