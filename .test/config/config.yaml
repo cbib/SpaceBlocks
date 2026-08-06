@@ -118,7 +118,13 @@ spatial_niches:
   refine_iterations: 1
   refine_auto: false
   compute_umap: false
-subcompartments: {}
+subcompartments:
+  Keratinocytes:
+    strings:
+      - Keratinocytes
+    resolution_min: 0.6
+    resolution_max: 0.8
+    resolution_step: 0.2
 gene_exploration:
   queries: config/gene_queries.tsv
   aucell_max_rank_fraction: 0.05
