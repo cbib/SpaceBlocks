@@ -2,7 +2,7 @@ This page explains how to fully set up the config files to run SpaceBlocks. Full
 
 SpaceBlocks is configured through **`config/config.yaml`**, which contains all the parameters needed for the run, plus one or two **sample sheets**.
 
-The explanations in this page are divided by type (dir, parameter, color, etc.). In the config file, parameters are divided by Block and function.
+The explanations on this page are divided by type (directory, parameter, color, and so on). In the config file, parameters are divided by Block and function.
 
 **Every key in `config/config.yaml` is validated** against `workflow/schemas/config.schema.yaml` before the run starts, so a typo or a missing required field fails immediately with a clear message.
 
@@ -14,16 +14,18 @@ The explanations in this page are divided by type (dir, parameter, color, etc.).
 
 `mode` selects which **Headblock** builds the standardized contract h5ad (or none):
 
-> [!WARNING]
-> The **Visium HD** HeadBlock additionally needs an external Space Ranger installation.
+!!! warning "Space Ranger installation"
+    The **Visium HD** HeadBlock additionally needs an external Space Ranger installation.
 
 | `config["mode"]` | Head that runs | Input |
 | --- | --- | --- |
 | `visiumhd` | `spaceranger_count_vhd` → `generate_qupath_vhd` → `prepare_input_vhd` | 10x Visium HD fastqs + Space Ranger |
 | `xenium5k` | `convert_zarr_x5k` → `generate_qupath_x5k` → `prepare_input_x5k` | Xenium output bundle |
-| `decoupled` | *(none)* | pre-existing contract h5ads you provide |
+| `atera` | `convert_zarr_ate` → `generate_qupath_ate` → `prepare_input_ate` | Atera output bundle; optional registered H&E inputs |
+| `merscope` | `generate_qupath_mer` → `prepare_input_mer` | MERSCOPE region directory |
+| `decoupled` | *(none)* | Pre-existing contract h5ad files you provide |
 
-The analysis **Coreblock** is identical in all three cases.
+The analysis **CoreBlocks** are identical in all five cases. Atera support is currently alpha because the public preview format may change before commercial release.
 
 ## 2. Paths, files and sample sheets
 
@@ -31,7 +33,7 @@ The SpaceBlocks `config/config.yaml` sets the input and output directories, and 
 
 | Path / File | Key | Condition | Meaning |
 | --- | --- | --- | --- |
-| Path | `spaceranger_processing_outdir` | `mode: visiumhd` / `xenium5k` | Directory where the head writes its heavy intermediates (Space Ranger tree / SpatialData zarr). |
+| Path | `spaceranger_processing_outdir` | Head modes | Directory where the head writes heavy intermediates such as Space Ranger outputs or SpatialData Zarr stores. |
 | File | `spaceranger` | `mode: visiumhd` | Path to the Space Ranger installation. |
 | File | `probe_set` | `mode: visiumhd` | [Probe set CSV](https://www.10xgenomics.com/support/spatial-gene-expression-hd/documentation/steps/probe-sets) needed to run Space Ranger. |
 | File | `transcriptome` | `mode: visiumhd` | [Reference transcriptome](https://www.10xgenomics.com/support/software/space-ranger/downloads) needed to run Space Ranger. |
@@ -45,9 +47,9 @@ The SpaceBlocks `config/config.yaml` sets the input and output directories, and 
 | File | `ingest_ref` | **Optional** (auto-annotation) | Annotated scRNA-seq reference h5ad for `ingest_ref`. |
 | Path | `precomputed_metadata_dir` | **Optional** (reproducibility) | Directory of precomputed per-sample metadata TSVs. The metadata can contain precomputed clusters and/or external annotations. |
 
-You only need one sample sheet (`core_samples.tsv`) for `mode: decoupled` and `mode: xenium5k`, and two (`core_samples.tsv` and `visiumhd_samples.csv`) for `mode: visiumhd`.
+`core_samples.tsv` is the technology-agnostic sample sheet used by the CoreBlocks in every use case. Visium HD additionally uses `visiumhd_samples.csv` for fastq, slide, and capture-area information.
 
-For `xenium5k`, the per-sample input bundles come from `xenium5k.xenium_dir` (filenames with a `{sample}` pattern), not a separate sheet.
+For `xenium5k`, `atera`, and `merscope`, per-sample input bundles are located through the corresponding `{sample}` path pattern in `xenium5k.xenium_dir`, `atera.atera_dir`, or `merscope.merscope_dir`; no second head-specific sample sheet is required.
 
 !!! tip "Color customization for result visualization"
     You can customize the color scale for any sample metadata in `core_samples.tsv` as additional columns. See [section 3](#3-parameters) and [section 4](#4-color-scale-customization) for details.
@@ -111,7 +113,9 @@ The rest of the configuration lives in nested blocks. Files and single parameter
 
 | Section | Condition | What it configures |
 | --- | --- | --- |
-| `xenium5k` | `mode: xenium5k` | Xenium head settings: `xenium_dir`, `zarr_dir`, pyramid levels, `pixel_size_um`. |
+| `xenium5k` | `mode: xenium5k` | Xenium head settings: `xenium_dir`, `zarr_dir`, pyramid levels, and `pixel_size_um`. |
+| `atera` | `mode: atera` | Atera head settings: `atera_dir`, Zarr and pyramid options, plus optional registered H&E image, alignment, and keypoint patterns. |
+| `merscope` | `mode: merscope` | MERSCOPE head settings: `merscope_dir`, selected z-plane, embedded-image resolution, and image channels. |
 | `contract` | **Mandatory** | Semantic keys of the hand-off object: `sample_key`, `spatial_key`, `require_region`, `require_raw_counts`, `mito_prefix`. |
 | `analysis` | **Mandatory** | The bulk of the run: QC filters (`min_counts` / `min_genes` / `min_cells` / `max_counts` / `max_pct_mt`), the Leiden `resolution_scan_*`, the pseudobulk `analysis_levels` + thresholds, the `region_levels`, and the `run_*` toggles. Per-sample QC overrides come from `per_sample_qc`. |
 | `resources` | **Mandatory** | Per-rule `mem_mb` / `runtime` / `threads` (with a `default`). Memory scales with the retry attempt, so an OOM-killed job is resubmitted with more RAM. |
@@ -163,13 +167,37 @@ xenium5k:
   pixel_size_um: 0.2125
 ```
 
+**Atera** (`mode: atera`, alpha)
+```yaml
+mode: "atera"
+atera:
+  atera_dir: "/path/to/atera/{sample}/outs"
+  zarr_dir: ""
+  qupath_pyramid_level: 3
+  hires_pyramid_level: 3
+  pixel_size_um: 0.2125
+  he_image: ""       # optional {sample} pattern; set with he_alignment
+  he_alignment: ""   # optional {sample} pattern; set with he_image
+  he_keypoints: ""   # optional {sample} pattern
+```
+
+**MERSCOPE** (`mode: merscope`)
+```yaml
+mode: "merscope"
+merscope:
+  merscope_dir: "/path/to/merscope/{sample}"
+  z_index: 3
+  hires_pixel_size_um: 1.0
+  channels: [DAPI, PolyT, Cellbound1, Cellbound2, Cellbound3]
+```
+
 **Externally prepared data** (`mode: decoupled`)
 ```yaml
 mode: "decoupled"
-contract_dir: "/path/to/contract_h5ads"    # one {sample}_unfiltered.h5ad per sample
+contract_dir: "/path/to/contract_h5ads"    # one <sample>.h5ad file per sample
 ```
 
-All three additionally set `core_samples`, `post_processing_outdir`, `logdir`, and (recommended) `geojson_path`.
+All modes additionally set `core_samples`, `post_processing_outdir`, `logdir`, and the other required common keys in `config/config.yaml`; **`geojson_path` is optional but strongly recommended**.
 
 ## 8. Minimal example
 
