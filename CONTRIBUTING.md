@@ -9,7 +9,7 @@ For the full design rationale, see the [documentation](https://cbib.github.io/Sp
 
 SpaceBlocks is split into two halves that meet at one object (the full picture is in [Design & architecture](https://cbib.github.io/SpaceBlocks/design/)):
 
-- a technology-specific **HeadBlock** (`visiumhd`, `xenium5k`, …) turns raw data into a **standardized AnnData object** saved as an h5ad file, which we refer to as a **contract h5ad** for brevity;
+- a technology-specific **HeadBlock** (`visiumhd`, `xenium5k`, `atera`, or `merscope`) turns raw data into a **standardized AnnData object** saved as an h5ad file, which we refer to as a **contract h5ad** for brevity;
 - a technology-agnostic **CoreBlock** validates that contract and runs all the analysis.
 
 `mode: decoupled` skips the head entirely and consumes contract h5ads you provide. **The contract is the only coupling point**: get it right and everything downstream just works.
@@ -38,6 +38,7 @@ reproduction/         public-data worked examples
 git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 # Snakemake >= 8 and Conda/Mamba are the only host requirements.
 snakemake -n --sdm conda      # dry-run: builds the DAG, validates the config, provisions envs
+snakemake -s workflow/Snakefile -d .test -n --workflow-profile none  # decoupled smoke test
 ```
 
 Each rule group has its own Conda env, provisioned by `--sdm conda`. Keep the loose `envs/*.yaml`
@@ -79,25 +80,37 @@ changes. See the `xenium5k` head as a reference implementation.
 
 ## Validating a change
 
-Run these locally before pushing, they mirror CI:
+Run the applicable checks locally before pushing. The first two mirror CI and use the committed
+`mode: decoupled` fixture under `.test/`:
 
 ```bash
 # 1. Workflow parses + lints (against the committed test fixture)
 snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
 
-# 2. The DAG builds. These are decoupled smoke test, and each head mode
+# 2. The decoupled CoreBlock DAG builds
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
-snakemake -s workflow/Snakefile -d .test --rulegraph --workflow-profile none | dot -Tsvg > pipeline_rulegraph.svg
-snakemake -n --config mode=visiumhd  --workflow-profile none
-snakemake -n --config mode=xenium5k  --workflow-profile none
 
 # 3. Config still validates against the schema
-python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml')))"
+python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration schema validation passed')"
 
 # 4. Docs build cleanly (only if you touched docs/)
 pip install mkdocs-material pymdown-extensions
 mkdocs build --strict
 ```
+
+Before a catalogue release, generate the decoupled rule graph once manually:
+
+```bash
+snakemake -s workflow/Snakefile -d .test --forceall --rulegraph --workflow-profile none > pipeline_rulegraph.dot
+```
+
+Rendering the DOT file to SVG is optional and requires Graphviz:
+
+```bash
+dot -Tsvg pipeline_rulegraph.dot > images/rulegraph.svg
+```
+
+If you modify a HeadBlock, also dry-run the affected mode using a complete platform-specific configuration and representative mock or real inputs. Changing only `mode` in the generic `config/config.yaml` is not sufficient because its input paths are placeholders. Supported modes are `visiumhd`, `xenium5k`, `atera`, `merscope`, and `decoupled`.
 
 Quick per-file sanity checks are cheap and worth it: `python -c "import ast; ast.parse(open('file.py').read())"`
 for Python, and `yaml.safe_load` for any YAML you edit.
@@ -115,7 +128,7 @@ self-contained.
 
 Two workflows run on every PR and must pass:
 
-- **`tests`** — `snakemake --lint`, a decoupled dry-run, fixture regeneration, and catalogue rule-graph generation against `.test/`.
+- **`tests`** — `snakemake --lint` and a decoupled dry-run against `.test/`.
 - **`docs`** — `mkdocs build --strict`. Deployment to GitHub Pages is gated behind the repo variable
   `PUBLISH_DOCS=true` and only runs on `main`.
 
