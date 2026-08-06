@@ -2,7 +2,7 @@
 # Every key is validated against workflow/schemas/config.schema.yaml before the run starts.
 
 # ─── Run mode — which headblock builds the contract h5ad ─────────────────────
-mode: visiumhd
+mode: decoupled
 
 # ─── input/output directories ────────────────────────────────────────────────
 post_processing_outdir: /scratch/CBiB/soterino/smk_visiumhd_results

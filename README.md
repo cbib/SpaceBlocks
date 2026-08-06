@@ -33,7 +33,7 @@ Its modular architecture supports both public and in-house ST datasets while rem
 
 The workflow is divided into (optional) technology-specific **HeadBlocks** and common **CoreBlocks** that streamline pre-, post-processing, and informative exploration of results.
 
-<p align="center"><img src="docs/img/overview.svg" alt="SpaceBlocks workflow overview" width="760"></p>
+<p align="center"><img src="images/main.png" alt="SpaceBlocks workflow overview"><figcaption>Workflow overview and partial output from Xenium 5K demo example.</figcaption><width="700"></p>
  
 A full SpaceBlocks run takes three inputs:
 

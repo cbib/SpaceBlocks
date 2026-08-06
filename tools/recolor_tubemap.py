@@ -1,138 +1,216 @@
 #!/usr/bin/env python3
-"""Recolour a snakevision tube-map SVG by SpaceBlocks block (viridis) and add a legend.
+"""Recolour a Snakevision tube-map SVG by SpaceBlocks block and add a legend.
 
-Snakevision auto-assigns node colours (recycling them across unrelated rules) and ignores
-the Graphviz `color` attribute, so colouring has to be done on the rendered SVG. Each
-element is mapped to its rule by POSITION — circles by their `id`, tube segments/curves by
-the node they descend from — never by colour, since the same snakevision colour can land on
-rules in different blocks.
-
-Head rules are detected by their `_vhd` / `_x5k` suffix (so a new head just works); core
-rules are mapped to a phase below. Unmapped rules are coloured grey and reported.
+Uses a high-contrast, colour-blind-friendly categorical palette. Head rules are
+identified by their suffix; core rules are assigned explicitly to a phase.
+Unmapped rules are coloured grey and reported.
 
 Usage:
-    python recolor_tubemap.py input.svg [output.svg]
+    python recolor_tubemap.py rulegraph.svg [output.svg]
 """
+from pathlib import Path
 import re
 import sys
 
-# ── Block palette (viridis) ──────────────────────────────────────────────────
-HEAD = {  # rule-name suffix -> (hex, legend label)
-    "_vhd": ("#440154", "Visium HD"),
-    "_x5k": ("#414487", "Xenium 5K"),
+HEAD = {
+    "_vhd": ("#000000", "Visium HD"),
+    "_x5k": ("#E69F00", "Xenium 5K"),
+    "_ate": ("#56B4E9", "Atera"),
+    "_mer": ("#009E73", "MERSCOPE"),
 }
-CORE_PHASE = {  # core rule -> phase (names don't encode the phase, so map it here)
-    "validate_input": "pre", "qc_sweep": "pre", "preprocess_umap": "pre",
-    "leiden_analysis": "pre", "generate_annotation_template": "pre",
-    "ingest_ref": "pre", "spatial_niches": "pre",
-    "annotate_cells": "post", "integrate_samples": "post", "pseudobulk_aggregate": "post",
-    "pseudobulk_de": "post", "neighbourhood_analysis": "post", "subcluster": "post",
-    "sample_report": "post",
-    "explore_genes_integrated": "explore", "explore_genes_sample": "explore",
-}
-CORE = {  # phase -> (hex, legend label)
-    "pre": ("#2a788e", "Preprocessing"),
-    "post": ("#35b779", "Postprocessing"),
-    "explore": ("#7ad151", "Exploration"),
-}
-UNKNOWN = "#999999"
 
+CORE = {
+    "pre": ("#D55E00", "Preprocessing"),
+    "post": ("#0072B2", "Postprocessing"),
+    "explore": ("#CC79A7", "Exploration"),
+}
+
+UNKNOWN = "#777777"
+
+CORE_PHASE = {
+    # Preprocessing
+    "validate_input": "pre",
+    "qc_sweep": "pre",
+    "qc_sweep_all": "pre",
+    "preprocess_umap": "pre",
+    "leiden_analysis": "pre",
+    "generate_annotation_template": "pre",
+    "ingest_ref": "pre",
+    "spatial_niches": "pre",
+    "run_preprocessing": "pre",
+    # Postprocessing
+    "annotate_cells": "post",
+    "integrate_samples": "post",
+    "pseudobulk_aggregate": "post",
+    "pseudobulk_de": "post",
+    "neighbourhood_analysis": "post",
+    "subcluster": "post",
+    "subcluster_all": "post",
+    "sample_report": "post",
+    "run_postprocessing": "post",
+    # Exploration
+    "explore_genes": "explore",
+    "explore_genes_integrated": "explore",
+    "explore_genes_sample": "explore",
+    "run_exploration": "explore",
+}
 
 def colour_for(rule):
-    """Block colour for a rule, or None if unmapped."""
+    """Return the block colour for a rule, or None when it is unmapped."""
     if rule is None:
         return None
-    for suf, (col, _) in HEAD.items():
-        if rule.endswith(suf):
-            return col
+    for suffix, (colour, _) in HEAD.items():
+        if rule.endswith(suffix):
+            return colour
     phase = CORE_PHASE.get(rule)
     return CORE[phase][0] if phase else None
 
 
 def recolour(svg):
-    # circles -> node positions
     nodes = {}
-    for m in re.finditer(r'<circle cx="([\d.]+)" cy="([\d.]+)" fill="#[0-9a-fA-F]{6}" id="N(\w+)"', svg):
-        nodes[(float(m.group(1)), float(m.group(2)))] = m.group(3)
-    # vertical coloured lines -> tube segments (owner = node at the top of the segment)
-    segs = []
-    for m in re.finditer(r'<line stroke="#[0-9a-fA-F]{6}" stroke-width="2.0" '
-                         r'x1="([\d.]+)" x2="([\d.]+)" y1="([\d.]+)" y2="([\d.]+)"', svg):
-        x1, x2, y1, y2 = map(float, m.groups())
+    for match in re.finditer(
+        r'<circle cx="([\d.]+)" cy="([\d.]+)" fill="#[0-9a-fA-F]{6}" id="N(\w+)"',
+        svg,
+    ):
+        nodes[(float(match.group(1)), float(match.group(2)))] = match.group(3)
+
+    segments = []
+    for match in re.finditer(
+        r'<line stroke="#[0-9a-fA-F]{6}" stroke-width="2.0" '
+        r'x1="([\d.]+)" x2="([\d.]+)" y1="([\d.]+)" y2="([\d.]+)"',
+        svg,
+    ):
+        x1, x2, y1, y2 = map(float, match.groups())
         if x1 == x2 and (x1, y1) in nodes:
-            segs.append((x1, min(y1, y2), max(y1, y2), nodes[(x1, y1)]))
+            segments.append((x1, min(y1, y2), max(y1, y2), nodes[(x1, y1)]))
 
     def owner_at(x, y):
-        for sx, lo, hi, rule in segs:
-            if abs(sx - x) < 0.01 and lo - 0.01 <= y <= hi + 0.01:
+        for segment_x, low, high, rule in segments:
+            if abs(segment_x - x) < 0.01 and low - 0.01 <= y <= high + 0.01:
                 return rule
         return None
 
-    out, last_path, unknown = [], None, set()
-    for tok in re.finditer(r'<[^>]+>|[^<]+', svg):
-        s = tok.group(0)
-        mc = re.search(r'id="N(\w+)"', s)
-        if s.startswith("<circle") and mc:                       # node
-            c = colour_for(mc.group(1))
-            if c is None:
-                unknown.add(mc.group(1)); c = UNKNOWN
-            s = re.sub(r'fill="#[0-9a-fA-F]{6}"', f'fill="{c}"', s)
-        elif s.startswith("<path") and 'stroke="#' in s:          # tube corner
-            mm = re.search(r'M ([\d.]+),([\d.]+)', s)
-            last_path = owner_at(float(mm.group(1)), float(mm.group(2))) if mm else None
-            c = colour_for(last_path)
-            if c:
-                s = re.sub(r'stroke="#[0-9a-fA-F]{6}"', f'stroke="{c}"', s)
-        elif s.startswith("<line") and 'stroke="#' in s:          # tube segment / run
-            mx = re.search(r'x1="([\d.]+)" x2="([\d.]+)" y1="([\d.]+)" y2="([\d.]+)"', s)
-            x1, x2, y1, y2 = map(float, mx.groups())
-            rule = (nodes.get((x1, y1)) or owner_at(x1, y1)) if x1 == x2 else last_path
-            c = colour_for(rule)
-            if c:
-                s = re.sub(r'stroke="#[0-9a-fA-F]{6}"', f'stroke="{c}"', s)
-        out.append(s)
+    output = []
+    last_path = None
+    unknown = set()
+
+    for token in re.finditer(r'<[^>]+>|[^<]+', svg):
+        element = token.group(0)
+        node_match = re.search(r'id="N(\w+)"', element)
+
+        if element.startswith("<circle") and node_match:
+            rule = node_match.group(1)
+            colour = colour_for(rule)
+            if colour is None:
+                unknown.add(rule)
+                colour = UNKNOWN
+            element = re.sub(r'fill="#[0-9a-fA-F]{6}"', f'fill="{colour}"', element)
+
+        elif element.startswith("<path") and 'stroke="#' in element:
+            move_match = re.search(r'M ([\d.]+),([\d.]+)', element)
+            last_path = (
+                owner_at(float(move_match.group(1)), float(move_match.group(2)))
+                if move_match else None
+            )
+            colour = colour_for(last_path)
+            if colour:
+                element = re.sub(
+                    r'stroke="#[0-9a-fA-F]{6}"', f'stroke="{colour}"', element
+                )
+
+        elif element.startswith("<line") and 'stroke="#' in element:
+            coords = re.search(
+                r'x1="([\d.]+)" x2="([\d.]+)" y1="([\d.]+)" y2="([\d.]+)"',
+                element,
+            )
+            if coords:
+                x1, x2, y1, _ = map(float, coords.groups())
+                rule = (
+                    nodes.get((x1, y1)) or owner_at(x1, y1)
+                    if x1 == x2 else last_path
+                )
+                colour = colour_for(rule)
+                if colour:
+                    element = re.sub(
+                        r'stroke="#[0-9a-fA-F]{6}"', f'stroke="{colour}"', element
+                    )
+
+        output.append(element)
+
     if unknown:
-        sys.stderr.write("[warn] unmapped rules coloured grey: %s\n" % ", ".join(sorted(unknown)))
-    return "".join(out)
+        sys.stderr.write(
+            "[warn] unmapped rules coloured grey: "
+            + ", ".join(sorted(unknown))
+            + "\n"
+        )
+    return "".join(output)
 
 
 def add_legend(svg):
-    m = re.search(r'viewBox="([\d.]+)[,\s]([\d.]+)[,\s]([\d.]+)[,\s]([\d.]+)"', svg)
-    if not m:
+    match = re.search(
+        r'viewBox="([\d.]+)[,\s]([\d.]+)[,\s]([\d.]+)[,\s]([\d.]+)"', svg
+    )
+    if not match:
         sys.stderr.write("[warn] no viewBox found; legend skipped\n")
         return svg
-    minx, miny, w, h = map(float, m.groups())
-    y0 = miny + h + 20
-    svg = svg.replace(m.group(0), f'viewBox="{minx},{miny},{w},{h + 120}"')
-    xa, xb = minx + 10, minx + 205
 
-    def entry(cx, cy, col, txt):
-        return (f'<circle cx="{cx}" cy="{cy}" r="6" fill="{col}" stroke="white" stroke-width="2"/>'
-                f'<text x="{cx + 13}" y="{cy + 4}" font-family="sans-serif" font-size="14">{txt}</text>')
+    min_x, min_y, width, height = map(float, match.groups())
+    row_height = 22
+    heading_height = 24
+    padding = 24
+    legend_height = padding + heading_height + max(len(HEAD), len(CORE)) * row_height + 12
+    legend_y = min_y + height + padding
+
+    svg = svg.replace(
+        match.group(0),
+        f'viewBox="{min_x},{min_y},{width},{height + legend_height}"',
+    )
+
+    left_x = min_x + 10
+    right_x = min_x + max(220, width * 0.52)
+
+    def entry(x, y, colour, label):
+        return (
+            f'<circle cx="{x}" cy="{y}" r="6" fill="{colour}" '
+            f'stroke="white" stroke-width="2"/>'
+            f'<text x="{x + 13}" y="{y + 4}" font-family="sans-serif" '
+            f'font-size="14">{label}</text>'
+        )
 
     parts = [
         '<g id="legend">',
-        f'<line x1="{minx + 10}" x2="{minx + w - 10}" y1="{y0 - 8}" y2="{y0 - 8}" stroke="lightgrey"/>',
-        f'<text x="{xa}" y="{y0 + 8}" font-family="sans-serif" font-size="15" font-weight="bold">Headblocks</text>',
-        entry(xa + 7, y0 + 28, HEAD["_vhd"][0], HEAD["_vhd"][1]),
-        entry(xa + 7, y0 + 48, HEAD["_x5k"][0], HEAD["_x5k"][1]),
-        f'<text x="{xb}" y="{y0 + 8}" font-family="sans-serif" font-size="15" font-weight="bold">Coreblocks</text>',
-        entry(xb + 7, y0 + 28, CORE["pre"][0], CORE["pre"][1]),
-        entry(xb + 7, y0 + 48, CORE["post"][0], CORE["post"][1]),
-        entry(xb + 7, y0 + 68, CORE["explore"][0], CORE["explore"][1]),
-        '</g>',
+        f'<line x1="{min_x + 10}" x2="{min_x + width - 10}" '
+        f'y1="{legend_y - 10}" y2="{legend_y - 10}" stroke="#D0D0D0"/>',
+        f'<text x="{left_x}" y="{legend_y + 6}" font-family="sans-serif" '
+        f'font-size="15" font-weight="bold">Headblocks</text>',
+        f'<text x="{right_x}" y="{legend_y + 6}" font-family="sans-serif" '
+        f'font-size="15" font-weight="bold">Coreblocks</text>',
     ]
+
+    for index, (_, (colour, label)) in enumerate(HEAD.items()):
+        parts.append(entry(left_x + 7, legend_y + 28 + index * row_height, colour, label))
+
+    for index, (_, (colour, label)) in enumerate(CORE.items()):
+        parts.append(entry(right_x + 7, legend_y + 28 + index * row_height, colour, label))
+
+    parts.append("</g>")
     return svg.replace("</svg>", "".join(parts) + "</svg>")
 
 
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: recolor_tubemap.py input.svg [output.svg]")
-    inp = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else inp.rsplit(".svg", 1)[0] + "_recoloured.svg"
-    svg = add_legend(recolour(open(inp).read()))
-    open(out, "w").write(svg)
-    print("wrote", out)
+
+    input_path = Path(sys.argv[1])
+    output_path = (
+        Path(sys.argv[2])
+        if len(sys.argv) > 2
+        else input_path.with_name(f"{input_path.stem}_recoloured.svg")
+    )
+
+    svg = input_path.read_text(encoding="utf-8")
+    output_path.write_text(add_legend(recolour(svg)), encoding="utf-8")
+    print(f"wrote {output_path}")
 
 
 if __name__ == "__main__":
