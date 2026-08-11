@@ -7,4 +7,4 @@ cluster	sample1_0.6	sample2_0.6	sample3_0.6
 5	Macrophages	Fibroblasts	Melanoma (neural-like)
 6	Keratinocytes	Melanoma (neural-like)	Keratinocytes
 7	Melanoma	Keratinocytes	Fibroblasts
-8		Fibroblasts	
+8		Fibroblasts
