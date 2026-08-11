@@ -1,27 +1,22 @@
 rule ingest_ref:
     """
-    Transfer cell-type labels from a reference scRNA-seq h5ad to each
-    Visium HD sample using scanpy.tl.ingest.
+Transfer cell-type labels from a reference scRNA-seq h5ad to each
+Visium HD sample using scanpy.tl.ingest.
 
-    The reference must contain:
-    - A cell-type annotation column (configurable via ref_label_key)
-    - X as normalised expression (same normalisation as the query)
-    - PCA in obsm['X_pca']
+The reference must contain:
+- A cell-type annotation column (configurable via ref_label_key)
+- X as normalised expression (same normalisation as the query)
+- PCA in obsm['X_pca']
 
-    Produces an ingested h5ad with obs['cell_type_ingest'] and plots.
-    Only runs if config['ingest_ref'] points to a valid h5ad file.
-    """
+Produces an ingested h5ad with obs['cell_type_ingest'] and plots.
+Only runs if config['ingest_ref'] points to a valid h5ad file.
+"""
     input:
         adata=rules.preprocess_umap.output.adata,
         ingest_ref=config.get("ingest_ref", "") or [],
     output:
         adata_ingested=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_ingested.h5ad",
         plots_dir=directory(f"{SAMPLES_DIR}/{{sample}}/ingest"),
-    params:
-        sample_id=lambda wc: wc.sample,
-        ref_label_key=config.get("ingest_ref_label_key", "cell_type"),
-        de_n_genes=ANALYSIS.get("de_n_genes", 10),
-        annotation_colors=config.get("annotation_colors", {}),
     log:
         out=f"{LOGDIR}/ingest_ref/{{sample}}.out",
         err=f"{LOGDIR}/ingest_ref/{{sample}}.err",
@@ -29,10 +24,14 @@ rule ingest_ref:
         f"{LOGDIR}/benchmarks/ingest_ref/{{sample}}.tsv"
     conda:
         "../envs/visiumhd.yaml"
-    threads:
-        get_resource("ingest_ref", "threads")
+    threads: get_resource("ingest_ref", "threads")
     resources:
         mem_mb=mem_mb_attempt("ingest_ref"),
         runtime=get_resource("ingest_ref", "runtime"),
+    params:
+        sample_id=lambda wc: wc.sample,
+        ref_label_key=config.get("ingest_ref_label_key", "cell_type"),
+        de_n_genes=ANALYSIS.get("de_n_genes", 10),
+        annotation_colors=config.get("annotation_colors", {}),
     script:
         "../scripts/ingest_ref.py"

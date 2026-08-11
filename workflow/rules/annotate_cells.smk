@@ -1,8 +1,8 @@
 rule annotate_cells:
     """
-    Annotate cells: TSV cluster mapping + optional external annotation.
-    If use_precomputed_clusters, reads leiden from metadata TSV.
-    """
+Annotate cells: TSV cluster mapping + optional external annotation.
+If use_precomputed_clusters, reads leiden from metadata TSV.
+"""
     input:
         adata=_annotate_input_adata,
         metadata=rules.preprocess_umap.output.metadata,
@@ -11,6 +11,17 @@ rule annotate_cells:
     output:
         adata_annot=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}_annotated.h5ad",
         plots_dir=directory(f"{SAMPLES_DIR}/{{sample}}/annotation"),
+    log:
+        out=f"{LOGDIR}/annotate_cells/{{sample}}.out",
+        err=f"{LOGDIR}/annotate_cells/{{sample}}.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/annotate_cells/{{sample}}.tsv"
+    conda:
+        "../envs/visiumhd.yaml"
+    threads: get_resource("annotate_cells", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("annotate_cells"),
+        runtime=get_resource("annotate_cells", "runtime"),
     params:
         sample_id=lambda wc: wc.sample,
         min_cells_per_type=ANALYSIS.get("min_cells_per_type", 15),
@@ -22,17 +33,5 @@ rule annotate_cells:
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
-    log:
-        out=f"{LOGDIR}/annotate_cells/{{sample}}.out",
-        err=f"{LOGDIR}/annotate_cells/{{sample}}.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/annotate_cells/{{sample}}.tsv"
-    conda:
-        "../envs/visiumhd.yaml"
-    threads:
-        get_resource("annotate_cells", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("annotate_cells"),
-        runtime=get_resource("annotate_cells", "runtime"),
     script:
         "../scripts/annotate_cells.py"

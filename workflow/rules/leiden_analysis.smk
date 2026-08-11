@@ -1,16 +1,27 @@
 rule leiden_analysis:
     """
-    Per-resolution visualisation.
+Per-resolution visualisation.
 
-    Reads the adata (which already contains leiden_{res} in obs), selects
-    the appropriate column, and produces all plots.  No h5ad is saved
-    per resolution — the single adata from preprocess_umap has everything.
-    """
+Reads the adata (which already contains leiden_{res} in obs), selects
+the appropriate column, and produces all plots.  No h5ad is saved
+per resolution — the single adata from preprocess_umap has everything.
+"""
     input:
         adata=rules.preprocess_umap.output.adata,
         cell_markers=config["snakemake_cell_markers"],
     output:
         res_dir=directory(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{resolution}}"),
+    log:
+        out=f"{LOGDIR}/leiden_analysis/{{sample}}_res{{resolution}}.out",
+        err=f"{LOGDIR}/leiden_analysis/{{sample}}_res{{resolution}}.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/leiden_analysis/{{sample}}_res{{resolution}}.tsv"
+    conda:
+        "../envs/visiumhd.yaml"
+    threads: get_resource("leiden_analysis", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("leiden_analysis"),
+        runtime=get_resource("leiden_analysis", "runtime"),
     params:
         sample_id=lambda wc: wc.sample,
         resolution=lambda wc: wc.resolution,
@@ -20,17 +31,5 @@ rule leiden_analysis:
         resolution_scan_step=ANALYSIS.get("resolution_scan_step", 0.1),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
-    log:
-        out=f"{LOGDIR}/leiden_analysis/{{sample}}_res{{resolution}}.out",
-        err=f"{LOGDIR}/leiden_analysis/{{sample}}_res{{resolution}}.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/leiden_analysis/{{sample}}_res{{resolution}}.tsv"
-    conda:
-        "../envs/visiumhd.yaml"
-    threads:
-        get_resource("leiden_analysis", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("leiden_analysis"),
-        runtime=get_resource("leiden_analysis", "runtime"),
     script:
         "../scripts/leiden_analysis.py"

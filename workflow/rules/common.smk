@@ -25,9 +25,11 @@ def mem_mb_attempt(rule_name, cap_factor=None):
     killed for OOM is automatically resubmitted with more memory. Pairs with the
     global `retries` set in the execution profile. attempt starts at 1 (= base)."""
     base = get_resource(rule_name, "mem_mb")
+
     def _mem(wildcards, attempt):
         factor = attempt if cap_factor is None else min(attempt, cap_factor)
         return int(base * factor)
+
     return _mem
 
 
@@ -42,12 +44,16 @@ def check_external_annotation():
         return
     col = cfg.get("column", "")
     if not col:
-        sys.exit("[config error] external_annotation.enabled is true but 'column' is empty.")
+        sys.exit(
+            "[config error] external_annotation.enabled is true but 'column' is empty."
+        )
     meta_dir = config.get("precomputed_metadata_dir", "") or ""
     if not meta_dir:
-        sys.exit("[config error] external_annotation.enabled requires 'precomputed_metadata_dir' "
-                 f"to point at a directory of metadata_{{sample}}.tsv files carrying the '{col}' "
-                 "column (the pipeline's own metadata does not contain external labels).")
+        sys.exit(
+            "[config error] external_annotation.enabled requires 'precomputed_metadata_dir' "
+            f"to point at a directory of metadata_{{sample}}.tsv files carrying the '{col}' "
+            "column (the pipeline's own metadata does not contain external labels)."
+        )
     missing_file, missing_col = [], []
     for s in SAMPLE_IDS:
         f = os.path.join(meta_dir, f"metadata_{s}.tsv")
@@ -61,11 +67,17 @@ def check_external_annotation():
         if col not in header:
             missing_col.append(f)
     if missing_file or missing_col:
-        msg = [f"[config error] external_annotation enabled (column '{col}') but not in place:"]
+        msg = [
+            f"[config error] external_annotation enabled (column '{col}') but not in place:"
+        ]
         if missing_file:
-            msg.append("  missing metadata file(s):\n    " + "\n    ".join(missing_file))
+            msg.append(
+                "  missing metadata file(s):\n    " + "\n    ".join(missing_file)
+            )
         if missing_col:
-            msg.append(f"  column '{col}' absent in:\n    " + "\n    ".join(missing_col))
+            msg.append(
+                f"  column '{col}' absent in:\n    " + "\n    ".join(missing_col)
+            )
         sys.exit("\n".join(msg))
 
 
@@ -94,7 +106,9 @@ def _extra_annot_color_triples():
     sc_ = SAMPLE_COLORS if isinstance(SAMPLE_COLORS, dict) else {}
     for c in EXTRA_ANNOT_COLUMNS:
         for v, hexc in (sc_.get(c, {}) or {}).items():
-            cols.append(c); vals.append(str(v)); colors.append(str(hexc))
+            cols.append(c)
+            vals.append(str(v))
+            colors.append(str(hexc))
     return cols, vals, colors
 
 
@@ -126,9 +140,12 @@ def xenium_dir_for(sample):
     {sample} pattern (e.g. 'data/xenium/{sample}')."""
     pat = (config.get("xenium5k", {}) or {}).get("xenium_dir", "")
     if not pat:
-        sys.exit("[config error] mode 'xenium5k' requires xenium5k.xenium_dir "
-                 "(a {sample} pattern to each Xenium output bundle).")
+        sys.exit(
+            "[config error] mode 'xenium5k' requires xenium5k.xenium_dir "
+            "(a {sample} pattern to each Xenium output bundle)."
+        )
     return pat.format(sample=sample)
+
 
 # ── HEAD (Atera) ─────────────────────────────────────────────────────────────
 def atera_dir_for(sample):
@@ -136,8 +153,10 @@ def atera_dir_for(sample):
     {sample} pattern (e.g. 'data/atera/{sample}/outs')."""
     pat = (config.get("atera", {}) or {}).get("atera_dir", "")
     if not pat:
-        sys.exit("[config error] mode 'atera' requires atera.atera_dir "
-                 "(a {sample} pattern to each Atera outs/ bundle).")
+        sys.exit(
+            "[config error] mode 'atera' requires atera.atera_dir "
+            "(a {sample} pattern to each Atera outs/ bundle)."
+        )
     return pat.format(sample=sample)
 
 
@@ -150,8 +169,10 @@ def he_file_for(sample, key, required=True):
     pat = (config.get("atera", {}) or {}).get(key, "")
     if not pat:
         if required:
-            sys.exit(f"[config error] atera.{key} is required when the optional H&E "
-                     "annotation image is enabled (atera.he_image + atera.he_alignment).")
+            sys.exit(
+                f"[config error] atera.{key} is required when the optional H&E "
+                "annotation image is enabled (atera.he_image + atera.he_alignment)."
+            )
         return ""
     return pat.format(sample=sample)
 
@@ -163,13 +184,17 @@ def _ate_prepare_inputs(wildcards):
     inputs = {
         "done": rules.convert_zarr_ate.output.done.format(sample=wildcards.sample),
         "qupath_meta": rules.generate_qupath_ate.output.qupath_meta.format(
-            sample=wildcards.sample),
+            sample=wildcards.sample
+        ),
     }
     if ATERA_HAS_HE:
         # Only the embedded background is consumed here; the raw-H&E QuPath image and its
         # polygon affine were dropped, so he_meta is no longer an input.
-        inputs["he_background"] = rules.generate_qupath_he_ate.output.he_background.format(
-            sample=wildcards.sample)
+        inputs["he_background"] = (
+            rules.generate_qupath_he_ate.output.he_background.format(
+                sample=wildcards.sample
+            )
+        )
     # Track the region GeoJSON when present, so editing/renaming it retriggers the
     # contract build. It is read by filename (regions are optional), not hard-required —
     # same "declare only when present" pattern as _preprocess_inputs' precomputed_meta.
@@ -180,6 +205,7 @@ def _ate_prepare_inputs(wildcards):
             break
     return inputs
 
+
 # ── HEAD (MERSCOPE) input helper ─────────────────────────────────────────────
 def merscope_dir_for(sample):
     """MERSCOPE region directory for a sample, from the merscope.merscope_dir
@@ -188,8 +214,10 @@ def merscope_dir_for(sample):
     micron_to_mosaic_pixel_transform.csv)."""
     pat = (config.get("merscope", {}) or {}).get("merscope_dir", "")
     if not pat:
-        sys.exit("[config error] mode 'merscope' requires merscope.merscope_dir "
-                 "(a {sample} pattern to each MERSCOPE region directory).")
+        sys.exit(
+            "[config error] mode 'merscope' requires merscope.merscope_dir "
+            "(a {sample} pattern to each MERSCOPE region directory)."
+        )
     return pat.format(sample=sample)
 
 
@@ -226,7 +254,9 @@ def _preprocess_inputs(wc):
     if _ext.get("enabled") and not _ext.get("keep_unannotated", True):
         _meta_dir = config.get("precomputed_metadata_dir", "") or ""
         if _meta_dir:
-            inputs["external_meta"] = os.path.join(_meta_dir, f"metadata_{wc.sample}.tsv")
+            inputs["external_meta"] = os.path.join(
+                _meta_dir, f"metadata_{wc.sample}.tsv"
+            )
     return inputs
 
 
@@ -238,8 +268,9 @@ def _spatial_niches_inputs(wc):
     rule reloads from its own output dir, so nothing is added here (no circular
     dependency)."""
     inputs = {
-        "adatas": expand(f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
-                         sample=SAMPLE_IDS),
+        "adatas": expand(
+            f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad", sample=SAMPLE_IDS
+        ),
     }
     sn = config.get("spatial_niches", {})
     if sn.get("use_precomputed", False):
@@ -279,10 +310,13 @@ def get_all_targets(wildcards):
     targets += expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS)
-    targets += list(QUPATH_IMAGES)   # head QuPath image(s) for the active mode (or [])
+    targets += list(QUPATH_IMAGES)  # head QuPath image(s) for the active mode (or [])
     if RUN_LEIDEN_ANALYSIS:
-        targets += expand(rules.leiden_analysis.output.res_dir,
-                          sample=SAMPLE_IDS, resolution=RESOLUTIONS)
+        targets += expand(
+            rules.leiden_analysis.output.res_dir,
+            sample=SAMPLE_IDS,
+            resolution=RESOLUTIONS,
+        )
     if SPATIAL_NICHES_ENABLED:
         targets.append(rules.spatial_niches.output.concatenated)
         targets.append(rules.spatial_niches.output.plots_dir)
@@ -291,13 +325,22 @@ def get_all_targets(wildcards):
         if HAS_INGEST_REF:
             targets += expand(rules.ingest_ref.output.adata_ingested, sample=SAMPLE_IDS)
         targets += expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS)
-        targets += expand(rules.neighbourhood_analysis.output.results_dir,
-                          sample=SAMPLE_IDS, annot_type=ANNOT_TYPES)
-        targets += expand(rules.pseudobulk_aggregate.output.agg_dir,
-                          annot_type=ANNOT_TYPES, analysis_level=ANALYSIS_LEVELS)
+        targets += expand(
+            rules.neighbourhood_analysis.output.results_dir,
+            sample=SAMPLE_IDS,
+            annot_type=ANNOT_TYPES,
+        )
+        targets += expand(
+            rules.pseudobulk_aggregate.output.agg_dir,
+            annot_type=ANNOT_TYPES,
+            analysis_level=ANALYSIS_LEVELS,
+        )
         if RUN_DE:
-            targets += expand(rules.pseudobulk_de.output.results_dir,
-                              annot_type=ANNOT_TYPES, analysis_level=ANALYSIS_LEVELS)
+            targets += expand(
+                rules.pseudobulk_de.output.results_dir,
+                annot_type=ANNOT_TYPES,
+                analysis_level=ANALYSIS_LEVELS,
+            )
         targets.append(rules.integrate_samples.output.concatenated)
         targets.append(rules.integrate_samples.output.harmony)
         targets.append(rules.integrate_samples.output.sketched)
@@ -306,5 +349,7 @@ def get_all_targets(wildcards):
             targets.append(rules.explore_genes_integrated.output.ranges)
             targets += expand(rules.explore_genes_sample.output.done, sample=SAMPLE_IDS)
     if SUBCOMPARTMENTS:
-        targets += expand(rules.subcluster.output.sub_dir, subcompartment=SUBCOMPARTMENTS)
+        targets += expand(
+            rules.subcluster.output.sub_dir, subcompartment=SUBCOMPARTMENTS
+        )
     return targets

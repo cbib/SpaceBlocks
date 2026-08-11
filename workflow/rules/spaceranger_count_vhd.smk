@@ -1,15 +1,16 @@
 rule spaceranger_count_vhd:
     """
-    Run Space Ranger ``count`` on a single Visium HD sample.
+Run Space Ranger ``count`` on a single Visium HD sample.
 
-    Space Ranger must be installed locally — its licence does not permit
-    redistribution in container images.  The executable path is set in
-    ``config.yaml`` under the ``spaceranger`` key.
+Space Ranger must be installed locally — its licence does not permit
+redistribution in container images.  The executable path is set in
+``config.yaml`` under the ``spaceranger`` key.
 
-    Real output files (web_summary.html and the raw bin matrix) are NOT tracked
-    as the output of this rule due to Martian restrictions. These files are
-    instead tracked in downstream rules, giving Snakemake proper provenance.
-    """
+Real output files (web_summary.html and the raw bin matrix) are NOT tracked
+as the output of this rule due to Martian restrictions. These files are
+instead tracked in downstream rules, giving Snakemake proper provenance.
+"""
+
     # Space Ranger is proprietary and user-installed (path in config["spaceranger"]);
     # the visiumhd env below is declared only to satisfy `snakemake --lint` and to
     # provide the wrapper's Python — it does NOT contain Space Ranger itself.
@@ -18,9 +19,7 @@ rule spaceranger_count_vhd:
         cytaimage=lambda wc: (
             f"{SAMPLES[wc.sample]['fastq_dir']}/images/{wc.sample}_cyta.tiff"
         ),
-        image=lambda wc: (
-            f"{SAMPLES[wc.sample]['fastq_dir']}/images/{wc.sample}.tiff"
-        ),
+        image=lambda wc: (f"{SAMPLES[wc.sample]['fastq_dir']}/images/{wc.sample}.tiff"),
         loupe_alignment=lambda wc: (
             f"{SAMPLES[wc.sample]['fastq_dir']}/images/{wc.sample}.json"
         ),
@@ -28,6 +27,17 @@ rule spaceranger_count_vhd:
         probe_set=config["probe_set"],
     output:
         done_flag=f"{OUTDIR_SR}/{{sample}}/.done",
+    log:
+        out=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.out",
+        err=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/spaceranger_count_vhd/{{sample}}.tsv"
+    conda:
+        "../envs/visiumhd.yaml"
+    threads: get_resource("spaceranger_count_vhd", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("spaceranger_count_vhd"),
+        runtime=get_resource("spaceranger_count_vhd", "runtime"),
     params:
         # outdir derived from the rule output (not a hardcoded prefix) so it
         # cannot drift and is correct on non-shared filesystems.
@@ -36,38 +46,26 @@ rule spaceranger_count_vhd:
         area=lambda wc: SAMPLES[wc.sample]["area"],
         spaceranger=config["spaceranger"],
         fastqs_formatted=fastq_dirs_comma_separated,
-    conda:
-        "../envs/visiumhd.yaml"
-    log:
-        out=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.out",
-        err=f"{LOGDIR}/spaceranger_count_vhd/{{sample}}.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/spaceranger_count_vhd/{{sample}}.tsv"
-    threads:
-        get_resource("spaceranger_count_vhd", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("spaceranger_count_vhd"),
-        runtime=get_resource("spaceranger_count_vhd", "runtime"),
     shell:
         """
         (
-        echo "=== Space Ranger version ==="
-        {params.spaceranger} --version
+            echo "=== Space Ranger version ==="
+            {params.spaceranger} --version
 
-        {params.spaceranger} count \
-            --id={wildcards.sample} \
-            --transcriptome={input.transcriptome} \
-            --fastqs={params.fastqs_formatted} \
-            --sample={wildcards.sample} \
-            --cytaimage={input.cytaimage} \
-            --image={input.image} \
-            --slide={params.slide} \
-            --area={params.area} \
-            --loupe-alignment={input.loupe_alignment} \
-            --probe-set={input.probe_set} \
-            --output-dir={params.outdir} \
-            --create-bam=false
-        ) > {log.out} 2> {log.err}
+            {params.spaceranger} count \
+                --id={wildcards.sample} \
+                --transcriptome={input.transcriptome} \
+                --fastqs={params.fastqs_formatted} \
+                --sample={wildcards.sample} \
+                --cytaimage={input.cytaimage} \
+                --image={input.image} \
+                --slide={params.slide} \
+                --area={params.area} \
+                --loupe-alignment={input.loupe_alignment} \
+                --probe-set={input.probe_set} \
+                --output-dir={params.outdir} \
+                --create-bam=false
+        ) >{log.out} 2>{log.err}
 
         touch {output.done_flag}
         """

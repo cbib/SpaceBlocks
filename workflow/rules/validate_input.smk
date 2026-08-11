@@ -33,6 +33,15 @@ rule validate_input:
         h5ad=lambda wc: _CONTRACT["unfiltered_h5ad"].format(sample=wc.sample),
     output:
         report=f"{_OUT}/{{sample}}/validation/input_validation.json",
+    log:
+        out=f"{_OUT}/logs/{{sample}}/validate_input.log",
+        err=f"{_OUT}/logs/{{sample}}/validate_input.err",
+    conda:
+        "../envs/visiumhd.yaml"
+    threads: get_resource("validate_input", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("validate_input"),
+        runtime=get_resource("validate_input", "runtime"),
     params:
         sample_id=lambda wc: wc.sample,
         sample_key=_CONTRACT.get("sample_key", "sample"),
@@ -43,15 +52,5 @@ rule validate_input:
         external_enabled=EXTERNAL_ENABLED,
         external_column=(config.get("external_annotation", {}) or {}).get("column", ""),
         external_meta_dir=config.get("precomputed_metadata_dir", ""),
-    log:
-        out=f"{_OUT}/logs/{{sample}}/validate_input.log",
-        err=f"{_OUT}/logs/{{sample}}/validate_input.err",
-    conda:
-        "../envs/visiumhd.yaml"
-    threads:
-        get_resource("validate_input", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("validate_input"),
-        runtime=get_resource("validate_input", "runtime"),
     script:
         "../scripts/validate_input.py"

@@ -1,18 +1,29 @@
 rule integrate_samples:
     """
-    Integrate all annotated samples into a multi-sample object.
+Integrate all annotated samples into a multi-sample object.
 
-    Produces three h5ad files in integrated_samples/:
-    - concatenated.h5ad:  simple concatenation (no batch correction)
-    - harmony_integrated.h5ad:  Harmony-corrected PCA + UMAP
-    - sketched.h5ad:  geosketched 25% subset with projected clusters
-    """
+Produces three h5ad files in integrated_samples/:
+- concatenated.h5ad:  simple concatenation (no batch correction)
+- harmony_integrated.h5ad:  Harmony-corrected PCA + UMAP
+- sketched.h5ad:  geosketched 25% subset with projected clusters
+"""
     input:
         annotated=expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
     output:
         concatenated=f"{OUTDIR_PP}/integrated_samples/concatenated.h5ad",
         harmony=f"{OUTDIR_PP}/integrated_samples/harmony_integrated.h5ad",
         sketched=f"{OUTDIR_PP}/integrated_samples/sketched.h5ad",
+    log:
+        out=f"{LOGDIR}/integrate_samples/integrate.out",
+        err=f"{LOGDIR}/integrate_samples/integrate.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/integrate_samples/integrate.tsv"
+    conda:
+        "../envs/visiumhd.yaml"
+    threads: get_resource("integrate_samples", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("integrate_samples"),
+        runtime=get_resource("integrate_samples", "runtime"),
     params:
         sample_ids=SAMPLE_IDS,
         n_neighbors=ANALYSIS.get("n_neighbors", 10),
@@ -25,17 +36,5 @@ rule integrate_samples:
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,
         sample_colors=SAMPLE_COLORS,
         integrate_key=INTEGRATE_KEY,
-    log:
-        out=f"{LOGDIR}/integrate_samples/integrate.out",
-        err=f"{LOGDIR}/integrate_samples/integrate.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/integrate_samples/integrate.tsv"
-    conda:
-        "../envs/visiumhd.yaml"
-    threads:
-        get_resource("integrate_samples", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("integrate_samples"),
-        runtime=get_resource("integrate_samples", "runtime"),
     script:
         "../scripts/integrate_samples.py"
