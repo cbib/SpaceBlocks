@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/snakemake/snakefmt
+    rev: v1.1.0 # Replace by any tag/version ≥v0.6.0 : https://github.com/snakemake/snakefmt/releases
+    hooks:
+      - id: snakefmt
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
