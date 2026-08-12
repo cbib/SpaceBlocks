@@ -1,0 +1,9 @@
+name: spaceblocks_dev
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - snakemake>=9.13
+  - pre_commit
+  - bioconda::snakefmt
