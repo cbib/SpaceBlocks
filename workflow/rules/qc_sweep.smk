@@ -5,7 +5,7 @@ _QC = config.get("qc_sweep", {})
 
 rule qc_sweep:
     """Per-sample QC diagnostic: violins (per region), spatial threshold-landing
-grid, continuous QC-feature maps, joint scatter, and threshold tables."""
+    grid, continuous QC-feature maps, joint scatter, and threshold tables."""
     input:
         h5ad=lambda wc: _CONTRACT["unfiltered_h5ad"].format(sample=wc.sample),
         validation=f"{_OUT}/{{sample}}/validation/input_validation.json",

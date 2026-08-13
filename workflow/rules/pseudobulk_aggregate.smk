@@ -1,14 +1,14 @@
 rule pseudobulk_aggregate:
     """
-Aggregate single cells into pseudobulk count matrices using decoupler.
+    Aggregate single cells into pseudobulk count matrices using decoupler.
 
-Output structure:
-  {annot_type}/{analysis_level}/
-    ├── matrices/     count TSVs
-    ├── metadata/     metadata TSVs
-    ├── plots/        sample-level QC (pseudobulk bar, PCA)
-    └── manifest.tsv
-"""
+    Output structure:
+      {annot_type}/{analysis_level}/
+        ├── matrices/     count TSVs
+        ├── metadata/     metadata TSVs
+        ├── plots/        sample-level QC (pseudobulk bar, PCA)
+        └── manifest.tsv
+    """
     input:
         adata=rules.integrate_samples.output.concatenated,
     output:

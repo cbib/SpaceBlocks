@@ -1,19 +1,19 @@
 rule generate_qupath_he_ate:
     """
-Atera Headblock (OPTIONAL) — downsample the registered H&E whole-slide image into a
-QuPath-annotatable TIFF, compose the H&E-pixel → micron transform from the 10x
-alignment matrix, and resample the H&E onto the morphology pixel grid to serve as
-the contract background image.
+    Atera Headblock (OPTIONAL) — downsample the registered H&E whole-slide image into a
+    QuPath-annotatable TIFF, compose the H&E-pixel → micron transform from the 10x
+    alignment matrix, and resample the H&E onto the morphology pixel grid to serve as
+    the contract background image.
 
-Only included when atera.he_image and atera.he_alignment are configured. The H&E
-ships as a separate download from the outs/ bundle, so its paths are given
-explicitly in the config (absolute {sample} patterns) rather than discovered.
+    Only included when atera.he_image and atera.he_alignment are configured. The H&E
+    ships as a separate download from the outs/ bundle, so its paths are given
+    explicitly in the config (absolute {sample} patterns) rather than discovered.
 
-Deliberately standalone rather than folded into generate_qupath_ate: the H&E is
-optional (a conditional output block is not expressible cleanly in Snakemake), and
-keeping it separate makes it liftable into the Xenium head, which supports the same
-aligned-image workflow.
-"""
+    Deliberately standalone rather than folded into generate_qupath_ate: the H&E is
+    optional (a conditional output block is not expressible cleanly in Snakemake), and
+    keeping it separate makes it liftable into the Xenium head, which supports the same
+    aligned-image workflow.
+    """
     input:
         done=rules.convert_zarr_ate.output.done,
         he_image=lambda wc: he_file_for(wc.sample, "he_image"),

@@ -1,15 +1,15 @@
 rule spaceranger_count_vhd:
     """
-Run Space Ranger ``count`` on a single Visium HD sample.
+    Run Space Ranger ``count`` on a single Visium HD sample.
 
-Space Ranger must be installed locally — its licence does not permit
-redistribution in container images.  The executable path is set in
-``config.yaml`` under the ``spaceranger`` key.
+    Space Ranger must be installed locally — its licence does not permit
+    redistribution in container images.  The executable path is set in
+    ``config.yaml`` under the ``spaceranger`` key.
 
-Real output files (web_summary.html and the raw bin matrix) are NOT tracked
-as the output of this rule due to Martian restrictions. These files are
-instead tracked in downstream rules, giving Snakemake proper provenance.
-"""
+    Real output files (web_summary.html and the raw bin matrix) are NOT tracked
+    as the output of this rule due to Martian restrictions. These files are
+    instead tracked in downstream rules, giving Snakemake proper provenance.
+    """
 
     # Space Ranger is proprietary and user-installed (path in config["spaceranger"]);
     # the visiumhd env below is declared only to satisfy `snakemake --lint` and to

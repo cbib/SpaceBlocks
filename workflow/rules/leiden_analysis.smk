@@ -1,11 +1,11 @@
 rule leiden_analysis:
     """
-Per-resolution visualisation.
+    Per-resolution visualisation.
 
-Reads the adata (which already contains leiden_{res} in obs), selects
-the appropriate column, and produces all plots.  No h5ad is saved
-per resolution — the single adata from preprocess_umap has everything.
-"""
+    Reads the adata (which already contains leiden_{res} in obs), selects
+    the appropriate column, and produces all plots.  No h5ad is saved
+    per resolution — the single adata from preprocess_umap has everything.
+    """
     input:
         adata=rules.preprocess_umap.output.adata,
         cell_markers=config["snakemake_cell_markers"],

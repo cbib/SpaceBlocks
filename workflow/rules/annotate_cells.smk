@@ -1,8 +1,8 @@
 rule annotate_cells:
     """
-Annotate cells: TSV cluster mapping + optional external annotation.
-If use_precomputed_clusters, reads leiden from metadata TSV.
-"""
+    Annotate cells: TSV cluster mapping + optional external annotation.
+    If use_precomputed_clusters, reads leiden from metadata TSV.
+    """
     input:
         adata=_annotate_input_adata,
         metadata=rules.preprocess_umap.output.metadata,

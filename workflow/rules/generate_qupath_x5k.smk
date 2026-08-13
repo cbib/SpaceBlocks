@@ -1,8 +1,8 @@
 rule generate_qupath_x5k:
     """
-Xenium5k Headblock — composite a morphology RGB TIFF (+ scale-factor JSON) from the
-zarr for QuPath region annotation. Analogous to generate_qupath_vhd (Visium HD).
-"""
+    Xenium5k Headblock — composite a morphology RGB TIFF (+ scale-factor JSON) from the
+    zarr for QuPath region annotation. Analogous to generate_qupath_vhd (Visium HD).
+    """
     input:
         done=rules.convert_zarr_x5k.output.done,
     output:

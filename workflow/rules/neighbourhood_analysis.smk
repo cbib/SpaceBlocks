@@ -1,9 +1,9 @@
 rule neighbourhood_analysis:
     """
-Spatial neighbourhood analysis, run for both annotation types.
+    Spatial neighbourhood analysis, run for both annotation types.
 
-The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation'.
-"""
+    The {annot_type} wildcard is either 'tsv_annotation' or 'refined_annotation'.
+    """
     input:
         adata=rules.annotate_cells.output.adata_annot,
     output:

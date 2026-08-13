@@ -1,10 +1,10 @@
 rule generate_qupath_ate:
     """
-Atera Headblock — composite a morphology RGB TIFF (+ scale-factor JSON) from the
-zarr for QuPath region annotation. This is the DEFAULT annotation image and is
-always produced; the optional registered H&E is handled by generate_qupath_he_ate.
-Analogous to generate_qupath_x5k (Xenium 5K).
-"""
+    Atera Headblock — composite a morphology RGB TIFF (+ scale-factor JSON) from the
+    zarr for QuPath region annotation. This is the DEFAULT annotation image and is
+    always produced; the optional registered H&E is handled by generate_qupath_he_ate.
+    Analogous to generate_qupath_x5k (Xenium 5K).
+    """
     input:
         done=rules.convert_zarr_ate.output.done,
     output:

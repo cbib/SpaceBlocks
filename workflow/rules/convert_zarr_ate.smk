@@ -1,9 +1,9 @@
 rule convert_zarr_ate:
     """
-Atera Headblock — heavy I/O: convert one Atera output bundle to a SpatialData
-zarr store. Analogous to convert_zarr_x5k (Xenium 5K) and spaceranger_count_vhd
-(Visium HD).
-"""
+    Atera Headblock — heavy I/O: convert one Atera output bundle to a SpatialData
+    zarr store. Analogous to convert_zarr_x5k (Xenium 5K) and spaceranger_count_vhd
+    (Visium HD).
+    """
     input:
         atera_dir=lambda wc: atera_dir_for(wc.sample),
     output:

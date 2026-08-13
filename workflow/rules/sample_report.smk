@@ -1,11 +1,11 @@
 rule sample_report:
     """
-Generate a multi-page PDF report with separate pages per sample.
+    Generate a multi-page PDF report with separate pages per sample.
 
-Each page contains: (1) UMAP (clusters + annotation), spatial plot
-(clusters + annotation), (2-3) barplots with cell proportions per region, cluster and niche,
-and (4) a dotplot with the top markers per cell type.
-"""
+    Each page contains: (1) UMAP (clusters + annotation), spatial plot
+    (clusters + annotation), (2-3) barplots with cell proportions per region, cluster and niche,
+    and (4) a dotplot with the top markers per cell type.
+    """
     input:
         annotated=expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
     output:

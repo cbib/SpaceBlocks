@@ -1,10 +1,10 @@
 rule generate_qupath_mer:
     """
-MERSCOPE Headblock — composite a morphology RGB TIFF (+ pixel<->micron JSON and a grey
-background reused by the contract) from the Vizgen mosaic OME-TIFFs for QuPath region
-annotation. Analogous to generate_qupath_x5k, but reads the mosaic directly (no zarr).
+    MERSCOPE Headblock — composite a morphology RGB TIFF (+ pixel<->micron JSON and a grey
+    background reused by the contract) from the Vizgen mosaic OME-TIFFs for QuPath region
+    annotation. Analogous to generate_qupath_x5k, but reads the mosaic directly (no zarr).
 
-"""
+    """
     input:
         # anchor on the always-present transform CSV; the script discovers the mosaics
         transform=lambda wc: os.path.join(

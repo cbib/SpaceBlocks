@@ -1,11 +1,11 @@
 rule explore_genes_integrated:
     """
-Gene / signature exploration – integrated plots (PNGs).
+    Gene / signature exploration – integrated plots (PNGs).
 
-Loads the Harmony-integrated h5ad once, computes AUCell scores for
-all signatures, writes shared expression ranges, and produces PNGs
-in per-entry subdirectories under gene_exploration/{entry}/Integrated/.
-"""
+    Loads the Harmony-integrated h5ad once, computes AUCell scores for
+    all signatures, writes shared expression ranges, and produces PNGs
+    in per-entry subdirectories under gene_exploration/{entry}/Integrated/.
+    """
     input:
         integrated=rules.integrate_samples.output.harmony,
         queries=GENE_EXPLORATION.get("queries", "") or [],
@@ -39,14 +39,14 @@ in per-entry subdirectories under gene_exploration/{entry}/Integrated/.
 
 rule explore_genes_sample:
     """
-Gene / signature exploration – per-sample plots (PNGs).
+    Gene / signature exploration – per-sample plots (PNGs).
 
-Processes a single sample: composite spatial PNG (expression +
-cell type + region) and composite dotplot PNGs (3 views stacked).
-Parallelised across samples via Snakemake wildcard.
-Output organised by entry: gene_exploration/{entry}/Spatial/ and
-gene_exploration/{entry}/Dotplots/.
-"""
+    Processes a single sample: composite spatial PNG (expression +
+    cell type + region) and composite dotplot PNGs (3 views stacked).
+    Parallelised across samples via Snakemake wildcard.
+    Output organised by entry: gene_exploration/{entry}/Spatial/ and
+    gene_exploration/{entry}/Dotplots/.
+    """
     input:
         adata=rules.annotate_cells.output.adata_annot,
         ranges=rules.explore_genes_integrated.output.ranges,

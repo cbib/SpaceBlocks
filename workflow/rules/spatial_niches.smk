@@ -1,17 +1,17 @@
 rule spatial_niches:
     """
-Cross-sample spatial niche / domain identification with BANKSY.
+    Cross-sample spatial niche / domain identification with BANKSY.
 
-Runs jointly on all preprocessed samples (staggered coords → per-sample
-spatial graphs → BANKSY matrix → PCA → Harmony across samples → Leiden),
-producing one spatial_niche label per cell.  The per-sample niche TSVs are
-consumed by annotate_cells, which injects the `spatial_niche` obs column so
-every downstream rule picks it up automatically (find_niche_column).
+    Runs jointly on all preprocessed samples (staggered coords → per-sample
+    spatial graphs → BANKSY matrix → PCA → Harmony across samples → Leiden),
+    producing one spatial_niche label per cell.  The per-sample niche TSVs are
+    consumed by annotate_cells, which injects the `spatial_niche` obs column so
+    every downstream rule picks it up automatically (find_niche_column).
 
-Runs before annotation, independently of integrate_samples, so the niche
-method can be swapped (or precomputed externally) without touching the rest
-of the pipeline.
-"""
+    Runs before annotation, independently of integrate_samples, so the niche
+    method can be swapped (or precomputed externally) without touching the rest
+    of the pipeline.
+    """
     input:
         unpack(_spatial_niches_inputs),
     output:

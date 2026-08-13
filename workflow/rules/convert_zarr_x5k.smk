@@ -1,8 +1,8 @@
 rule convert_zarr_x5k:
     """
-Xenium5k Headblock — heavy I/O: convert one Xenium output bundle to a SpatialData
-zarr store. Analogous to spaceranger_count_vhd for Visium HD.
-"""
+    Xenium5k Headblock — heavy I/O: convert one Xenium output bundle to a SpatialData
+    zarr store. Analogous to spaceranger_count_vhd for Visium HD.
+    """
     input:
         xenium_dir=lambda wc: xenium_dir_for(wc.sample),
     output:

@@ -1,12 +1,12 @@
 rule prepare_input_ate:
     """
-Atera Headblock — zarr + QuPath GeoJSON → the standardized UNFILTERED CONTRACT
-h5ad. Analogous to prepare_input_x5k (Xenium 5K) and prepare_input_vhd (Visium HD);
-writes one AnnData .h5ad contract file per sample.
+    Atera Headblock — zarr + QuPath GeoJSON → the standardized UNFILTERED CONTRACT
+    h5ad. Analogous to prepare_input_x5k (Xenium 5K) and prepare_input_vhd (Visium HD);
+    writes one AnnData .h5ad contract file per sample.
 
-Inputs are assembled by _ate_prepare_inputs so that the H&E scale-factor JSON is
-required only when the optional H&E rule is active.
-"""
+    Inputs are assembled by _ate_prepare_inputs so that the H&E scale-factor JSON is
+    required only when the optional H&E rule is active.
+    """
     input:
         unpack(_ate_prepare_inputs),
     output:

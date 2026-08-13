@@ -1,8 +1,8 @@
 rule pseudobulk_de:
     """
-DE with R DESeq2 (Wald + LRT), EnhancedVolcano, ComplexHeatmap, DEGpatterns.
-Region levels and colors from config control ordering and visualization.
-"""
+    DE with R DESeq2 (Wald + LRT), EnhancedVolcano, ComplexHeatmap, DEGpatterns.
+    Region levels and colors from config control ordering and visualization.
+    """
     input:
         agg_dir=rules.pseudobulk_aggregate.output.agg_dir,
     output:

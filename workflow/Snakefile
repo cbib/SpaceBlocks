@@ -378,8 +378,9 @@ rule subcluster_all:
 
 rule qupath_images:
     """HEAD: generate the hires images to annotate in QuPath (run FIRST, annotate,
-export each {sample}_tissue_hires_image.geojson into geojson_path, then continue).
-"""
+    export each {sample}_tissue_hires_image.geojson into geojson_path, then continue).
+
+    """
     input:
         QUPATH_IMAGES,
 

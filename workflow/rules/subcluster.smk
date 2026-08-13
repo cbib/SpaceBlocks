@@ -3,11 +3,11 @@ SUBCOMPARTMENTS = list(config.get("subcompartments", {}).keys())
 
 rule subcluster:
     """
-Subset and subcluster a cell compartment from the concatenated dataset.
+    Subset and subcluster a cell compartment from the concatenated dataset.
 
-Produces two branches (Harmony / NoHarmony), each with leiden clustering
-at multiple resolutions, silhouette evaluation, QC plots, and UMAPs.
-"""
+    Produces two branches (Harmony / NoHarmony), each with leiden clustering
+    at multiple resolutions, silhouette evaluation, QC plots, and UMAPs.
+    """
     input:
         adata=rules.integrate_samples.output.concatenated,
     output:
