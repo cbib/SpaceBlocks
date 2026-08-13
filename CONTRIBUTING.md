@@ -113,7 +113,9 @@ snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
 python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration schema validation passed')"
 
 # 4. Docs build cleanly (only if you touched docs/)
+# If you did not install the development environment, run:
 pip install mkdocs-material pymdown-extensions
+# Build the docs
 mkdocs build --strict
 ```
 

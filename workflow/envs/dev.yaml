@@ -4,6 +4,14 @@ channels:
   - bioconda
 
 dependencies:
+  # Base snakemake environment
   - snakemake>=9.13
+
+  # Formatting and linting tools
   - pre_commit
   - bioconda::snakefmt
+
+  # Documentation tools
+  - mkdocs
+  - pymdown-extensions
+  - mkdocs-material
