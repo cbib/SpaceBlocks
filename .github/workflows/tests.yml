@@ -43,3 +43,4 @@ jobs:
         run: snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
       - name: Dry-run (decoupled smoke test)
         run: snakemake -s workflow/Snakefile -d .test --dry-run --workflow-profile none
+  

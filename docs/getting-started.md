@@ -87,7 +87,7 @@ The output (see [Outputs](outputs.md) for what every file is, and [the output tr
 
 Annotation is the most limiting step in every high-throughput single cell pipeline. It conditions downstream analysis and, thus, it is a breakpoint between CoreBlocks within the SpaceBlocks workflow.
 
-Through the development of SpaceBlocks, we have tested several automatic annotation tools in Visium HD data. The results in our own data had very limited accuracy and, thus, manual annotation is the default option.
+Through the development of SpaceBlocks, we have tested several automatic annotation tools in Visium HD data. The results in our own data had very limited accuracy and, thus, manual annotation is the default option. 
 
 ### 5.1 Manual annotation
 
