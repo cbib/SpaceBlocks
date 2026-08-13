@@ -7,9 +7,9 @@ This page shows how to run SpaceBlocks end-to-end on **public data** for each su
 
 ## Technical notes
 
-To keep the tutorials simple and lightweight, we use 1 sample from a public dataset and divide it into **3 artificial samples, keeping only 500 HVGs**.
+To keep the tutorials simple and lightweight, we use 1 sample from a public dataset and divide it into **3 artificial samples, keeping only 500 highly-variable genes (HVGs)**.
 
-We provide preconfigured `config` files, pre-annotated regions (GeoJSON files), clusters and cluster-to-cell type equivalences for the example public datasets to ensure reproducibility.
+We provide default `config` files, pre-annotated regions (GeoJSON files), clusters and cluster-to-cell type equivalences for the example public datasets to ensure reproducibility.
 
 The exact environment versions used during the generation of these tutorials can be found under `demos/lock.envs`.
 
@@ -28,13 +28,14 @@ Our HPC specifications
 ```
 
 ## Visium HD example (mouse brain)
+[comment]: <Of the four examples, two are called examples and two other are called tests. Two add the name "HeadBlock" but two other don't. We should change this for consistency>
 
 SpaceBlocks is built to analyse single-cell resolution Spatial Transcriptomics data, so Visium HD data needs to be preprocessed via [bin2cell](https://github.com/Teichlab/bin2cell), [ENACT](https://github.com/Sanofi-Public/enact-pipeline) or, as in the Visium HD HeadBlock, Space Ranger >= v4.0.1 (internally implementing StarDist segmentation).
 
 !!! important "Space Ranger version matters"
     We use a **Space Ranger ≥ 4.0.1** Visium HD dataset (one that ships `segmented_outputs/`). The older Space Ranger 3.x Mouse Brain release has **no StarDist segmentation**, so `format_visiumhd.py` would > find no cell table.
 
-For the example here presented, you may download the Visium HD dataset from the [10x Genomics web](https://www.10xgenomics.com/datasets/visium-hd-cytassist-gene-expression-libraries-of-mouse-brain-he-v4), or via terminal using curl or wget. This dataset has been processed with Space Ranger v4.0.1.
+For the example here presented, you may download the Visium HD dataset from the [10x Genomics web](https://www.10xgenomics.com/datasets/visium-hd-cytassist-gene-expression-libraries-of-mouse-brain-he-v4), or via terminal using `curl` or `wget`. This dataset has been processed with Space Ranger v4.0.1.
 
 !!! note "Visium HD demo dataset size and SpaceBlocks mode"
     This demo runs in `mode: decoupled` and the size of the dataset is ~15GB.

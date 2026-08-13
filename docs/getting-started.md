@@ -12,9 +12,9 @@ If you want to see an example run on public data, see the [public data end-to-en
 - [Snakemake](https://snakemake.readthedocs.io) ≥ 9.13 and Conda/Mamba.
 - For the **Visium HD** head only: an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1.
 - [QuPath](https://qupath.github.io/) (desktop), recommended to include manual region annotations for the downstream analyses (see [QuPath annotation tutorial](qupath-tutorial.md)).
-- Configure your Snakemake profile in `--profile profiles/default`. An example for HPCs with slurm scheduler is provided.
+- Configure your Snakemake profile in `--profile profiles/default`. An example for HPCs with Slurm scheduler is provided (tested with version 24.11.5).
 
-We recommend to always run snakemake with `--sdm conda`, so each rule gets its pinned environment.
+We recommend to always run snakemake with `--sdm conda`, so each rule is executed within its pinned environment.
 
 ## 2. Configure
 
@@ -50,7 +50,7 @@ While this step is optional (without it, all observations will become annotated 
 
 ### 3.1. Region annotation in decoupled mode
 
-In `mode: decoupled` there is no Headblock, so `qupath_images` produces nothing and the pipeline never joins a GeoJSON.
+In `mode: decoupled` there is no HeadBlock, so `qupath_images` produces nothing and the pipeline never joins a GeoJSON.
 
 Your provided contract h5ads should therefore already carry `obs["region_annotation"]`; otherwise every cell is `Unlabeled`.
 
