@@ -104,7 +104,7 @@ Run the applicable checks locally before pushing. The first two mirror CI and us
 
 ```bash
 # 1. Workflow parses + lints (against the committed test fixture)
-snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
+snakemake -s workflow/Snakefile -d .test --lint
 
 # 2. The decoupled CoreBlock DAG builds
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none

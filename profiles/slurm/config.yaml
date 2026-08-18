@@ -1,11 +1,11 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  Snakemake execution profile – local
+#  Snakemake execution profile – SLURM
 # ═══════════════════════════════════════════════════════════════════════════
-# Invoke with:  snakemake --profile profiles/default
-# Set as default for a shell session with:  export SNAKEMAKE_PROFILE=profiles/default
+# Invoke with:  snakemake --profile profiles/slurm
+# Set as default for a shell session with:  export SNAKEMAKE_PROFILE=profiles/slurm
 
-executor: local
-jobs: 4
+executor: slurm
+jobs: 30
 
 # Robustness
 keep-going: true
@@ -24,5 +24,5 @@ printshellcmds: true
 
 # Global resource caps (shared across all concurrent jobs)
 resources:
-  mem_mb: 16000
-  cpus: 4
+  mem_mb: 500000
+  cpus: 100
