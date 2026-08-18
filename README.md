@@ -5,7 +5,7 @@
   <a href="https://cbib.github.io/SpaceBlocks/"><img src="https://img.shields.io/badge/docs-online-blue" alt="Documentation"></a>
   <a href="https://github.com/cbib/SpaceBlocks/actions/workflows/tests.yml"><img src="https://github.com/cbib/SpaceBlocks/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="https://github.com/cbib/SpaceBlocks/blob/main/LICENSE.md"><img src="https://img.shields.io/github/license/cbib/SpaceBlocks" alt="License"></a>
-  <a href="https://snakemake.github.io/snakemake-workflow-catalog/"><img src="https://img.shields.io/badge/Snakemake-workflow-039475" alt="Snakemake workflow"></a>
+  <a href="https://snakemake.github.io/snakemake-workflow-catalog/docs/workflows/cbib/SpaceBlocks.html"><img src="https://img.shields.io/badge/Snakemake-workflow-039475" alt="Snakemake workflow"></a>
 </p>
 
 <p align="center">
