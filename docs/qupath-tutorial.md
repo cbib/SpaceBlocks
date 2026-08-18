@@ -6,7 +6,7 @@ This is an **optional but recommended step** (without it every cell is `Unlabele
 
 Choosing QuPath means anatomopathologists and researchers without bioinformatics skills can annotate the histology directly, while the annotations stay easy to fold back into the AnnData objects.
 
-[Napari](https://napari.org/) is a possible alternative for writting the GeoJSON files, but it is a Python application aimed at programmers.
+[Napari](https://napari.org/) is a possible alternative for writing the GeoJSON files, but it is a Python application aimed at programmers.
 
 ## 1. Get the image to annotate
 
