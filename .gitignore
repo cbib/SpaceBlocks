@@ -25,6 +25,9 @@ Thumbs.db
 # Test outputs
 .test/output/
 
+# Doc build
+site/
+
 # visualization
 pipeline_rulegraph.svg
 pipeline_rulegraph.dot
