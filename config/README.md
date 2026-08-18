@@ -7,7 +7,7 @@ The explanations on this page are divided by type (directory, parameter, color, 
 **Every key in `config/config.yaml` is validated** against `workflow/schemas/config.schema.yaml` before the run starts, so a typo or a missing required field fails immediately with a clear message.
 
 !!! note "Snakemake-catalog page"
-    The full, always-updated table of every parameter (type, default, required) is generated automatically from the schema and shown on the workflow's Snakemake-catalog page.
+    The full, always-updated table of every parameter (type, default, required) is generated automatically from the schema and shown on the workflow's [Snakemake-catalog page](https://snakemake.github.io/snakemake-workflow-catalog/docs/workflows/cbib/SpaceBlocks.html#workflow-parameters).
     This page covers the *how* and the *why*; the schema is the exhaustive reference.
 
 ## 1. Choose a mode

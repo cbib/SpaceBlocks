@@ -11,7 +11,7 @@ Inputs/outputs are summarised; the `.smk` files and `config["resources"]` are th
 
 ## HeadBlocks
 
-HeadBlocks are *optional* technology-specific modules, selected in `config["mode"]`. Each
+HeadBlocks are *optional*, technology-specific modules selected in `config["mode"]`. Each
 one produces the standardized **contract h5ad** the CoreBlocks start from; the rules within
 a headBlock carry a 3-letter technology suffix (`_vhd`, `_x5k`, `_ate`, `_mer`) so the organization stays
 easy to follow.
@@ -20,7 +20,7 @@ The pipeline can also run in `mode: decoupled`, without any headBlock — the Co
 consume pre-existing contract h5ads directly.
 
 !!! tip "Annotate your regions first"
-    Whichever headBlock you use, run the `qupath_images` target **first**: it produces the
+    Whichever HeadBlock you use, run the `qupath_images` target **first**: it produces the
     per-sample annotation images, which you annotate in QuPath and export as GeoJSON *before*
     launching the rest of the run. The contract builders (`prepare_input_*`) pick those
     GeoJSONs up automatically (and fall back to `Unlabeled` regions if none are present).
@@ -212,7 +212,7 @@ Using the shared expression ranges from the integrated exploration, produces per
 
 ## Resources & retries
 
-No rule uses `localrule`, so nothing runs on the scheduler's head node.
+No rule uses `localrule`, so nothing runs on the scheduler's head node as long as the selected profile has configured remote execution (e.g. see `profiles/slurm`)
 
 Every compute rule draws `mem_mb` / `runtime` / `threads` from `config["resources"]` (with a `default` fallback).
 
