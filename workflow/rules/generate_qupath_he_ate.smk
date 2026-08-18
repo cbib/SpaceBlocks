@@ -21,16 +21,6 @@ rule generate_qupath_he_ate:
     output:
         qupath_meta=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_he_scalefactors.json",
         he_background=f"{SAMPLES_DIR}/{{sample}}/QuPath_image/{{sample}}_he_background.tiff",
-    params:
-        sample_id=lambda wc: wc.sample,
-        zarr_path=lambda wc, input: str(input.done)[:-len(".done")],
-        # Optional: not an input: — absence must not block the rule, it only disables QA.
-        he_keypoints=lambda wc: he_file_for(wc.sample, "he_keypoints", required=False),
-        he_pyramid_level=ATERA.get("he_pyramid_level", 4),
-        # Must match prepare_input_ate's level: the background is warped onto that grid.
-        hires_pyramid_level=ATERA.get("hires_pyramid_level", 3),
-        pixel_size_um=ATERA.get("pixel_size_um", 0.2125),
-        residual_warn_px=ATERA.get("he_residual_warn_px", 50),
     log:
         out=f"{LOGDIR}/generate_qupath_he_ate/{{sample}}.out",
         err=f"{LOGDIR}/generate_qupath_he_ate/{{sample}}.err",
@@ -38,10 +28,19 @@ rule generate_qupath_he_ate:
         f"{LOGDIR}/benchmarks/generate_qupath_he_ate/{{sample}}.tsv"
     conda:
         "../envs/atera.yaml"
-    threads:
-        get_resource("generate_qupath_he_ate", "threads")
+    threads: get_resource("generate_qupath_he_ate", "threads")
     resources:
         mem_mb=mem_mb_attempt("generate_qupath_he_ate"),
         runtime=get_resource("generate_qupath_he_ate", "runtime"),
+    params:
+        sample_id=lambda wc: wc.sample,
+        zarr_path=lambda wc, input: str(input.done)[: -len(".done")],
+        # Optional: not an input: — absence must not block the rule, it only disables QA.
+        he_keypoints=lambda wc: he_file_for(wc.sample, "he_keypoints", required=False),
+        he_pyramid_level=ATERA.get("he_pyramid_level", 4),
+        # Must match prepare_input_ate's level: the background is warped onto that grid.
+        hires_pyramid_level=ATERA.get("hires_pyramid_level", 3),
+        pixel_size_um=ATERA.get("pixel_size_um", 0.2125),
+        residual_warn_px=ATERA.get("he_residual_warn_px", 50),
     script:
         "../scripts/generate_qupath_he_ate.py"

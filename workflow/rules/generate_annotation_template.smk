@@ -12,14 +12,14 @@ rule generate_annotation_template:
     """
     output:
         template=f"{OUTDIR_PP}/cluster_annotations_template.tsv",
-    params:
-        sample_ids=SAMPLE_IDS,
-        resolutions=RESOLUTIONS,
-        max_clusters=50,
     log:
         out=f"{LOGDIR}/generate_annotation_template.out",
         err=f"{LOGDIR}/generate_annotation_template.err",
     conda:
         "../envs/visiumhd.yaml"
+    params:
+        sample_ids=SAMPLE_IDS,
+        resolutions=RESOLUTIONS,
+        max_clusters=50,
     script:
         "../scripts/generate_annotation_template.py"

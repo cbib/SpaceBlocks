@@ -7,11 +7,9 @@ rule neighbourhood_analysis:
     input:
         adata=rules.annotate_cells.output.adata_annot,
     output:
-        results_dir=directory(f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{annot_type}}"),
-    params:
-        sample_id=lambda wc: wc.sample,
-        annot_type=lambda wc: wc.annot_type,
-        annotation_colors=config.get("annotation_colors", {}),
+        results_dir=directory(
+            f"{SAMPLES_DIR}/{{sample}}/neighbourhood_analysis/{{annot_type}}"
+        ),
     log:
         out=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.out",
         err=f"{LOGDIR}/neighbourhood_analysis/{{sample}}_{{annot_type}}.err",
@@ -19,10 +17,13 @@ rule neighbourhood_analysis:
         f"{LOGDIR}/benchmarks/neighbourhood_analysis/{{sample}}_{{annot_type}}.tsv"
     conda:
         "../envs/visiumhd.yaml"
-    threads:
-        get_resource("neighbourhood_analysis", "threads")
+    threads: get_resource("neighbourhood_analysis", "threads")
     resources:
         mem_mb=mem_mb_attempt("neighbourhood_analysis"),
         runtime=get_resource("neighbourhood_analysis", "runtime"),
+    params:
+        sample_id=lambda wc: wc.sample,
+        annot_type=lambda wc: wc.annot_type,
+        annotation_colors=config.get("annotation_colors", {}),
     script:
         "../scripts/neighbourhood_analysis.py"

@@ -16,9 +16,21 @@ rule spatial_niches:
         unpack(_spatial_niches_inputs),
     output:
         concatenated=f"{OUTDIR_PP}/spatial_niches/spatial_niches_concatenated.h5ad",
-        niche_tsvs=expand(f"{OUTDIR_PP}/spatial_niches/tsv/niche_{{sample}}.tsv",
-                          sample=SAMPLE_IDS),
+        niche_tsvs=expand(
+            f"{OUTDIR_PP}/spatial_niches/tsv/niche_{{sample}}.tsv", sample=SAMPLE_IDS
+        ),
         plots_dir=directory(f"{OUTDIR_PP}/spatial_niches/plots"),
+    log:
+        out=f"{LOGDIR}/spatial_niches/spatial_niches.out",
+        err=f"{LOGDIR}/spatial_niches/spatial_niches.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/spatial_niches/spatial_niches.tsv"
+    conda:
+        "../envs/spatial_niches.yaml"
+    threads: get_resource("spatial_niches", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("spatial_niches"),
+        runtime=get_resource("spatial_niches", "runtime"),
     params:
         sample_ids=SAMPLE_IDS,
         random_seed=RANDOM_SEED,
@@ -42,17 +54,5 @@ rule spatial_niches:
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),
-    log:
-        out=f"{LOGDIR}/spatial_niches/spatial_niches.out",
-        err=f"{LOGDIR}/spatial_niches/spatial_niches.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/spatial_niches/spatial_niches.tsv"
-    conda:
-        "../envs/spatial_niches.yaml"
-    threads:
-        get_resource("spatial_niches", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("spatial_niches"),
-        runtime=get_resource("spatial_niches", "runtime"),
     script:
         "../scripts/spatial_niches.py"

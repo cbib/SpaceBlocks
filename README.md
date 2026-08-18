@@ -34,7 +34,7 @@ Its modular architecture supports both public and in-house ST datasets while rem
 The workflow is divided into (optional) technology-specific **HeadBlocks** and common **CoreBlocks** that streamline pre-, post-processing, and informative exploration of results.
 
 <p align="center"><img src="images/main.png" alt="SpaceBlocks workflow overview"><figcaption>Workflow overview and partial output from Xenium 5K demo example.</figcaption><width="700"></p>
- 
+
 A full SpaceBlocks run takes three inputs:
 
 1. **ST formatted AnnData objects**. Either generated from the HeadBlocks, or manually formatted as a standardized h5ad AnnData object. For brevity, **we refer to each of these objects as THE CONTRACT**. Their structure (count matrix, spatial coordinates and optional region annotations) is validated (`validate_input`) before downstream analyses.

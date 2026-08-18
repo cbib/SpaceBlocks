@@ -6,14 +6,10 @@ rule prepare_input_mer:
     (so the mosaic is read once and the contract shares the QuPath grid).
     """
     input:
-        qupath_meta=rules.generate_qupath_mer.output.qupath_meta,   # px<->µm mapping + p0
-        background=rules.generate_qupath_mer.output.background,      # grey contract image
+        qupath_meta=rules.generate_qupath_mer.output.qupath_meta,  # px<->µm mapping + p0
+        background=rules.generate_qupath_mer.output.background,  # grey contract image
     output:
         h5ad=config["contract"]["unfiltered_h5ad"],
-    params:
-        sample_id=lambda wc: wc.sample,
-        merscope_dir=lambda wc: merscope_dir_for(wc.sample),
-        geojson_dir=GEOJ_DIR,
     log:
         out=f"{LOGDIR}/prepare_input_mer/{{sample}}.out",
         err=f"{LOGDIR}/prepare_input_mer/{{sample}}.err",
@@ -21,10 +17,13 @@ rule prepare_input_mer:
         f"{LOGDIR}/benchmarks/prepare_input_mer/{{sample}}.tsv"
     conda:
         "../envs/xenium5k.yaml"
-    threads:
-        get_resource("prepare_input_mer", "threads")
+    threads: get_resource("prepare_input_mer", "threads")
     resources:
         mem_mb=mem_mb_attempt("prepare_input_mer"),
         runtime=get_resource("prepare_input_mer", "runtime"),
+    params:
+        sample_id=lambda wc: wc.sample,
+        merscope_dir=lambda wc: merscope_dir_for(wc.sample),
+        geojson_dir=GEOJ_DIR,
     script:
         "../scripts/prepare_input_mer.py"

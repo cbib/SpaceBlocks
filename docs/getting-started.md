@@ -9,7 +9,7 @@ If you want to see an example run on public data, see the [public data end-to-en
 
 ## 1. Prerequisites
 
-- [Snakemake](https://snakemake.readthedocs.io) ≥ 8 and Conda/Mamba.
+- [Snakemake](https://snakemake.readthedocs.io) ≥ 9.13 and Conda/Mamba.
 - For the **Visium HD** head only: an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1.
 - [QuPath](https://qupath.github.io/) (desktop), recommended to include manual region annotations for the downstream analyses (see [QuPath annotation tutorial](qupath-tutorial.md)).
 - Configure your Snakemake profile in `--profile profiles/default`. An example for HPCs with slurm scheduler is provided.
@@ -87,7 +87,7 @@ The output (see [Outputs](outputs.md) for what every file is, and [the output tr
 
 Annotation is the most limiting step in every high-throughput single cell pipeline. It conditions downstream analysis and, thus, it is a breakpoint between CoreBlocks within the SpaceBlocks workflow.
 
-Through the development of SpaceBlocks, we have tested several automatic annotation tools in Visium HD data. The results in our own data had very limited accuracy and, thus, manual annotation is the default option. 
+Through the development of SpaceBlocks, we have tested several automatic annotation tools in Visium HD data. The results in our own data had very limited accuracy and, thus, manual annotation is the default option.
 
 ### 5.1 Manual annotation
 

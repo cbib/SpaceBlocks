@@ -15,9 +15,20 @@ rule pseudobulk_aggregate:
         agg_dir=directory(
             f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/aggregated"
         ),
+    log:
+        out=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.out",
+        err=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.tsv"
     wildcard_constraints:
         annot_type="tsv_annotation|ingest_annotation",
         analysis_level="by_region|by_celltype_region|by_niche_region",
+    conda:
+        "../envs/pseudobulk_aggregate.yaml"
+    threads: get_resource("pseudobulk_aggregate", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("pseudobulk_aggregate"),
+        runtime=get_resource("pseudobulk_aggregate", "runtime"),
     params:
         annot_type=lambda wc: wc.annot_type,
         analysis_level=lambda wc: wc.analysis_level,
@@ -28,17 +39,5 @@ rule pseudobulk_aggregate:
         dpi=ANALYSIS.get("plot_dpi", 300),
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,
         sample_colors=SAMPLE_COLORS,
-    log:
-        out=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.out",
-        err=f"{LOGDIR}/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.tsv"
-    conda:
-        "../envs/pseudobulk_aggregate.yaml"
-    threads:
-        get_resource("pseudobulk_aggregate", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("pseudobulk_aggregate"),
-        runtime=get_resource("pseudobulk_aggregate", "runtime"),
     script:
         "../scripts/pseudobulk_aggregate.py"

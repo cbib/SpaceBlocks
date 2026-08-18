@@ -12,6 +12,17 @@ rule explore_genes_integrated:
     output:
         ranges=f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
         done=touch(f"{OUTDIR_PP}/gene_exploration/.integrated_done"),
+    log:
+        out=f"{LOGDIR}/explore_genes/integrated.out",
+        err=f"{LOGDIR}/explore_genes/integrated.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/explore_genes/integrated.tsv"
+    conda:
+        "../envs/pseudobulk_aggregate.yaml"
+    threads: get_resource("explore_genes_integrated", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("explore_genes_integrated"),
+        runtime=get_resource("explore_genes_integrated", "runtime"),
     params:
         outdir=lambda wc, output: os.path.dirname(output.ranges),
         annot_key=GENE_EXPLORATION.get("annot_key") or DEFAULT_ANNOT_COL,
@@ -22,18 +33,6 @@ rule explore_genes_integrated:
         region_colors=ANALYSIS.get("region_colors", {}),
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,
         sample_colors=SAMPLE_COLORS,
-    log:
-        out=f"{LOGDIR}/explore_genes/integrated.out",
-        err=f"{LOGDIR}/explore_genes/integrated.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/explore_genes/integrated.tsv"
-    conda:
-        "../envs/pseudobulk_aggregate.yaml"
-    threads:
-        get_resource("explore_genes_integrated", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("explore_genes_integrated"),
-        runtime=get_resource("explore_genes_integrated", "runtime"),
     script:
         "../scripts/explore_genes_integrated.py"
 
@@ -54,6 +53,17 @@ rule explore_genes_sample:
         queries=GENE_EXPLORATION.get("queries", "") or [],
     output:
         done=touch(f"{OUTDIR_PP}/gene_exploration/.sentinels/{{sample}}.done"),
+    log:
+        out=f"{LOGDIR}/explore_genes/{{sample}}.out",
+        err=f"{LOGDIR}/explore_genes/{{sample}}.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/explore_genes/{{sample}}.tsv"
+    conda:
+        "../envs/pseudobulk_aggregate.yaml"
+    threads: get_resource("explore_genes_sample", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("explore_genes_sample"),
+        runtime=get_resource("explore_genes_sample", "runtime"),
     params:
         outdir=lambda wc, output: os.path.dirname(os.path.dirname(output.done)),
         sample_id=lambda wc: wc.sample,
@@ -63,17 +73,5 @@ rule explore_genes_sample:
         dpi=GENE_EXPLORATION.get("dpi", ANALYSIS.get("plot_dpi", 300)),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
-    log:
-        out=f"{LOGDIR}/explore_genes/{{sample}}.out",
-        err=f"{LOGDIR}/explore_genes/{{sample}}.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/explore_genes/{{sample}}.tsv"
-    conda:
-        "../envs/pseudobulk_aggregate.yaml"
-    threads:
-        get_resource("explore_genes_sample", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("explore_genes_sample"),
-        runtime=get_resource("explore_genes_sample", "runtime"),
     script:
         "../scripts/explore_genes_sample.py"

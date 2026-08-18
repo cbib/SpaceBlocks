@@ -6,16 +6,27 @@ rule preprocess_umap:
         adata=f"{SAMPLES_DIR}/{{sample}}/adata_{{sample}}.h5ad",
         metadata=f"{SAMPLES_DIR}/{{sample}}/metadata_{{sample}}.tsv",
         report=f"{SAMPLES_DIR}/{{sample}}/{{sample}}_report.tsv",
+    log:
+        out=f"{LOGDIR}/preprocess_umap/{{sample}}.out",
+        err=f"{LOGDIR}/preprocess_umap/{{sample}}.err",
+    benchmark:
+        f"{LOGDIR}/benchmarks/preprocess_umap/{{sample}}.tsv"
+    conda:
+        "../envs/visiumhd.yaml"
+    threads: get_resource("preprocess_umap", "threads")
+    resources:
+        mem_mb=mem_mb_attempt("preprocess_umap"),
+        runtime=get_resource("preprocess_umap", "runtime"),
     params:
         sample_id=lambda wc: wc.sample,
-        sample_meta=lambda wc: core_sample_meta(wc.sample),   # design columns → obs + report
+        sample_meta=lambda wc: core_sample_meta(wc.sample),  # design columns → obs + report
         # analysis.* filtering defaults; the script may override any of these
         # per sample from the optional thresholds_tsv (absent → these defaults).
         min_counts=ANALYSIS.get("min_counts", 1),
         min_cells=ANALYSIS.get("min_cells", 3),
         min_genes=ANALYSIS.get("min_genes", 100),
-        max_counts=ANALYSIS.get("max_counts", None),   # optional upper bound; None = off
-        max_pct_mt=ANALYSIS.get("max_pct_mt", None),   # optional upper bound; None = off
+        max_counts=ANALYSIS.get("max_counts", None),  # optional upper bound; None = off
+        max_pct_mt=ANALYSIS.get("max_pct_mt", None),  # optional upper bound; None = off
         n_neighbors=ANALYSIS.get("n_neighbors", 10),
         n_pcs=ANALYSIS.get("n_pcs", 30),
         resolution_scan_min=ANALYSIS.get("resolution_scan_min", 0.2),
@@ -27,19 +38,9 @@ rule preprocess_umap:
         precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
         external_enabled=EXTERNAL_ENABLED,
         external_column=(config.get("external_annotation", {}) or {}).get("column", ""),
-        keep_unannotated=(config.get("external_annotation", {}) or {}).get("keep_unannotated", True),
+        keep_unannotated=(config.get("external_annotation", {}) or {}).get(
+            "keep_unannotated", True
+        ),
         region_colors=ANALYSIS.get("region_colors", {}),
-    log:
-        out=f"{LOGDIR}/preprocess_umap/{{sample}}.out",
-        err=f"{LOGDIR}/preprocess_umap/{{sample}}.err",
-    benchmark:
-        f"{LOGDIR}/benchmarks/preprocess_umap/{{sample}}.tsv"
-    conda:
-        "../envs/visiumhd.yaml"
-    threads:
-        get_resource("preprocess_umap", "threads")
-    resources:
-        mem_mb=mem_mb_attempt("preprocess_umap"),
-        runtime=get_resource("preprocess_umap", "runtime"),
     script:
         "../scripts/preprocess_umap.py"

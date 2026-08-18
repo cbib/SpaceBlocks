@@ -1,0 +1,14 @@
+exclude: ^(demos/|config/.*\.(tsv|csv)|.*\.svg$)
+repos:
+  - repo: https://github.com/snakemake/snakefmt
+    rev: v2.0.3 # Replace by any tag/version ≥v0.6.0 : https://github.com/snakemake/snakefmt/releases
+    hooks:
+      - id: snakefmt
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        exclude: ^mkdocs\.yml$
+      - id: end-of-file-fixer
+      - id: trailing-whitespace

@@ -28,17 +28,36 @@ workflow/
 └── schemas/*.yaml    config + sample-sheet validation
 config/               config.yaml, README.md (config reference), sample sheets
 docs/                 the MkDocs site
-.test/               tiny synthetic decoupled fixture for CI
+.test/                tiny synthetic decoupled fixture for CI
 reproduction/         public-data worked examples
 ```
 
 ## Development setup
 
+Snakemake >= 9.13 and Conda/Mamba are the only host requirements. We also use snakefmt
+and pre-commit hooks to ensure clean diffs and comply with Snakemake linting and formatting
+standards.
+
 ```bash
 git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
-# Snakemake >= 8 and Conda/Mamba are the only host requirements.
+# Install the development environment
+conda create -f workflow/envs/dev.yaml
+conda activate spaceblocks_dev
 snakemake -n --sdm conda      # dry-run: builds the DAG, validates the config, provisions envs
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none  # decoupled smoke test
+```
+
+Install the pre-commit hooks (`pre-commit` is included in `dev.yaml`) so snakefmt and the
+formatting checks run automatically on every commit:
+
+```bash
+pre-commit install
+```
+
+To run them on demand without committing (e.g. against the whole repo):
+
+```bash
+pre-commit run --all-files
 ```
 
 Each rule group has its own Conda env, provisioned by `--sdm conda`. Keep the loose `envs/*.yaml`
@@ -55,7 +74,7 @@ These are load-bearing, and most past bugs we experienced during development cam
   `params:`; the script reads `snakemake.params`, **never `config` directly**. After any change,
   cross-check that every param name matches between the `.smk` and its script.
 - **Resources scale with retries.** Don't   hardcode resources in a rule. Every compute rule draws `mem_mb`/`runtime`/`threads` from
-  `config["resources"]` (with a `default`), and `mem_mb` grows with the attempt number. 
+  `config["resources"]` (with a `default`), and `mem_mb` grows with the attempt number.
 - **The contract convention.** `obs["cell_id"]` must equal `obs_names` (as strings); downstream
   joins key on it. Head-produced contracts live at `SAMPLES_DIR/{sample}/{sample}_unfiltered.h5ad`
   (nested); decoupled contracts live at `contract_dir/{sample}.h5ad` (flat).
@@ -65,7 +84,7 @@ These are load-bearing, and most past bugs we experienced during development cam
 - **Guard plotting.** Wrap plot generation in `try/except` (Python) / `tryCatch` (R) so one failed
   figure doesn't crash the rule.
 - **Palettes.** SpaceBlocks allows color palette customization directly from the config. Levels not referenced in config fall back to grey.
-  When no palette is configured for a column, leave colours to scanpy and drop any stale `*_colors` from `uns`. 
+  When no palette is configured for a column, leave colours to scanpy and drop any stale `*_colors` from `uns`.
 
 ## Adding things
 
@@ -94,7 +113,9 @@ snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
 python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration schema validation passed')"
 
 # 4. Docs build cleanly (only if you touched docs/)
-pip install mkdocs-material pymdown-extensions
+# Activate the development environment
+conda activate spaceblocks_dev
+# Build the docs
 mkdocs build --strict
 ```
 

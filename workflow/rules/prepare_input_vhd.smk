@@ -5,10 +5,6 @@ rule prepare_input_vhd:
         hires_png=rules.generate_qupath_vhd.output.qupath_image,
     output:
         h5ad=config["contract"]["unfiltered_h5ad"],
-    params:
-        sample_id=lambda wc: wc.sample,
-        sr_outdir=lambda wc, input: os.path.dirname(input.sr_done),
-        geojson_path=GEOJ_DIR,
     log:
         out=f"{LOGDIR}/prepare_input_vhd/{{sample}}.out",
         err=f"{LOGDIR}/prepare_input_vhd/{{sample}}.err",
@@ -16,10 +12,13 @@ rule prepare_input_vhd:
         f"{LOGDIR}/benchmarks/prepare_input_vhd/{{sample}}.tsv"
     conda:
         "../envs/visiumhd.yaml"
-    threads:
-        get_resource("prepare_input_vhd", "threads")
+    threads: get_resource("prepare_input_vhd", "threads")
     resources:
         mem_mb=mem_mb_attempt("prepare_input_vhd"),
         runtime=get_resource("prepare_input_vhd", "runtime"),
+    params:
+        sample_id=lambda wc: wc.sample,
+        sr_outdir=lambda wc, input: os.path.dirname(input.sr_done),
+        geojson_path=GEOJ_DIR,
     script:
         "../scripts/prepare_input_vhd.py"
