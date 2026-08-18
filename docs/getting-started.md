@@ -9,7 +9,7 @@ If you want to see an example run on public data, see the [public data end-to-en
 
 ## 1. Prerequisites
 
-- [Snakemake](https://snakemake.readthedocs.io) ≥ 8 and Conda/Mamba.
+- [Snakemake](https://snakemake.readthedocs.io) ≥ 9.13 and Conda/Mamba.
 - For the **Visium HD** head only: an external [Space Ranger](https://www.10xgenomics.com/support/software/space-ranger) ≥ 4.0.1.
 - [QuPath](https://qupath.github.io/) (desktop), recommended to include manual region annotations for the downstream analyses (see [QuPath annotation tutorial](qupath-tutorial.md)).
 - Configure your Snakemake profile in `--profile profiles/default`. An example for HPCs with slurm scheduler is provided.

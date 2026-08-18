@@ -34,14 +34,14 @@ reproduction/         public-data worked examples
 
 ## Development setup
 
-Snakemake >= 8 and Conda/Mamba are the only host requirements. We also use snakefmt
+Snakemake >= 9.13 and Conda/Mamba are the only host requirements. We also use snakefmt
 and pre-commit hooks to ensure clean diffs and comply with Snakemake linting and formatting
 standards.
 
 ```bash
 git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 # Install the development environment
-conda create workflow/envs/dev.yaml
+conda create -f workflow/envs/dev.yaml
 conda activate spaceblocks_dev
 snakemake -n --sdm conda      # dry-run: builds the DAG, validates the config, provisions envs
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none  # decoupled smoke test
@@ -113,8 +113,8 @@ snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
 python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration schema validation passed')"
 
 # 4. Docs build cleanly (only if you touched docs/)
-# If you did not install the development environment, run:
-pip install mkdocs-material pymdown-extensions
+# Activate the development environment
+conda activate spaceblocks_dev
 # Build the docs
 mkdocs build --strict
 ```
