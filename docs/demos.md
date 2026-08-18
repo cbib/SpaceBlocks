@@ -27,8 +27,7 @@ Our HPC specifications
 1 TB RAM
 ```
 
-## Visium HD example (mouse brain)
-[comment]: <Of the four examples, two are called examples and two other are called tests. Two add the name "HeadBlock" but two other don't. We should change this for consistency>
+## Visium HD uncoupled mode example (mouse brain)
 
 SpaceBlocks is built to analyse single-cell resolution Spatial Transcriptomics data, so Visium HD data needs to be preprocessed via [bin2cell](https://github.com/Teichlab/bin2cell), [ENACT](https://github.com/Sanofi-Public/enact-pipeline) or, as in the Visium HD HeadBlock, Space Ranger >= v4.0.1 (internally implementing StarDist segmentation).
 
@@ -64,7 +63,7 @@ python format_visiumhd.py            # -> contracts/<sample>.h5ad + core_samples
 
 We provide `demo_vhd.geojson` for this dataset, as an example QuPath export on the hires image (see [QuPath annotation tutorial](qupath-tutorial.md)).
 
-## Xenium 5K example (human melanoma)
+## Xenium 5K uncoupled mode example (human melanoma)
 
 You may download the Xenium dataset from the [10x Genomics web](https://www.10xgenomics.com/datasets/xenium-prime-ffpe-human-skin), or via terminal using curl or wget.
 
@@ -93,7 +92,7 @@ Notice that the Xenium GeoJSON is annotated in pixels, while cells are in micron
 
 Importantly, **`format_xenium.py` embeds a greyscale composite of the `morphology_focus` channels in `uns["spatial"]`**, so spatial plots are drawn over the tissue instead of on a bare scatter. Set `HIRES_LEVEL` in the script to trade resolution for file size.
 
-## Atera HeadBlock test (human breast cancer, alpha)
+## Atera HeadBlock example (human breast cancer, alpha)
 
 !!! warning "Alpha support"
     Atera is expected to ship in the second half of 2026. The dataset below is a public
@@ -154,10 +153,10 @@ Importantly, the registered H&E is not the raw whole-slide scan, which covers a 
 
 The bundle holds a single sample, so `run_postprocessing` is not meaningful/complete here because integration, pseudobulk DE and composition comparisons all need replicates. The shipped config therefore trims those options; see `demos/xenium5k/xenium5k_config.yaml` for a config that exercises them.
 
-## MERSCOPE HeadBlock test (mouse brain)
+## MERSCOPE HeadBlock example (mouse brain)
 
 Like the Atera demo, the MERSCOPE demo runs its HeadBlock the contract h5ad is built by `prepare_input_mer` straight from a raw Vizgen region, so it exercises the whole MERSCOPE head chain (`generate_qupath_mer` → `prepare_input_mer`). The
-head reads the two Vizgen cell CSVs directly and reuses the `xenium5k.yaml` environment (no intermediate zarr, no new environment).
+head reads the two Vizgen cell CSVs directly and reuses the `5k.yaml` environment (no intermediate zarr, no new environment).
 
 !!! note "MERSCOPE demo dataset size and SpaceBlocks mode"
     This demo runs in `mode: merscope` and the size of the dataset is ~25GB.
