@@ -18,7 +18,7 @@ The pipeline provisions one conda environment per rule group (run with `--use-co
 | `envs/atera.yaml` | atera HeadBlocks (alpha) | pinned `spatialdata-io >=0.7,<0.8` |
 
 
-`>=` bounds are reproducible enough for day-to-day use but not for archival reproducibility (a future solve may pick newer, potentially breaking versions). For a publication release, we recommend to generate and share the **exact** locks from the environments you actually tested, as below.
+`>=` bounds are reproducible enough for day-to-day use but not for archival reproducibility (a future solver may pick newer, potentially breaking versions). For a publication release, we recommend to generate and share the **exact** locks from the environments you actually tested, as below.
 
 !!! tip "Lock your environments"
     For a reproducible release, commit one **lock file per environment** next to the
@@ -68,6 +68,8 @@ conda-lock lock -f workflow/envs/<envname>.yaml -p linux-64 -p osx-64 --kind exp
 ## Note on the Atera environment
 
 `workflow/envs/atera.yaml` duplicates most of `envs/xenium5k.yaml` on purpose until Atera is officially released. The Atera bundle uses the Xenium Onboard Analysis v4 morphology layout, which only `spatialdata-io >= 0.7` reads, and its `experiment.xenium` reports a sentinel version (`xenium-9.9.9.9`) meaning "newest", so a future reader release that adds an upper-bounded version branch could silently misroute the data.
+
+
 ## Note on the DE environment
 
 `workflow/envs/pseudobulk_de.yaml` is pinned to a coherent Bioconductor 3.18 / R 4.3 release. If your working environment used a different Bioconductor/R release, replace it with an exact export (above) so the published env matches what you validated.

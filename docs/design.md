@@ -18,10 +18,12 @@ SpaceBlocks/
 │   └── schemas/*.yaml        config + sample-sheet validation
 ├── config/                   config.yaml, README.md (config reference), sample sheets
 ├── docs/                     this documentation site (MkDocs)
-├── .test/                   tiny synthetic decoupled dataset for CI
-├── demos/             full public-data runs (data fetched, not committed)
+├── .test/                    tiny synthetic decoupled dataset for CI
+├── demos/                    full public-data runs (data fetched, not committed)
 ├── tools/                    stand-alone helper scripts
-└── profiles/default/         SLURM profile (retries, resources)
+├── profiles/                 execution profiles (retries, resources)
+│   ├── default/config.yaml   local profile
+│   └── slurm/config.yaml     SLURM profile
 ```
 
 ## The Blocks
@@ -99,14 +101,14 @@ For what every file is and why it is useful, see [Outputs](outputs.md); the tree
 ## Key design decisions
 
 - **HeadBlock/CoreBlock split.** A technology-specific set of rules (HeadBlock) produces a standardized unfiltered AnnData file (contract); the common CoreBlocks consume it for the analyses. Inclusion of new platform/s only requires the development of a new HeadBlock, and the CoreBlock does not need to be changed, unless it has to be expanded.
-- **`validate_input` is a DAG gate.** The division in ensured by a validation rule, which can pass or give a hard/soft failure.
+- **`validate_input` is a DAG gate.** The division is ensured by a validation rule, which can pass or produce a hard/soft failure.
   - A `.json` is written if the contract structure is validated.
   - A hard failure prevents the `.json` from being written, and thus the CoreBlock from running.
-  - Soft issues (missing region annotation, no mito genes, no image) are recorded, but do not necessarily prevent CoreBlocks from running (config file has a paramter for soft-passing).
+  - Soft issues (missing region annotation, no mito genes, no image) are recorded, but do not necessarily prevent CoreBlocks from running (the config file has a parameter for soft-passing).
 - **Coherent naming.** Head rules carry a 3-letter technology code (`_vhd`, `_x5k`) so the organization is easy to follow and heads can coexist.
 - **`qc_sweep` rule is diagnostic only** — it never filters, clusters, or writes an h5ad.
 - **External annotation takes over.** When enabled, it becomes the primary annotation everywhere. The [Configuration](configuration.md) allows flexibility to retain all cells or remove externally unannotated ones.
-- **Config-driven colours** — regions, sample metadata, and cell types, applied consistently across every plot, with a grey fallback for undefined levels. This allows precise and consitent color representations through the analyses.
+- **Config-driven colours** — regions, sample metadata, and cell types are applied consistently across every plot, with a grey fallback for undefined levels. This allows precise and consistent colour representations throughout the analyses.
 - **Retries scale memory.** `mem_mb` grows with the attempt number, so an OOM-killed job is resubmitted with more RAM.
 
 ## Extending SpaceBlocks
@@ -117,7 +119,7 @@ The aim of SpaceBlocks is to allow for long-term maintainable and extensible Spa
 
 If you wished to run SpaceBlocks but your platform is not listed among the available SpaceBlocks HeadBlocks, there are two options available:
 1. Running SpaceBlocks in `mode: decoupled` (**easier, recommended**).
-2. Writting a new SpaceBlocks HeadBlock.
+2. Writing a new SpaceBlocks HeadBlock.
 
 See [public data end-to-end example runs](demos.md) for demonstrations about how to run SpaceBlocks in decoupled mode.
 
