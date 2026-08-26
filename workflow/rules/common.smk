@@ -310,6 +310,7 @@ def get_all_targets(wildcards):
     targets += expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS)
+    targets += expand(rules.process_geojson.output.geojson, sample=SAMPLES_WITH_GEOJSON)
     targets += list(QUPATH_IMAGES)  # head QuPath image(s) for the active mode (or [])
     if RUN_LEIDEN_ANALYSIS:
         targets += expand(

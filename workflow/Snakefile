@@ -7,6 +7,7 @@ postprocessing → exploration). Rules are split across rules/*.smk and included
 directly below; helper functions live in rules/common.smk.
 """
 
+import glob
 import os
 import sys
 import pandas as pd
@@ -132,6 +133,17 @@ if CORE_SAMPLES is None:
         )
     SAMPLE_IDS = list(SAMPLES.keys())
 
+# Optional per-sample region GeoJSON (ROI-based analysis). Presence is optional per
+# sample; a geojson-like file that matches neither accepted name is a fatal config
+# error (see _find_geojson).
+SAMPLES_WITH_GEOJSON = [s for s in SAMPLE_IDS if _find_geojson(s) is not None]
+for _s in SAMPLE_IDS:
+    if _s not in SAMPLES_WITH_GEOJSON:
+        print(
+            f"[process_geojson] No GeoJSON found for sample '{_s}' — "
+            "no ROI-based analysis will be performed for this sample."
+        )
+
 # Optional per-column colour palettes (sample + design columns) for downstream visualization
 SAMPLE_COLORS = config.get("sample_colors", {}) or {}
 
@@ -256,6 +268,7 @@ elif MODE == "merscope":
 include: "rules/validate_input.smk"
 include: "rules/qc_sweep.smk"
 include: "rules/preprocess_umap.smk"
+include: "rules/process_geojson.smk"
 include: "rules/leiden_analysis.smk"
 include: "rules/generate_annotation_template.smk"
 include: "rules/ingest_ref.smk"
@@ -311,6 +324,7 @@ rule run_preprocessing:
         expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS),
+        expand(rules.process_geojson.output.geojson, sample=SAMPLES_WITH_GEOJSON),
         *QUPATH_IMAGES,
         *(
             expand(

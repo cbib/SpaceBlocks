@@ -313,6 +313,10 @@ resources:
     mem_mb: 32768
     runtime: 30
     threads: 2
+  process_geojson:
+    mem_mb: 4096
+    runtime: 30
+    threads: 2
   qc_sweep:
     mem_mb: 49152
     runtime: 180
