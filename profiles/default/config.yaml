@@ -3,6 +3,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Invoke with:  snakemake --profile profiles/default
 # Set as default for a shell session with:  export SNAKEMAKE_PROFILE=profiles/default
+directory: .test  # Define .test dir as the working dir of the default profile
 
 executor: local
 jobs: 4
