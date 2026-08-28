@@ -206,6 +206,17 @@ def _ate_prepare_inputs(wildcards):
     return inputs
 
 
+def _find_geojson(sample):
+    """Locate a sample's OPTIONAL region GeoJSON in GEOJ_DIR, trying known filename
+    patterns in order. Returns the first path that exists, or None when neither is
+    present (used both to gate SAMPLES_WITH_GEOJSON and as process_geojson's input)."""
+    for _suffix in ("_tissue_hires_image.geojson", "_morphology.geojson"):
+        _gj = os.path.join(GEOJ_DIR, f"{sample}{_suffix}")
+        if os.path.isfile(_gj):
+            return _gj
+    return None
+
+
 # ── HEAD (MERSCOPE) input helper ─────────────────────────────────────────────
 def merscope_dir_for(sample):
     """MERSCOPE region directory for a sample, from the merscope.merscope_dir
