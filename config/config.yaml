@@ -5,17 +5,30 @@
 mode: decoupled
 
 # ─── input/output directories ────────────────────────────────────────────────
-post_processing_outdir: /scratch/CBiB/soterino/smk_visiumhd_results
-logdir: /scratch/CBiB/soterino/smk_logs
-spaceranger_processing_outdir: /scratch/CBiB/soterino/smk_spaceranger_results
+## BASE DIRECTORY #############################################################
+##
+## You may modify 'base_dir' to point to your project results directory.
+## Paths relative to base_dir can be left as is,
+## or be overridden with absolute paths if desired.
+
+# TODO: reset base dir and absolute dirs to a default before release
+base_dir: /scratch/dgarcia/smk_visiumhd
+
+## Paths that are not relative to base_dir and must be set explicitly below:
+# spaceranger, probe_set, transcriptome, ingest_ref
+###############################################################################
+
+post_processing_outdir: "{base_dir}/output"
+logdir: "{base_dir}/logs"
+spaceranger_processing_outdir: "{base_dir}/spaceranger_results"
 # dir with region annotation GeoJSONs (optional, recommended)
-geojson_path: /scratch/CBiB/soterino/geojson
+geojson_path: "{base_dir}/geojson"
 # only when using "mode: decoupled" — dir of pre-built contract h5ads
 contract_dir: ''
 
 # ─── Reproducibility & reuse   (docs → Configuration) ────────────────────────
 random_seed: 0
-precomputed_metadata_dir: /scratch/CBiB/soterino/metadata_visiumhd/
+precomputed_metadata_dir: "{base_dir}/metadata_visiumhd/"
 # reuse clusters from precomputed_metadata_dir
 use_precomputed_clusters: true
 
@@ -31,7 +44,7 @@ transcriptome: /mnt/cbib/bank/cellranger/refdata-gex-GRCh38-2024-A
 
 # ─── Xenium 5K head   (mode: xenium5k) ───────────────────────────────────────
 xenium5k:
-  xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
+  xenium_dir: "{base_dir}/xenium/{sample}"
   zarr_dir: ''
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
@@ -136,7 +149,7 @@ external_annotation:
   enabled: false
   column: manual_celltype
   keep_unannotated: true
-ingest_ref: /scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad  # optional annotated scRNA-seq reference (ingest_ref)
+ingest_ref: "/scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad"  # optional annotated scRNA-seq reference (ingest_ref)
 ingest_ref_label_key: 04_celltypes
 integration:
   integrate_key: sample
@@ -151,7 +164,7 @@ spatial_niches:
   enabled: true
   # use niche_dir precomputed .tsv
   use_precomputed: true
-  niche_dir: /scratch/CBiB/soterino/niches_visiumhd/
+  niche_dir: "{base_dir}/niches_visiumhd/"
   lambda: 0.8
   num_neighbours: 18
   cluster_n_neighbours: 15

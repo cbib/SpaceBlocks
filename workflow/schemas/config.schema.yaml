@@ -157,6 +157,12 @@ properties:
       override the analysis.* defaults per sample, key-by-key; missing
       samples/columns fall back to config.  Empty string disables overrides.
 
+  base_dir:
+    type: string
+    description: >-
+      Base project directory used by config path templates (for example,
+      "{base_dir}/output").
+
   mode:
     type: string
     enum: ["visiumhd", "xenium5k", "atera", "merscope", "decoupled"]

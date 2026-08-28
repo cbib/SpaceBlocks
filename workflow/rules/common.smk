@@ -33,6 +33,28 @@ def mem_mb_attempt(rule_name, cap_factor=None):
     return _mem
 
 
+# ── Expand {base_dir} in config paths ────────────────────────────────────────
+BASE_DIR = config.get("base_dir", "")
+
+
+def _expand_base_dir(node, root="config"):
+    """
+    Expand config paths (recursively), replacing only {base_dir}
+    leaving other placeholders (for example, the wildcard {sample}) intact.
+    """
+    if isinstance(node, str):
+        if "{base_dir}" in node:
+            expanded = node.replace("{base_dir}", BASE_DIR)
+            print(f"[config] expanded {root}: {expanded}")
+            return expanded
+        return node
+    if isinstance(node, dict):
+        return {k: _expand_base_dir(v, f"{root}.{k}") for k, v in node.items()}
+    if isinstance(node, list):
+        return [_expand_base_dir(v, f"{root}[{i}]") for i, v in enumerate(node)]
+    return node
+
+
 # ── Small derivations called from the Snakefile globals block ────────────────
 def check_external_annotation():
     """Fail fast (at parse time, before any job) when external_annotation is enabled
