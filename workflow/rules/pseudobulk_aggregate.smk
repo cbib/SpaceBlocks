@@ -21,7 +21,7 @@ rule pseudobulk_aggregate:
     benchmark:
         f"{LOGDIR}/benchmarks/pseudobulk_aggregate/{{annot_type}}_{{analysis_level}}.tsv"
     wildcard_constraints:
-        annot_type="tsv_annotation|ingest_annotation",
+        annot_type="tsv_annotation|ingest_annotation|external_annotation",  #remove pipe
         analysis_level="by_region|by_celltype_region|by_niche_region",
     conda:
         "../envs/pseudobulk_aggregate.yaml"
