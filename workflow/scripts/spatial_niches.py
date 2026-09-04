@@ -268,7 +268,7 @@ try:
     # preprocess_umap already sets obs["sample"] = sample_id per cell, so we do
     # NOT pass label= (which would clash with that column). keys + index_unique
     # only disambiguate obs_names across samples.
-    adata = sc.concat(adatas, join="inner", keys=sample_ids, index_unique="-")
+    adata = sc.concat(adatas, join="inner", label="sample_batch", keys=sample_ids)
     del adatas
     log.info("Concatenated: %d cells, %d genes", adata.n_obs, adata.n_vars)
 
