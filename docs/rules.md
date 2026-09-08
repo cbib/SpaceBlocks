@@ -163,19 +163,20 @@ Concatenates all annotated samples, runs Harmony batch correction on the specifi
 Writes `concatenated.h5ad`, `harmony_integrated.h5ad`, and `sketched.h5ad`. This is the input to pseudobulk, subclustering (CoreBlock 2), and gene exploration (CoreBlock 3).
 
 #### `pseudobulk_aggregate`
-Builds pseudobulk count matrices via [decoupler](https://decoupler.readthedocs.io/en/latest/) per `region`, `cell type` and (optionally) `niche` from the integrated object.
+Builds raw-count pseudobulk matrices via [decoupler](https://decoupler.readthedocs.io/en/latest/) from the integrated object. Named analyses in `analysis.pseudobulk.analyses` choose one of four aggregations: all cells per sample, per cell type, per region, or per cell type and region. Sample metadata from `core_samples.tsv` are preserved for downstream models, and configured levels are excluded consistently before aggregation and testing.
 
 Produces diagnostic QC and PCA plots coloured by sample and by each extra-annotation column.
 
 #### `pseudobulk_de` *(optional; `analysis.run_pseudobulk_de: true`)*
-Identifies deregulated genes between conditions and annotated regions via differential expression with DESeq2 (R package) on the pseudobulk matrices.
+Identifies deregulated genes with DESeq2 on the pseudobulk matrices. The comparison may use region annotations or one or more sample-level variables such as phenotype and treatment.
 
-Differential expression runs in three ways:
-- pairwise Wald contrasts between level pairs (region A vs region B),
-- each level against the rest,
-- and, if there are more than 2 levels, a likelihood-ratio test (LRT) with DEGpatterns for gene-group clustering.
+Differential expression runs only for tests requested in the named analysis:
 
-Produces TSV tables, volcano plots, and metadata-annotated heatmaps between conditions.
+- explicit pairwise Wald contrasts, with optional categorical covariates;
+- paired Wald contrasts using `paired_by: sample`, retaining complete pairs;
+- and an optional omnibus likelihood-ratio test (LRT) across sufficiently replicated, non-excluded levels, with DEGpatterns gene-group clustering when enough genes are significant.
+
+Multiple `group_by` columns create a combined categorical group for comparisons such as drug versus vehicle within one phenotype. Produces TSV tables, volcano plots, and metadata-annotated heatmaps between configured groups. Note that SpaceBlocks does not currently support fitting statistical interactions.
 
 #### `neighbourhood_analysis`
 Runs squidpy neighbourhood enrichment per sample and per `region`, plus per-region cell-type co-occurrence (a full co-occurrence figure per region and compact pairwise heatmaps).

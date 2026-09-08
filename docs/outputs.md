@@ -23,7 +23,7 @@ The tag after each folder marks which CoreBlock step produces it — **(pre)** p
 ├── spatial_niches/                                  (pre)   optional
 ├── cluster_annotations_template.tsv                 (pre)   fill this in, then annotate
 ├── integrated_samples/                              (post)  concatenated + integrated objects, report
-├── pseudobulk/<annot_type>/<analysis_level>/        (post)  aggregated/ + de_results/
+├── pseudobulk/<annot_type>/<analysis_name>/         (post)  aggregated/ + de_results/
 ├── Subcompartments/<name>/                          (post)  optional
 └── gene_exploration/                                (expl)
 ```
@@ -50,8 +50,8 @@ The tag after each folder marks which CoreBlock step produces it — **(pre)** p
 | `annotate_cells` | `annotation/` | Per-sample annotation and marker plots |
 | `integrate_samples` | `integrated_samples/harmony_integrated.h5ad` | All samples concatenated and batch-integrated |
 | `integrate_samples` | `integrated_samples/sketched.h5ad` | Geometric-sketch subsample for fast plotting |
-| `pseudobulk_aggregate` | `pseudobulk/<annot_type>/<analysis_level>/aggregated/` | Pseudobulk count matrices and their PCA QC |
-| `pseudobulk_de` | `pseudobulk/<annot_type>/<analysis_level>/de_results/` | Differential-expression tables and plots |
+| `pseudobulk_aggregate` | `pseudobulk/<annot_type>/<analysis_name>/aggregated/` | Pseudobulk count matrices, model metadata, manifest, and PCA QC for one named analysis |
+| `pseudobulk_de` | `pseudobulk/<annot_type>/<analysis_name>/de_results/` | Explicit pairwise differential-expression tables/plots and optional `LRT/` results |
 | `neighbourhood_analysis` | `neighbourhood_analysis/<annot_type>/` | Cell-type co-occurrence and enrichment per sample |
 | `subcluster` | `Subcompartments/<name>/` | Optional re-clustering of a chosen compartment |
 | `sample_report` | `integrated_samples/samples_report.pdf` | One page per sample with UMAP, spatial, dotplot and barplot |
