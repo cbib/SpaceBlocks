@@ -41,7 +41,7 @@ standards.
 ```bash
 git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 # Install the development environment
-conda create -f workflow/envs/dev.yaml
+conda env create -f workflow/envs/dev.yaml
 conda activate spaceblocks_dev
 snakemake -n --sdm conda      # dry-run: builds the DAG, validates the config, provisions envs
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none  # decoupled smoke test
@@ -99,20 +99,23 @@ changes. See the `xenium5k` head as a reference implementation.
 
 ## Validating a change
 
-Run the applicable checks locally before pushing. The first two mirror CI and use the committed
-`mode: decoupled` fixture under `.test/`:
+Run the applicable checks locally before pushing. The lint and dry-run commands mirror CI and use
+the committed `mode: decoupled` fixture under `.test/`:
 
 ```bash
-# 1. Workflow parses + lints (against the committed test fixture)
-snakemake -s workflow/Snakefile -d .test --lint
+# 1. Formatting and file-hygiene hooks pass
+pre-commit run --all-files
 
-# 2. The decoupled CoreBlock DAG builds
+# 2. Workflow parses + lints (against the committed test fixture)
+snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
+
+# 3. The decoupled CoreBlock DAG builds
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
 
-# 3. Config still validates against the schema
+# 4. Config still validates against the schema
 python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration schema validation passed')"
 
-# 4. Docs build cleanly (only if you touched docs/)
+# 5. Docs build cleanly (only if you touched docs/)
 # Activate the development environment
 conda activate spaceblocks_dev
 # Build the docs
