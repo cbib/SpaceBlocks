@@ -134,6 +134,48 @@ def _extra_annot_color_triples():
     return cols, vals, colors
 
 
+def pseudobulk_analysis(name):
+    """Return one validated named pseudobulk analysis from the Snakefile globals."""
+    return PSEUDOBULK_ANALYSIS_BY_NAME[str(name)]
+
+
+def pseudobulk_group_label(spec, values):
+    """Stable display/factor label for one configured group combination."""
+    columns = spec["group_by"]
+    if len(columns) == 1:
+        return str(values[columns[0]])
+    return " | ".join(f"{column}={values[column]}" for column in columns)
+
+
+def pseudobulk_contrast_param(analysis_name, field):
+    """Flatten named contrast mappings for safe Snakemake Python-to-R transfer."""
+    spec = pseudobulk_analysis(analysis_name)
+    if field == "names":
+        return [str(c["name"]) for c in spec["contrasts"]]
+    if field not in {"numerator", "denominator"}:
+        raise ValueError(f"Unknown pseudobulk contrast field: {field}")
+    return [pseudobulk_group_label(spec, c[field]) for c in spec["contrasts"]]
+
+
+def pseudobulk_group_palette(analysis_name):
+    """Palette for a one-column comparison; combined groups use R fallbacks."""
+    spec = pseudobulk_analysis(analysis_name)
+    if len(spec["group_by"]) != 1:
+        return {}
+    column = spec["group_by"][0]
+    if column == "region_annotation":
+        return ANALYSIS.get("region_colors", {}) or {}
+    return SAMPLE_COLORS.get(column, {}) if isinstance(SAMPLE_COLORS, dict) else {}
+
+
+def pseudobulk_condition_order(analysis_name):
+    """Preferred heatmap order for a region-only comparison."""
+    spec = pseudobulk_analysis(analysis_name)
+    if spec["group_by"] == ["region_annotation"]:
+        return [str(level) for level in REGION_LEVELS]
+    return []
+
+
 def core_sample_meta(sample):
     """Experimental-design metadata for `sample` (design columns only, excludes the
     `sample` key). Returns {} when no core sheet is configured."""
@@ -403,13 +445,13 @@ def get_all_targets(wildcards):
         targets += expand(
             rules.pseudobulk_aggregate.output.agg_dir,
             annot_type=ANNOT_TYPES,
-            analysis_level=ANALYSIS_LEVELS,
+            analysis_name=PSEUDOBULK_ANALYSIS_NAMES,
         )
         if RUN_DE:
             targets += expand(
                 rules.pseudobulk_de.output.results_dir,
                 annot_type=ANNOT_TYPES,
-                analysis_level=ANALYSIS_LEVELS,
+                analysis_name=PSEUDOBULK_ANALYSIS_NAMES,
             )
         targets.append(rules.integrate_samples.output.concatenated)
         targets.append(rules.integrate_samples.output.harmony)

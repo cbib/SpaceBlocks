@@ -9,7 +9,9 @@ directly below; helper functions live in rules/common.smk.
 
 import glob
 import os
+import re
 import sys
+from itertools import combinations
 import pandas as pd
 from snakemake.utils import validate, min_version
 
@@ -208,7 +210,177 @@ _ANNOT_TYPE_TO_COL = {
 DEFAULT_ANNOT_COL = _ANNOT_TYPE_TO_COL.get(PRIMARY_ANNOT_TYPE, "cell_type_tsv")
 ANNOT_TYPES = list(config.get("annotation_types") or [PRIMARY_ANNOT_TYPE])
 
-ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"])
+_PSEUDOBULK_AGGREGATIONS = {
+    "all_cells",
+    "by_celltype",
+    "by_region",
+    "by_celltype_region",
+}
+
+
+def _validate_pseudobulk_analysis(spec):
+    """Validate the parts of a pseudobulk analysis that JSON Schema cannot
+    conveniently validate across fields (names, contrast mappings, and columns)."""
+    if not isinstance(spec, dict):
+        sys.exit("[config error] each analysis.pseudobulk.analyses entry must be a mapping.")
+
+    name = str(spec.get("name", ""))
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        sys.exit(
+            "[config error] pseudobulk analysis names may contain only letters, "
+            f"numbers, '_' and '-'; got '{name}'."
+        )
+
+    aggregation = str(spec.get("aggregation", ""))
+    if aggregation not in _PSEUDOBULK_AGGREGATIONS:
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}' has unsupported aggregation "
+            f"'{aggregation}'. Choose one of {sorted(_PSEUDOBULK_AGGREGATIONS)}."
+        )
+
+    group_by = list(spec.get("group_by") or [])
+    if not group_by or any(not isinstance(c, str) or not c for c in group_by):
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}' needs at least one "
+            "non-empty group_by column."
+        )
+    if len(group_by) != len(set(group_by)):
+        sys.exit(f"[config error] pseudobulk analysis '{name}' repeats a group_by column.")
+
+    paired_by = spec.get("paired_by", "") or ""
+    if not isinstance(paired_by, str):
+        sys.exit(f"[config error] pseudobulk analysis '{name}'.paired_by must be a string.")
+
+    covariates = list(spec.get("covariates") or [])
+    if any(not isinstance(c, str) or not c for c in covariates):
+        sys.exit(f"[config error] pseudobulk analysis '{name}' has an invalid covariate.")
+    if len(covariates) != len(set(covariates)):
+        sys.exit(f"[config error] pseudobulk analysis '{name}' repeats a covariate.")
+    overlap = sorted(set(group_by) & set(covariates))
+    if overlap:
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}' lists {overlap} as both "
+            "group_by and covariates."
+        )
+    if paired_by and paired_by in group_by:
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}' lists '{paired_by}' as both "
+            "paired_by and group_by."
+        )
+    if paired_by and paired_by in covariates:
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}' lists '{paired_by}' as both "
+            "paired_by and a covariate."
+        )
+
+    exclude_levels = spec.get("exclude_levels") or {}
+    if not isinstance(exclude_levels, dict):
+        sys.exit(f"[config error] pseudobulk analysis '{name}'.exclude_levels must be a mapping.")
+
+    contrast_names = set()
+    for contrast in list(spec.get("contrasts") or []):
+        if not isinstance(contrast, dict):
+            sys.exit(f"[config error] contrasts in pseudobulk analysis '{name}' must be mappings.")
+        contrast_name = str(contrast.get("name", ""))
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", contrast_name):
+            sys.exit(
+                f"[config error] contrast names in pseudobulk analysis '{name}' may "
+                "contain only letters, numbers, '_' and '-'."
+            )
+        if contrast_name in contrast_names:
+            sys.exit(f"[config error] duplicate contrast '{contrast_name}' in '{name}'.")
+        contrast_names.add(contrast_name)
+        for side in ("numerator", "denominator"):
+            values = contrast.get(side)
+            if not isinstance(values, dict) or set(values) != set(group_by):
+                sys.exit(
+                    f"[config error] contrast '{contrast_name}' {side} must specify "
+                    f"exactly the group_by columns {group_by}."
+                )
+            excluded_values = {
+                column: {str(value) for value in exclude_levels.get(column, [])}
+                for column in group_by
+            }
+            conflicts = [
+                f"{column}={value}"
+                for column, value in values.items()
+                if str(value) in excluded_values[column]
+            ]
+            if conflicts:
+                sys.exit(
+                    f"[config error] contrast '{contrast_name}' {side} in '{name}' "
+                    f"uses excluded level(s): {conflicts}."
+                )
+        if contrast["numerator"] == contrast["denominator"]:
+            sys.exit(
+                f"[config error] contrast '{contrast_name}' in '{name}' has identical "
+                "numerator and denominator groups."
+            )
+
+    return {
+        **spec,
+        "name": name,
+        "aggregation": aggregation,
+        "group_by": group_by,
+        "paired_by": paired_by,
+        "covariates": covariates,
+        "exclude_levels": dict(exclude_levels),
+        "contrasts": list(spec.get("contrasts") or []),
+        "lrt": dict(spec.get("lrt") or {}),
+    }
+
+
+def _legacy_pseudobulk_analyses():
+    """Translate the former region-only config for existing demo/user configs.
+
+    New configurations should use analysis.pseudobulk.analyses. The unimplemented
+    by_niche_region value is deliberately rejected rather than carried forward.
+    """
+    levels = list(ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"]))
+    unsupported = sorted(set(levels) - {"by_region", "by_celltype_region"})
+    if unsupported:
+        sys.exit(
+            "[config error] unsupported legacy pseudobulk analysis_levels: "
+            f"{unsupported}. 'by_niche_region' has been removed because it was never implemented."
+        )
+    contrasts = [
+        {
+            "name": re.sub(r"[^A-Za-z0-9_-]+", "_", f"{a}_vs_{b}").strip("_"),
+            "numerator": {"region_annotation": str(a)},
+            "denominator": {"region_annotation": str(b)},
+        }
+        for a, b in combinations(REGION_LEVELS, 2)
+    ]
+    return [
+        {
+            "name": level,
+            "aggregation": level,
+            "group_by": ["region_annotation"],
+            "paired_by": "sample",
+            "covariates": [],
+            "exclude_levels": {"region_annotation": ["Unlabeled", "Bubble"]},
+            "contrasts": contrasts,
+            "lrt": {"enabled": len(REGION_LEVELS) > 2},
+        }
+        for level in levels
+    ]
+
+
+PSEUDOBULK = ANALYSIS.get("pseudobulk", {}) or {}
+_configured_pseudobulk_analyses = PSEUDOBULK.get("analyses")
+if _configured_pseudobulk_analyses:
+    PSEUDOBULK_ANALYSES = [
+        _validate_pseudobulk_analysis(spec) for spec in _configured_pseudobulk_analyses
+    ]
+else:
+    PSEUDOBULK_ANALYSES = [
+        _validate_pseudobulk_analysis(spec) for spec in _legacy_pseudobulk_analyses()
+    ]
+
+PSEUDOBULK_ANALYSIS_BY_NAME = {spec["name"]: spec for spec in PSEUDOBULK_ANALYSES}
+if len(PSEUDOBULK_ANALYSIS_BY_NAME) != len(PSEUDOBULK_ANALYSES):
+    sys.exit("[config error] analysis.pseudobulk analysis names must be unique.")
+PSEUDOBULK_ANALYSIS_NAMES = list(PSEUDOBULK_ANALYSIS_BY_NAME)
 
 # Pseudobulk DESeq2 DE is OPTIONAL and on by default
 RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
@@ -357,7 +529,7 @@ rule run_postprocessing:
             expand(
                 rules.pseudobulk_de.output.results_dir,
                 annot_type=ANNOT_TYPES,
-                analysis_level=ANALYSIS_LEVELS,
+                analysis_name=PSEUDOBULK_ANALYSIS_NAMES,
             )
             if RUN_DE
             else []

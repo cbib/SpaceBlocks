@@ -110,15 +110,58 @@ analysis:
   # pseudobulk
   run_pseudobulk_de: true
   run_leiden_analysis: true
-  analysis_levels:                  # by_niche_region also available; off by default (too many groups)
-    - by_region
-    - by_celltype_region
   min_cells_per_pseudobulk: 10
   min_replicates: 3
   min_counts_per_pseudobulk: 1000
   padj_threshold: 0.05
   lfc_threshold: 0.25
-  # regions to consider in pseudobulk (omitted names get removed from pseudobulk DE)
+  # Each named analysis defines one aggregation and one DE model. `cell_type` is
+  # resolved to the annotation selected by annotation_types. Multiple group_by
+  # columns form one combined comparison group; interactions are not fitted.
+  pseudobulk:
+    analyses:
+      - name: regions_all_cells
+        aggregation: by_region
+        group_by:
+          - region_annotation
+        paired_by: sample
+        exclude_levels:
+          region_annotation:
+            - Unlabeled
+            - Bubble
+        contrasts:
+          - name: tumor_vs_healthy
+            numerator:
+              region_annotation: Tumor area
+            denominator:
+              region_annotation: Healthy area
+        # Omnibus test across every sufficiently replicated, non-excluded region.
+        lrt:
+          enabled: true
+
+      - name: regions_by_celltype
+        aggregation: by_celltype_region
+        group_by:
+          - region_annotation
+        paired_by: sample
+        exclude_levels:
+          region_annotation:
+            - Unlabeled
+            - Bubble
+          cell_type:
+            - Unannotated
+        contrasts:
+          - name: tumor_vs_healthy
+            numerator:
+              region_annotation: Tumor area
+            denominator:
+              region_annotation: Healthy area
+        lrt:
+          enabled: true
+
+  # Preferred region order for QC-sweep, subcluster, and region-only pseudobulk split
+  # heatmaps, first-to-last (typically left-to-right). This does not filter pseudobulk
+  # levels; use each analysis' exclude_levels for filtering.
   region_levels:
     - Healthy area
     - Healthy over tumor
@@ -128,7 +171,7 @@ analysis:
     - In situ area
     - Tumor area
     - Invasive area
-  # color palette: keys must match region_levels above
+  # Palette used when region_annotation is the single comparison variable.
   region_colors:
     Healthy area: '#FDE725FF'
     Healthy over tumor: '#9FDA3AFF'
