@@ -59,6 +59,19 @@ try:
     adata.obs["sample"] = sample_id
     if "cell_id" not in adata.obs.columns:
         adata.obs["cell_id"] = adata.obs_names.astype(str)
+    # Contract invariant: obs_names == obs['cell_id']. Every downstream join (external
+    # annotation, spatial niches, region mapping) keys on obs_names, but the SpatialData
+    # zarr table carries the real Xenium cell_id in a column while obs_names is a positional
+    # integer index — so the two silently diverge and those joins match nothing (all cells
+    # fall through to 'Unannotated'). Align obs_names to cell_id here.
+    adata.obs["cell_id"] = adata.obs["cell_id"].astype(str)
+    adata.obs_names = adata.obs["cell_id"].values
+    if not adata.obs_names.is_unique:
+        n_dup = int(adata.obs_names.duplicated().sum())
+        log.warning("cell_id has %d duplicate value(s); making obs_names unique and "
+                    "re-syncing cell_id so the two stay equal.", n_dup)
+        adata.obs_names_make_unique()
+        adata.obs["cell_id"] = adata.obs_names.astype(str)
     log.info("AnnData: %d cells × %d genes (raw, unfiltered)", adata.n_obs, adata.n_vars)
 
     # ── 3. Embed greyscale morphology composite in uns['spatial'] ────────
