@@ -31,11 +31,21 @@ rule pseudobulk_de:
         paired_by=lambda wc: pseudobulk_analysis(wc.analysis_name)["paired_by"],
         covariates=lambda wc: pseudobulk_analysis(wc.analysis_name)["covariates"],
         contrast_names=lambda wc: pseudobulk_contrast_param(wc.analysis_name, "names"),
-        contrast_numerators=lambda wc: pseudobulk_contrast_param(wc.analysis_name, "numerator"),
-        contrast_denominators=lambda wc: pseudobulk_contrast_param(wc.analysis_name, "denominator"),
-        lrt_enabled=lambda wc: bool(pseudobulk_analysis(wc.analysis_name)["lrt"].get("enabled", False)),
-        group_color_names=lambda wc: list(pseudobulk_group_palette(wc.analysis_name).keys()),
-        group_color_values=lambda wc: list(pseudobulk_group_palette(wc.analysis_name).values()),
+        contrast_numerators=lambda wc: pseudobulk_contrast_param(
+            wc.analysis_name, "numerator"
+        ),
+        contrast_denominators=lambda wc: pseudobulk_contrast_param(
+            wc.analysis_name, "denominator"
+        ),
+        lrt_enabled=lambda wc: bool(
+            pseudobulk_analysis(wc.analysis_name)["lrt"].get("enabled", False)
+        ),
+        group_color_names=lambda wc: list(
+            pseudobulk_group_palette(wc.analysis_name).keys()
+        ),
+        group_color_values=lambda wc: list(
+            pseudobulk_group_palette(wc.analysis_name).values()
+        ),
         condition_level_order=lambda wc: pseudobulk_condition_order(wc.analysis_name),
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,
         extra_anno_col_names=EXTRA_ANNO_COLS,
