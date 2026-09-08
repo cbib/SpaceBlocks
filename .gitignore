@@ -43,3 +43,4 @@ config/visiumhd_samples_copy.csv
 
 # Results (these live on scratch, not in the repo)
 # Adjust if you prefer to track them
+meta.tsv
