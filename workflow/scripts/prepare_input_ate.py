@@ -295,6 +295,25 @@ try:
     log.info("Wrote contract %s  (%d cells × %d genes, raw counts)",
              out_h5ad, adata.n_obs, adata.n_vars)
 
+    # ── 6. Normalise this sample's external-annotation metadata ──────────
+    #    Rewrite metadata_{sample}.tsv in precomputed_metadata_dir into the 2-column
+    #    shape annotate_cells needs (barcode <TAB> label), re-keying ragged files on
+    #    their plain cell_id column so the reindex on obs_names actually matches. The
+    #    untouched original is preserved (write-once) in a sibling 'original_metadata'
+    #    folder. Per sample, so parallel head jobs never collide; a no-op when
+    #    external_annotation is disabled or no file exists for this sample.
+    from normalize_external_metadata import normalize_sample_metadata
+
+    _ext_cfg = snakemake.config.get("external_annotation", {}) or {}
+    if _ext_cfg.get("enabled", False):
+        normalize_sample_metadata(
+            metadata_dir=snakemake.config.get("precomputed_metadata_dir", "") or "",
+            sample_id=sample_id,
+            label_column=_ext_cfg.get("column", "celltype_annotation"),
+            id_column="cell_id",
+            logger=log,
+        )
+
 except Exception:
     log.error("FAILED for %s:\n%s", snakemake.params.sample_id, traceback.format_exc())
     raise
