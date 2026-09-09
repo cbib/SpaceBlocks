@@ -45,7 +45,7 @@ def _expand_base_dir(node, root="config"):
     if isinstance(node, str):
         if "{base_dir}" in node:
             expanded = node.replace("{base_dir}", BASE_DIR)
-            print(f"[config] expanded {root}: {expanded}")
+            print(f"[config] expanded {root}: {expanded}", file=sys.stderr)
             return expanded
         return node
     if isinstance(node, dict):

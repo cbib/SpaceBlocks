@@ -52,7 +52,7 @@ RANDOM_SEED = config.get("random_seed", 42)
 
 # Xenium 5K head specifics
 XENIUM5K = config.get("xenium5k", {}) or {}
-XENIUM_ZARR_DIR = XENIUM5K.get("zarr_dir", "") or OUTDIR_SR
+XENIUM_ZARR_DIR = OUTDIR_SR
 
 # Atera head specifics (ALPHA — the platform ships H2 2026 and its output format is
 # still a preview; see docs/rules.md).

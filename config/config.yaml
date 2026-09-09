@@ -11,8 +11,7 @@ mode: decoupled
 ## Paths relative to base_dir can be left as is,
 ## or be overridden with absolute paths if desired.
 
-# TODO: reset base dir and absolute dirs to a default before release
-base_dir: /scratch/dgarcia/smk_visiumhd
+base_dir: SpaceBlocksProject
 
 ## Paths that are not relative to base_dir and must be set explicitly below:
 # spaceranger, probe_set, transcriptome, ingest_ref
@@ -22,13 +21,13 @@ post_processing_outdir: "{base_dir}/output"
 logdir: "{base_dir}/logs"
 spaceranger_processing_outdir: "{base_dir}/spaceranger_results"
 # dir with region annotation GeoJSONs (optional, recommended)
-geojson_path: "{base_dir}/geojson"
+geojson_path: "/path/to/geojson"
 # only when using "mode: decoupled" — dir of pre-built contract h5ads
 contract_dir: ''
 
 # ─── Reproducibility & reuse   (docs → Configuration) ────────────────────────
 random_seed: 0
-precomputed_metadata_dir: "{base_dir}/metadata_visiumhd/"
+precomputed_metadata_dir: "/path/to/metadata_visiumhd/"
 # reuse clusters from precomputed_metadata_dir
 use_precomputed_clusters: true
 
@@ -38,14 +37,15 @@ core_samples: config/core_samples.tsv
 samples: config/visiumhd_samples.csv
 
 # ─── Visium HD head   (mode: visiumhd) ───────────────────────────────────────
-spaceranger: /home/soterinosogo/spaceranger-4.0.1/spaceranger # external install; path to the executable
-probe_set: /scratch/CBiB/soterino/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv
-transcriptome: /mnt/cbib/bank/cellranger/refdata-gex-GRCh38-2024-A
+spaceranger: /path/to/spaceranger-4.0.1/spaceranger # external install; path to the executable
+probe_set: /path/to/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv
+transcriptome: /path/to/cellranger/refdata-gex-GRCh38-2024-A
 
 # ─── Xenium 5K head   (mode: xenium5k) ───────────────────────────────────────
 xenium5k:
-  xenium_dir: "{base_dir}/xenium/{sample}"
-  zarr_dir: ''
+  # xenium_dir is the directory containing the Xenium 5K samples.
+  # Make sure to keep the {sample} placeholder in the path.
+  xenium_dir: "/path/to/xenium/{sample}"
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
   pixel_size_um: 0.2125
@@ -149,7 +149,7 @@ external_annotation:
   enabled: false
   column: manual_celltype
   keep_unannotated: true
-ingest_ref: "/scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad"  # optional annotated scRNA-seq reference (ingest_ref)
+ingest_ref: "/path/to/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad"  # optional annotated scRNA-seq reference (ingest_ref)
 ingest_ref_label_key: 04_celltypes
 integration:
   integrate_key: sample
@@ -164,7 +164,7 @@ spatial_niches:
   enabled: true
   # use niche_dir precomputed .tsv
   use_precomputed: true
-  niche_dir: "{base_dir}/niches_visiumhd/"
+  niche_dir: "/path/to/niches_visiumhd/"
   lambda: 0.8
   num_neighbours: 18
   cluster_n_neighbours: 15
