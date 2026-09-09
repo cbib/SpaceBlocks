@@ -6,6 +6,7 @@ rule annotate_cells:
     input:
         adata=_annotate_input_adata,
         metadata=rules.preprocess_umap.output.metadata,
+        external_metadata=_external_metadata_input,
         cluster_annotations=config.get("cluster_annotations", "") or [],
         spatial_niche=_annotate_niche_input,
     output:
@@ -28,7 +29,6 @@ rule annotate_cells:
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         use_precomputed=USE_PRECOMPUTED,
         external_annotation=config.get("external_annotation", {}),
-        precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),

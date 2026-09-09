@@ -32,6 +32,7 @@ except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
 from composition_barplots import composition_pair, find_niche_column
+from external_metadata import normalized_labels, optional_input_path, read_cell_metadata
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -175,7 +176,6 @@ MIN_CELLS_PER_TYPE  = int(snakemake.params.min_cells_per_type)
 DE_N_GENES          = int(snakemake.params.de_n_genes)
 USE_PRECOMPUTED     = bool(snakemake.params.use_precomputed)
 EXT_ANNOT_CFG       = snakemake.params.external_annotation
-PRECOMPUTED_DIR     = str(snakemake.params.precomputed_metadata_dir)
 ANNOTATION_COLORS   = snakemake.params.annotation_colors
 REGION_COLORS       = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
@@ -184,6 +184,9 @@ NICHE_COLUMN        = getattr(snakemake.params, "niche_column", "")
 adata_path     = str(snakemake.input.adata)
 metadata_path  = str(snakemake.input.metadata)
 annot_tsv_path = str(snakemake.input.cluster_annotations)
+external_metadata_path = optional_input_path(
+    getattr(snakemake.input, "external_metadata", None)
+)
 out_adata_path = str(snakemake.output.adata_annot)
 plots_dir      = str(snakemake.output.plots_dir)
 
@@ -209,9 +212,8 @@ try:
 
     # Reload precomputed clusters from metadata TSV if configured
     if USE_PRECOMPUTED:
-        _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
-        if _ext_meta and os.path.isfile(_ext_meta):
-            _meta_source = _ext_meta
+        if external_metadata_path:
+            _meta_source = external_metadata_path
         elif os.path.isfile(metadata_path):
             _meta_source = metadata_path
         else:
@@ -219,9 +221,7 @@ try:
 
         if _meta_source:
             log.info("Reloading clusters from metadata: %s", _meta_source)
-            saved = pd.read_csv(_meta_source, sep="\t", index_col=0, comment="#")
-            saved.index = saved.index.astype(str)   # obs_names are str; numeric cell ids
-                                                    # would be inferred as int and misalign
+            saved = read_cell_metadata(_meta_source)
             leiden_cols = [c for c in saved.columns if c.startswith("leiden_")]
             for col in leiden_cols:
                 if col not in adata.obs.columns:
@@ -302,29 +302,25 @@ try:
         ext_col = EXT_ANNOT_CFG.get("column", "")
         if not ext_col:
             raise ValueError("external_annotation.enabled is true but no 'column' is set in config.")
-        # Resolve metadata source for external annotation
-        _ext_meta = os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv") if PRECOMPUTED_DIR else ""
-        if _ext_meta and os.path.isfile(_ext_meta):
-            _ext_source = _ext_meta
-        elif os.path.isfile(metadata_path):
-            _ext_source = metadata_path
-        else:
-            _ext_source = None
-
-        if _ext_source is None:
+        if not external_metadata_path:
             raise FileNotFoundError(
                 f"external_annotation enabled but no metadata found for sample "
-                f"'{sample_id}' (looked in precomputed_metadata_dir and {metadata_path}).")
+                f"'{sample_id}'.")
 
-        log.info("Loading external annotation from '%s' in %s …", ext_col, _ext_source)
-        saved = pd.read_csv(_ext_source, sep="\t", index_col=0, comment="#")
-        saved.index = saved.index.astype(str)       # see note above
-        if ext_col not in saved.columns:
-            raise ValueError(
-                f"external_annotation column '{ext_col}' not found in {_ext_source} "
-                f"(sample '{sample_id}'). Available columns: {list(saved.columns)}")
+        log.info(
+            "Loading external annotation from '%s' in %s …",
+            ext_col,
+            external_metadata_path,
+        )
+        saved = read_cell_metadata(
+            external_metadata_path, required_columns=(ext_col,)
+        )
+        labels = normalized_labels(saved, ext_col)
         adata.obs["cell_type_external"] = (
-            saved[ext_col].reindex(adata.obs_names).fillna("Unannotated").astype("category"))
+            labels.reindex(adata.obs_names.astype(str))
+            .fillna("Unannotated")
+            .astype("category")
+        )
         ext_enabled = True
         log.info("  External annotation: %d types (%d cells unmatched → Unannotated)",
                  adata.obs["cell_type_external"].nunique(),

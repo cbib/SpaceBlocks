@@ -1,11 +1,9 @@
 rule process_geojson:
-    """Load a sample's OPTIONAL region GeoJSON ({sample}_tissue_hires_image.geojson
-    or {sample}_morphology.geojson) and write it into the sample dir. Only invoked
-    for samples in SAMPLES_WITH_GEOJSON (see common.smk / _find_geojson)."""
+    """Validate an optional region GeoJSON without modifying the source file."""
     input:
         geojson=lambda wc: _find_geojson(wc.sample),
     output:
-        geojson=f"{SAMPLES_DIR}/{{sample}}/{{sample}}_annotations.geojson",
+        report=f"{SAMPLES_DIR}/{{sample}}/validation/geojson_validation.json",
     log:
         out=f"{LOGDIR}/process_geojson/{{sample}}.out",
         err=f"{LOGDIR}/process_geojson/{{sample}}.err",

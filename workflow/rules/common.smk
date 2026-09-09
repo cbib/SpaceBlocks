@@ -195,26 +195,62 @@ def _ate_prepare_inputs(wildcards):
                 sample=wildcards.sample
             )
         )
-    # Track the region GeoJSON when present, so editing/renaming it retriggers the
-    # contract build. It is read by filename (regions are optional), not hard-required —
-    # same "declare only when present" pattern as _preprocess_inputs' precomputed_meta.
-    for _suffix in ("_he_background.geojson", "_morphology.geojson", "_he.geojson"):
-        _gj = os.path.join(GEOJ_DIR, f"{wildcards.sample}{_suffix}")
-        if os.path.isfile(_gj):
-            inputs["geojson"] = _gj
-            break
+    # Region annotations are optional. When one is present, track both the source
+    # and its validation report so the contract is rebuilt only after validation.
+    _gj = _find_geojson(wildcards.sample)
+    if _gj:
+        inputs["geojson"] = _gj
+        inputs["geojson_validation"] = _geojson_validation_report(wildcards.sample)
     return inputs
 
 
+def _geojson_suffixes():
+    """Accepted region-annotation filenames for the active head, in priority order."""
+    return {
+        "visiumhd": ("_tissue_hires_image.geojson",),
+        "xenium5k": ("_morphology.geojson",),
+        "atera": ("_he_background.geojson", "_morphology.geojson"),
+        "merscope": ("_morphology.geojson",),
+    }.get(MODE, ())
+
+
 def _find_geojson(sample):
-    """Locate a sample's OPTIONAL region GeoJSON in GEOJ_DIR, trying known filename
-    patterns in order. Returns the first path that exists, or None when neither is
-    present (used both to gate SAMPLES_WITH_GEOJSON and as process_geojson's input)."""
-    for _suffix in ("_tissue_hires_image.geojson", "_morphology.geojson"):
-        _gj = os.path.join(GEOJ_DIR, f"{sample}{_suffix}")
-        if os.path.isfile(_gj):
-            return _gj
-    return None
+    """Resolve an optional region GeoJSON using filenames supported by the active head."""
+    if not GEOJ_DIR or not _geojson_suffixes():
+        return None
+
+    accepted = []
+    for _suffix in _geojson_suffixes():
+        accepted.append(os.path.join(GEOJ_DIR, f"{sample}{_suffix}"))
+
+    # A sample-prefixed GeoJSON with any other suffix is almost certainly a typo or
+    # an export for a different coordinate system. Fail before silently ignoring it.
+    discovered = sorted(glob.glob(os.path.join(GEOJ_DIR, f"{sample}_*.geojson")))
+    unsupported = [path for path in discovered if path not in accepted]
+    if unsupported:
+        sys.exit(
+            f"[config error] Unsupported GeoJSON filename(s) for sample '{sample}' "
+            f"in mode '{MODE}': {unsupported}. Expected one of: {accepted}"
+        )
+    return next((path for path in accepted if os.path.isfile(path)), None)
+
+
+def _geojson_validation_report(sample):
+    """Validation marker consumed by a head only when that sample has a GeoJSON."""
+    if _find_geojson(sample) is None:
+        return []
+    return f"{SAMPLES_DIR}/{sample}/validation/geojson_validation.json"
+
+
+def _external_metadata_input(wildcards):
+    """Tracked per-sample external metadata, or no input when the feature is off."""
+    cfg = config.get("external_annotation", {}) or {}
+    if not cfg.get("enabled", False):
+        return []
+    return os.path.join(
+        config.get("precomputed_metadata_dir", "") or "",
+        f"metadata_{wildcards.sample}.tsv",
+    )
 
 
 # ── HEAD (MERSCOPE) input helper ─────────────────────────────────────────────
@@ -321,7 +357,7 @@ def get_all_targets(wildcards):
     targets += expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS)
     targets += expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS)
-    targets += expand(rules.process_geojson.output.geojson, sample=SAMPLES_WITH_GEOJSON)
+    targets += expand(rules.process_geojson.output.report, sample=SAMPLES_WITH_GEOJSON)
     targets += list(QUPATH_IMAGES)  # head QuPath image(s) for the active mode (or [])
     if RUN_LEIDEN_ANALYSIS:
         targets += expand(

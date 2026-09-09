@@ -324,7 +324,7 @@ rule run_preprocessing:
         expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS),
-        expand(rules.process_geojson.output.geojson, sample=SAMPLES_WITH_GEOJSON),
+        expand(rules.process_geojson.output.report, sample=SAMPLES_WITH_GEOJSON),
         *QUPATH_IMAGES,
         *(
             expand(

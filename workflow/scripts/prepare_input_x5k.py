@@ -68,10 +68,12 @@ try:
     adata.obs_names = adata.obs["cell_id"].values
     if not adata.obs_names.is_unique:
         n_dup = int(adata.obs_names.duplicated().sum())
-        log.warning("cell_id has %d duplicate value(s); making obs_names unique and "
-                    "re-syncing cell_id so the two stay equal.", n_dup)
-        adata.obs_names_make_unique()
-        adata.obs["cell_id"] = adata.obs_names.astype(str)
+        examples = adata.obs_names[adata.obs_names.duplicated(keep=False)].unique()[:5]
+        raise ValueError(
+            f"cell_id has {n_dup} duplicate value(s) (examples: {list(examples)}). "
+            "Cell identifiers must be unique; suffixing them would break external "
+            "metadata and region joins."
+        )
     log.info("AnnData: %d cells × %d genes (raw, unfiltered)", adata.n_obs, adata.n_vars)
 
     # ── 3. Embed greyscale morphology composite in uns['spatial'] ────────
@@ -163,25 +165,6 @@ try:
     adata.write_h5ad(out_h5ad)
     log.info("Wrote contract %s  (%d cells × %d genes, raw counts)",
              out_h5ad, adata.n_obs, adata.n_vars)
-
-    # ── 6. Normalise this sample's external-annotation metadata ──────────
-    #    Rewrite metadata_{sample}.tsv in precomputed_metadata_dir into the 2-column
-    #    shape annotate_cells needs (barcode <TAB> label), re-keying ragged files on
-    #    their plain cell_id column so the reindex on obs_names actually matches. The
-    #    untouched original is preserved (write-once) in a sibling 'original_metadata'
-    #    folder. Per sample, so parallel head jobs never collide; a no-op when
-    #    external_annotation is disabled or no file exists for this sample.
-    from normalize_external_metadata import normalize_sample_metadata
-
-    _ext_cfg = snakemake.config.get("external_annotation", {}) or {}
-    if _ext_cfg.get("enabled", False):
-        normalize_sample_metadata(
-            metadata_dir=snakemake.config.get("precomputed_metadata_dir", "") or "",
-            sample_id=sample_id,
-            label_column=_ext_cfg.get("column", "celltype_annotation"),
-            id_column="cell_id",
-            logger=log,
-        )
 
 except Exception:
     log.error("FAILED for %s:\n%s", snakemake.params.sample_id, traceback.format_exc())

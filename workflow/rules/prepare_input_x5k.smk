@@ -7,6 +7,8 @@ rule prepare_input_x5k:
     input:
         done=rules.convert_zarr_x5k.output.done,  # zarr completion marker
         qupath_meta=rules.generate_qupath_x5k.output.qupath_meta,  # geojson px→µm scale
+        geojson=lambda wc: _find_geojson(wc.sample) or [],
+        geojson_validation=lambda wc: _geojson_validation_report(wc.sample),
     output:
         h5ad=config["contract"]["unfiltered_h5ad"],
     log:

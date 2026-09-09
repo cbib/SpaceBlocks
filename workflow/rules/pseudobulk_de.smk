@@ -15,7 +15,7 @@ rule pseudobulk_de:
     benchmark:
         f"{LOGDIR}/benchmarks/pseudobulk_de/{{annot_type}}_{{analysis_level}}.tsv"
     wildcard_constraints:
-        annot_type="tsv_annotation|refined_annotation|ingest_annotation|external_annotation",
+        annot_type="tsv_annotation|refined_annotation|ingest_annotation",
         analysis_level="by_region|by_celltype_region|by_niche_region",
     conda:
         "../envs/pseudobulk_de.yaml"

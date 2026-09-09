@@ -31,6 +31,7 @@ rule validate_input:
     """Assert the unfiltered h5ad satisfies the core contract; record image presence."""
     input:
         h5ad=lambda wc: _CONTRACT["unfiltered_h5ad"].format(sample=wc.sample),
+        external_metadata=_external_metadata_input,
     output:
         report=f"{_OUT}/{{sample}}/validation/input_validation.json",
     log:
@@ -51,6 +52,5 @@ rule validate_input:
         mito_prefix=_CONTRACT.get("mito_prefix", ["MT-", "mt-"]),
         external_enabled=EXTERNAL_ENABLED,
         external_column=(config.get("external_annotation", {}) or {}).get("column", ""),
-        external_meta_dir=config.get("precomputed_metadata_dir", ""),
     script:
         "../scripts/validate_input.py"

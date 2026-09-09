@@ -1,14 +1,5 @@
-"""
-process_geojson.py – CORE: load, validate, and stage a sample's region GeoJSON.
-================================================================================
-Reads the OPTIONAL region-annotation GeoJSON for a sample (either
-{sample}_tissue_hires_image.geojson or {sample}_morphology.geojson, resolved
-upstream by _find_geojson in common.smk — this script only ever sees a single,
-already-resolved path, since presence/naming is validated before the rule is even
-scheduled). Sanity-checks the geometries, tags each feature with the sample ID,
-and writes it into the sample's output directory for downstream ROI-based
-analyses to consume.
-"""
+"""Validate an optional region-annotation GeoJSON without modifying it."""
+import json
 import logging
 import sys
 import traceback
@@ -31,9 +22,9 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("process_geojson")
 
 # ── Parameters ───────────────────────────────────────────────────────────────
-in_geojson  = str(snakemake.input.geojson)
-sample_id   = snakemake.params.sample_id
-out_geojson = str(snakemake.output.geojson)
+in_geojson = str(snakemake.input.geojson)
+sample_id = str(snakemake.params.sample_id)
+out_report = str(snakemake.output.report)
 
 try:
     log.info("=" * 70)
@@ -49,29 +40,38 @@ try:
     if n_total == 0:
         raise ValueError(f"'{in_geojson}' contains no features.")
 
-    # ── 2. Validate / repair geometries ───────────────────────────────────
-    invalid_mask = ~gdf.geometry.is_valid
+    # ── 2. Validate ─────────────────────────────────────────────────────
+    if "classification" not in gdf.columns:
+        raise ValueError(
+            f"'{in_geojson}' has no 'classification' property. Assign a QuPath "
+            f"class to the annotations before exporting. Columns: {list(gdf.columns)}"
+        )
+
+    missing_mask = gdf.geometry.isna()
+    n_missing = int(missing_mask.sum())
+    empty_mask = gdf.geometry.is_empty & ~missing_mask
+    n_empty = int(empty_mask.sum())
+    invalid_mask = ~gdf.geometry.is_valid & ~missing_mask & ~empty_mask
     n_invalid = int(invalid_mask.sum())
-    if n_invalid:
-        log.warning("%d/%d invalid geometries found — attempting buffer(0) repair",
-                    n_invalid, n_total)
-        gdf.loc[invalid_mask, "geometry"] = gdf.loc[invalid_mask, "geometry"].buffer(0)
-        still_invalid = int((~gdf.geometry.is_valid).sum())
-        if still_invalid:
-            raise ValueError(
-                f"{still_invalid}/{n_total} geometries remain invalid after repair "
-                f"— inspect '{in_geojson}'.")
+    if n_missing or n_empty or n_invalid:
+        raise ValueError(
+            f"'{in_geojson}' contains unusable geometries: missing={n_missing}, "
+            f"empty={n_empty}, invalid={n_invalid}. Fix them in QuPath and re-export; "
+            "the workflow does not rewrite source annotations."
+        )
 
-    # ── 3. Tag with sample of origin ─────────────────────────────────────
-    # Survives later concatenation across samples without losing provenance.
-    gdf["sample_id"] = sample_id
-
-    # ── 4. Save ────────────────────────────────────────────────────────
-    Path(out_geojson).parent.mkdir(parents=True, exist_ok=True)
-    log.info("Saving %d feature(s) → %s", n_total, out_geojson)
-    gdf.to_file(out_geojson, driver="GeoJSON")
-
-    log.info("GeoJSON processing complete for %s.", sample_id)
+    # ── 3. Write success report ─────────────────────────────────────────
+    report = {
+        "sample": sample_id,
+        "passed": True,
+        "file": str(Path(in_geojson).resolve()),
+        "feature_count": n_total,
+        "geometry_types": sorted(gdf.geometry.geom_type.unique().tolist()),
+        "classification_present": True,
+    }
+    Path(out_report).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_report).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    log.info("GeoJSON validation passed; report written to %s", out_report)
 
 except Exception:
     log.error("FAILED for %s:\n%s", sample_id, traceback.format_exc())

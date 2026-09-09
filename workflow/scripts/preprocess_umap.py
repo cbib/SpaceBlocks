@@ -23,6 +23,13 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:  # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from external_metadata import annotated_cell_ids, optional_input_path, read_cell_metadata
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stderr)]
 if hasattr(snakemake, "log"):
@@ -50,7 +57,6 @@ RES_SCAN_MAX   = float(snakemake.params.resolution_scan_max)
 RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
 RANDOM_SEED    = int(snakemake.params.random_seed)
 USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
-PRECOMPUTED_DIR = str(snakemake.params.precomputed_metadata_dir)
 REGION_COLORS   = snakemake.params.region_colors
 # Mitochondrial gene prefixes. Honour contract.mito_prefix when the rule passes it,
 # else default to human + mouse. The old hardcoded "MT-" silently disabled the
@@ -63,6 +69,7 @@ EXTERNAL_ENABLED = bool(getattr(snakemake.params, "external_enabled", False))
 EXTERNAL_COLUMN  = str(getattr(snakemake.params, "external_column", "") or "")
 KEEP_UNANNOTATED = bool(getattr(snakemake.params, "keep_unannotated", True))
 _ext_meta_in     = getattr(snakemake.input, "external_meta", None)
+_precomputed_meta_in = getattr(snakemake.input, "precomputed_meta", None)
 EXTERNAL_MASK    = bool(EXTERNAL_ENABLED and not KEEP_UNANNOTATED and _ext_meta_in)
 
 out_adata      = str(snakemake.output.adata)
@@ -192,13 +199,9 @@ try:
         # and SKIP the pipeline QC thresholds (the user's external labels ARE the QC
         # decision). Genes expressed in no kept cell are dropped (data hygiene, not a
         # cell-QC threshold, so PCA/normalisation stay well-behaved).
-        ext_path = str(_ext_meta_in if isinstance(_ext_meta_in, str) else _ext_meta_in[0])
-        _saved = pd.read_csv(ext_path, sep="\t", index_col=0, comment="#")
-        if EXTERNAL_COLUMN not in _saved.columns:
-            raise ValueError(f"external_annotation column '{EXTERNAL_COLUMN}' not in {ext_path}")
-        _lab = _saved[EXTERNAL_COLUMN].dropna().astype(str).str.strip()
-        _annot_bc = set(_lab[(_lab != "") & (_lab.str.lower() != "nan")
-                             & (_lab.str.lower() != "unannotated")].index.astype(str))
+        ext_path = optional_input_path(_ext_meta_in)
+        _saved = read_cell_metadata(ext_path, required_columns=(EXTERNAL_COLUMN,))
+        _annot_bc = annotated_cell_ids(_saved, EXTERNAL_COLUMN)
         _keep = adata.obs_names.astype(str).isin(_annot_bc)
         adata = adata[_keep].copy()
         sc.pp.filter_genes(adata, min_cells=1)
@@ -279,8 +282,7 @@ try:
             log.info("  res=%.1f → %d clusters", res, adata.obs[key].nunique())
 
     if USE_PRECOMPUTED:
-        ext_meta = (os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv")
-                    if PRECOMPUTED_DIR else "")
+        ext_meta = optional_input_path(_precomputed_meta_in)
         if ext_meta and os.path.isfile(ext_meta):
             meta_source = ext_meta
             log.info("Reloading precomputed clusters from EXTERNAL: %s", meta_source)
@@ -292,11 +294,7 @@ try:
             log.warning("use_precomputed is true but no metadata file found. Computing fresh.")
 
         if meta_source:
-            saved_meta = pd.read_csv(meta_source, sep="\t", index_col=0, comment="#")
-            # obs_names are strings; an all-numeric cell-id index (e.g. Xenium) is inferred as
-            # int by read_csv and would misalign on reindex -> force str (as the external path
-            # above does) so the saved clusters line up with the current cells.
-            saved_meta.index = saved_meta.index.astype(str)
+            saved_meta = read_cell_metadata(meta_source)
             saved_res = [c for c in saved_meta.columns if c.startswith("leiden_")]
             for key in leiden_keys:
                 if key not in saved_meta.columns:

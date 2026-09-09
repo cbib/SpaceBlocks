@@ -351,7 +351,9 @@ properties:
 
   precomputed_metadata_dir:
     type: string
-    description: Directory of precomputed metadata_{sample}.tsv (with use_precomputed_clusters).
+    description: >-
+      Directory of read-only metadata_{sample}.tsv files. Cell IDs may be stored in
+      the first column or in a cell_id column.
 
   external_annotation:
     type: ["object", "null"]
