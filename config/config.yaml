@@ -190,10 +190,10 @@ analysis:
 snakemake_cell_markers: config/snakemake_cell_markers.tsv
 # (default) cluster → cell-type TSV (fill template from generate_annotation_template)
 cluster_annotations: config/cluster_annotations.tsv
-# (optional) use external tsv with annotations
+# (optional) external labels from metadata TSVs, or from contract h5ad obs in decoupled mode
 external_annotation:
   enabled: false
-  column: manual_celltype
+  column: manual_celltype  # arbitrary source name; normalized to cell_type_external
   keep_unannotated: true
 ingest_ref: "/path/to/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad"  # optional annotated scRNA-seq reference (ingest_ref)
 ingest_ref_label_key: 04_celltypes

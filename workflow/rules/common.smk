@@ -58,9 +58,9 @@ def _expand_base_dir(node, root="config"):
 # ── Small derivations called from the Snakefile globals block ────────────────
 def check_external_annotation():
     """Fail fast (at parse time, before any job) when external_annotation is enabled
-    but not fully in place: the annotation column must be present in the metadata for
-    EVERY sample. External labels can only come from precomputed_metadata_dir (the
-    pipeline's own metadata does not carry them), so that dir is required."""
+    but not fully in place. Metadata TSV columns are checked here; in decoupled mode,
+    an absent metadata directory means the configured column will instead be checked
+    in each contract h5ad by validate_input."""
     cfg = config.get("external_annotation", {}) or {}
     if not cfg.get("enabled", False):
         return
@@ -71,10 +71,13 @@ def check_external_annotation():
         )
     meta_dir = config.get("precomputed_metadata_dir", "") or ""
     if not meta_dir:
+        if IS_DECOUPLED:
+            return
         sys.exit(
             "[config error] external_annotation.enabled requires 'precomputed_metadata_dir' "
             f"to point at a directory of metadata_{{sample}}.tsv files carrying the '{col}' "
-            "column (the pipeline's own metadata does not contain external labels)."
+            "column. In decoupled mode only, the column may instead be stored directly "
+            "in each contract h5ad's obs."
         )
     missing_file, missing_col = [], []
     for s in SAMPLE_IDS:
@@ -470,10 +473,11 @@ def _geojson_validation_report(sample):
 def _external_metadata_input(wildcards):
     """Tracked per-sample external metadata, or no input when the feature is off."""
     cfg = config.get("external_annotation", {}) or {}
-    if not cfg.get("enabled", False):
+    metadata_dir = config.get("precomputed_metadata_dir", "") or ""
+    if not cfg.get("enabled", False) or not metadata_dir:
         return []
     return os.path.join(
-        config.get("precomputed_metadata_dir", "") or "",
+        metadata_dir,
         f"metadata_{wildcards.sample}.tsv",
     )
 

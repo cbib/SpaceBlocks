@@ -32,6 +32,7 @@ except NameError:                      # very old Snakemake
 sys.path.insert(0, _here)
 from composition_barplots import (draw_stacked_composition, find_niche_column,
                                   build_niche_palette)
+from annotation_utils import active_annotation_columns, has_meaningful_annotation
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -109,9 +110,10 @@ def _pick_keys(adata, niche_column=None):
     if manual not in adata.obs.columns:
         leiden_cols = sorted(c for c in adata.obs.columns if c.startswith("leiden_"))
         manual = leiden_cols[0] if leiden_cols else None
-    tsv = "cell_type_tsv" if "cell_type_tsv" in adata.obs.columns else None
+    active = set(active_annotation_columns(adata))
+    tsv = "cell_type_tsv" if "cell_type_tsv" in active else None
     auto = next((c for c in ["cell_type_ingest", "cell_type_external"]
-                 if c in adata.obs.columns), None)
+                 if c in active), None)
     niche = find_niche_column(adata, niche_column)
     return manual, tsv, auto, niche
 
@@ -179,8 +181,9 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
       bar and an accurately-sized dot-size legend.
     """
     manual, tsv, auto, niche = keys
-    cmap = (annotation_colors.get(tsv, {})
-            if (tsv and isinstance(annotation_colors, dict)) else {})
+    composition_key = tsv or auto
+    cmap = (annotation_colors.get(composition_key, {})
+            if (composition_key and isinstance(annotation_colors, dict)) else {})
     figs = []
 
     # Group the composition by region/niche when available; only fall back to
@@ -193,7 +196,7 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
     if not bases:
         bases.append((sample_col, "Sample"))
 
-    if tsv:
+    if composition_key:
         try:
             ncol = 2 * len(bases)
             figb = plt.figure(figsize=(6.5 * ncol, 5.5))
@@ -201,7 +204,7 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
                           fontsize=16, fontweight="bold", y=1.02)
             gs = gridspec.GridSpec(1, ncol, figure=figb, wspace=0.5)
             for i, (gkey, glabel) in enumerate(bases):
-                ct = pd.crosstab(adata.obs[gkey], adata.obs[tsv])
+                ct = pd.crosstab(adata.obs[gkey], adata.obs[composition_key])
                 ax_abs = figb.add_subplot(gs[0, 2 * i])
                 draw_stacked_composition(ax_abs, ct, cmap, normalize=False,
                                          ylabel="Number of cells", xlabel=glabel,
@@ -260,9 +263,7 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
                       "cell_type_ingest": "cell type (ingest)"}
     marker_key = next(
         (k for k in (tsv, auto)
-         if k and k in adata.obs.columns
-         and len(set(adata.obs[k].astype(str).str.strip())
-                 - {"Unannotated", "", "nan", "NA", "None"}) >= 2),
+         if k and has_meaningful_annotation(adata, k, min_labels=2)),
         None)
     genes = _top_markers_by(adata, marker_key, n=10) if marker_key else []
     if genes and marker_key:
@@ -332,8 +333,7 @@ try:
                     library_id = list(adata.uns["spatial"].keys())[0]
 
                 # palettes
-                for obs_key in ["cell_type_tsv", "cell_type_ingest",
-                                "cell_type_external"]:
+                for obs_key in active_annotation_columns(adata):
                     apply_palette(adata, obs_key, ANNOTATION_COLORS)
                 apply_region_palette(adata, REGION_COLORS)
 

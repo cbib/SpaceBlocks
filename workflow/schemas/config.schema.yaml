@@ -501,13 +501,19 @@ properties:
         default: false
       column:
         type: string
-        description: obs/metadata column holding the external label.
+        description: >-
+          Source column holding the external label, either in
+          metadata_{sample}.tsv or, in decoupled mode without external metadata,
+          directly in the contract h5ad obs. The name is arbitrary; SpaceBlocks
+          copies it to the canonical cell_type_external obs column downstream.
       keep_unannotated:
         type: boolean
         default: true
         description: >-
           false → keep only externally-annotated cells and skip pipeline QC (external
-          labels drive QC); true → normal QC, labels overlaid at annotation.
+          labels drive QC); true → normal QC, labels overlaid at annotation and
+          cells labelled Unannotated retained. A mixed labelled/Unannotated column
+          remains available for plots; only placeholder-only columns are omitted.
 
   contract:
     type: ["object", "null"]

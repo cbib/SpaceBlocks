@@ -155,7 +155,7 @@ This second CoreBlock includes rules from sample annotation to integration and d
 
 #### `annotate_cells`
 Adds cell-type annotations from a manually curated TSV (cluster → cell type), or from an external annotation TSV (barcode → cell type).
-Writes `adata_{sample}_annotated.h5ad` plus annotation plots and composition barplots.
+Writes `adata_{sample}_annotated.h5ad` plus annotation plots and composition barplots. The output records which annotation columns contain real labels; placeholder-only columns such as an all-`Unannotated` `cell_type_tsv` are retained for compatibility but are not treated as available annotations. The external source column configured by `external_annotation.column` may have any name and is copied to the canonical `cell_type_external` column. It can come from `metadata_{sample}.tsv` or, in decoupled mode without external metadata, directly from the contract h5ad's `obs`. When `keep_unannotated: true`, mixed real and `Unannotated` labels remain active and the unannotated cells are retained in overview and composition plots.
 
 #### `integrate_samples`
 Concatenates all annotated samples, runs Harmony batch correction on the specified variable (`integration.integrate_key`), geosketch subsampling, and composition barplots.
@@ -189,7 +189,7 @@ Generates integrated (Harmony) and unintegrated results, with UMAPs coloured by 
 #### `sample_report`
 Assembles a compact, multi-page PDF with graphical outputs per sample, ideal to share with internal and external collaborators.
 
-Each page contains the most important data-descriptive information: cluster / annotation / region / niche UMAPs and matching spatial maps, bar plots for absolute and relative composition, and a dot plot with the top-10 expressed markers per cell type.
+Each page contains the most important data-descriptive information: cluster / annotation / region / niche UMAPs and matching spatial maps, bar plots for absolute and relative composition, and a dot plot with the top-10 expressed markers per cell type. Only annotation sources containing real labels are shown; in runs without a manual TSV annotation, the external or ingest annotation also drives cell-type composition.
 
 ---
 

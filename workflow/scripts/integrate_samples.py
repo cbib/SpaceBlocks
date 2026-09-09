@@ -32,6 +32,10 @@ from composition_barplots import (
     composition_pair, find_niche_column, composition_grouped,
     build_niche_palette,
 )
+from annotation_utils import (
+    has_meaningful_annotation,
+    record_active_annotation_columns,
+)
 
 try:
     import geosketch as sketch
@@ -71,16 +75,6 @@ NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
 SAMPLE_COLORS     = getattr(snakemake.params, "sample_colors", {}) or {}
 INTEGRATE_KEY     = str(getattr(snakemake.params, "integrate_key", "sample") or "sample")
-
-
-def _has_real_annotation(ad, col):
-    """True when an annotation column carries at least one meaningful label. External-only
-    runs leave cell_type_tsv all-'Unannotated', so colouring by it yields a single grey,
-    meaningless UMAP/barplot — skip those rather than emit them."""
-    if not col or col not in ad.obs.columns:
-        return False
-    vals = set(ad.obs[col].astype(str).str.strip().unique())
-    return len(vals - {"Unannotated", "", "nan", "NA", "None"}) > 0
 
 
 def _apply_design_palette(ad, col):
@@ -144,6 +138,8 @@ try:
     log.info("Concatenating …")
     adata = sc.concat(adatas, join="inner", label="sample_batch", keys=sample_ids)
     log.info("  Concatenated: %d cells, %d genes", adata.n_obs, adata.n_vars)
+    active_annotations = record_active_annotation_columns(adata)
+    log.info("  Active annotation columns: %s", active_annotations or "none")
 
     # Carry over raw_counts if available
     if "raw_counts" in adatas[0].layers:
@@ -168,8 +164,7 @@ try:
 
     # Apply custom palettes if configured
     if isinstance(ANNOTATION_COLORS, dict):
-        for obs_key in ["sample_batch", "cell_type_tsv",
-                        "cell_type_ingest", "cell_type_external", "leiden_uncorrected"]:
+        for obs_key in ["sample_batch", *active_annotations, "leiden_uncorrected"]:
             cd = ANNOTATION_COLORS.get(obs_key, {})
             if cd and obs_key in adata.obs.columns:
                 cats = adata.obs[obs_key].cat.categories if hasattr(adata.obs[obs_key], "cat") else []
@@ -183,7 +178,7 @@ try:
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
-    if _has_real_annotation(adata, "cell_type_tsv"):
+    if has_meaningful_annotation(adata, "cell_type_tsv"):
         sc.pl.umap(adata, color=["cell_type_tsv"], size=UMAP_POINT_SIZE, frameon=False,
                    title="Uncorrected – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_uncorrected_by_celltype.png"),
@@ -240,7 +235,7 @@ try:
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
-    if _has_real_annotation(adata_harmony, "cell_type_tsv"):
+    if has_meaningful_annotation(adata_harmony, "cell_type_tsv"):
         sc.pl.umap(adata_harmony, color=["cell_type_tsv"], size=UMAP_POINT_SIZE, frameon=False,
                    title="Harmony – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype.png"),
@@ -266,9 +261,7 @@ try:
     log.info("Composition barplots …")
     bar_dir = os.path.join(output_dir, "barplots")
     os.makedirs(bar_dir, exist_ok=True)
-    annot_cols = [c for c in ["cell_type_tsv", "cell_type_ingest",
-                              "cell_type_external"]
-                  if _has_real_annotation(adata, c)]
+    annot_cols = active_annotations
     has_regions = ("region_annotation" in adata.obs.columns
                    and adata.obs["region_annotation"].nunique() > 1
                    and not all(adata.obs["region_annotation"] == "Unlabeled"))

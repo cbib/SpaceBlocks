@@ -325,7 +325,16 @@ SpaceBlocks allows you to input:
 
 - **Externally assembled h5ad AnnData objects** — run `mode: decoupled` and point `contract_dir` at the directory of pre-built contract h5ads. The heads are skipped; the core validates and analyses them directly.
 - **Pre-computed clusters / annotations** — set `use_precomputed_clusters: true` and `precomputed_metadata_dir` to reuse Leiden clusters and metadata; for niches, set `spatial_niches.use_precomputed: true` with `spatial_niches.niche_dir`.
-- **Externally annotated data** — set `external_annotation.enabled: true` with `external_annotation.column`, and choose whether to keep or discard unannotated barcodes downstream via `external_annotation.keep_unannotated` (see [section 5](#5-key-sections)).
+- **Externally annotated data** — set `external_annotation.enabled: true` and use
+  `external_annotation.column` for the source column. Provide it in each
+  `metadata_{sample}.tsv`, or, in `mode: decoupled`, directly in each contract
+  h5ad's `obs`. The source column may have any name; SpaceBlocks copies it to the
+  canonical `cell_type_external` column used by downstream rules. Choose
+  whether to keep or discard unannotated barcodes via
+  `external_annotation.keep_unannotated` (see [section 5](#5-key-sections)). With
+  `keep_unannotated: true`, a mixture of real labels and `Unannotated` remains an
+  active annotation and both are shown in overview and composition plots. Only a
+  column containing no real labels is omitted from annotation plots and reports.
 
 These files are generated during the run, and can be shared with minimum effort to reproduce downstream results from raw data.
 

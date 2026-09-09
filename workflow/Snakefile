@@ -239,7 +239,8 @@ RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 
 RUN_LEIDEN_ANALYSIS = bool(ANALYSIS.get("run_leiden_analysis", True))
 
-# External annotation: fail fast if enabled but the column is not present in every sample's metadata
+# External annotation: validate metadata headers now, or decoupled h5ad obs per sample
+# in validate_input when no external metadata directory is configured.
 check_external_annotation()
 
 # Consistency: analysing the external annotation downstream requires it to be produced.
