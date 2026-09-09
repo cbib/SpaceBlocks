@@ -16,10 +16,12 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import is_color_like, to_hex
 import numpy as np
 import pandas as pd
 from pyclustree import clustree
 import scanpy as sc
+from scanpy.plotting import palettes as scanpy_palettes
 from sklearn.metrics import silhouette_samples, silhouette_score
 from sklearn.preprocessing import StandardScaler
 
@@ -65,6 +67,43 @@ REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
 UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
 SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
+
+
+def _resolution_range(rmin, rmax, step):
+    """Return the same inclusive resolution ladder used during preprocessing."""
+    n = round((rmax - rmin) / step)
+    return [round(rmin + i * step, 10) for i in range(n + 1)]
+
+
+def _ensure_scanpy_palette(adata, obs_key):
+    """Return category-to-colour mapping used by subsequent Scanpy plots."""
+    categories = list(adata.obs[obs_key].cat.categories)
+    color_key = f"{obs_key}_colors"
+    stored = list(adata.uns.get(color_key, []))
+    valid = (
+        len(stored) == len(categories)
+        and all(is_color_like(color) for color in stored)
+    )
+
+    if valid:
+        colors = [to_hex(color, keep_alpha=True) for color in stored]
+    else:
+        n_categories = len(categories)
+        prop_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        if len(prop_cycle) >= n_categories:
+            colors = prop_cycle[:n_categories]
+        elif n_categories <= 20:
+            colors = scanpy_palettes.default_20[:n_categories]
+        elif n_categories <= 28:
+            colors = scanpy_palettes.default_28[:n_categories]
+        elif n_categories <= len(scanpy_palettes.default_102):
+            colors = scanpy_palettes.default_102[:n_categories]
+        else:
+            colors = ["grey"] * n_categories
+        colors = [to_hex(color) for color in colors]
+
+    adata.uns[color_key] = colors
+    return {str(category): color for category, color in zip(categories, colors)}
 
 
 def read_tsv_to_dict(tsv_path):
@@ -154,6 +193,7 @@ try:
             adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
     _set_palette(adata, "leiden", ANNOTATION_COLORS)
+    leiden_palette = _ensure_scanpy_palette(adata, "leiden")
 
     # Apply custom region palette if configured
     if REGION_COLORS and "region_annotation" in adata.obs.columns:
@@ -172,20 +212,32 @@ try:
     # ── Clustering evaluation (silhouette) ───────────────────────────────
     log.info("Silhouette analysis …")
     embedding_scaled = StandardScaler().fit_transform(adata.obsm["X_pca"])
-    labels = adata.obs["leiden"].astype(int)
+    labels = adata.obs["leiden"].astype(str).to_numpy()
     sil_values = silhouette_samples(embedding_scaled, labels)
     sil_avg = silhouette_score(embedding_scaled, labels)
 
     plt.figure(figsize=(12, 6))
-    unique_labels = np.unique(labels)
-    colours = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
+    unique_labels = [str(label) for label in adata.obs["leiden"].cat.categories]
     x_pos = 0
-    for label, colour in zip(unique_labels, colours):
+    for label in unique_labels:
         vals = np.sort(sil_values[labels == label])
+        if not len(vals):
+            continue
         xs = np.arange(len(vals)) + x_pos
-        plt.bar(xs, vals, color=colour, label=f"Cluster {label}", width=1, alpha=0.7)
+        plt.bar(
+            xs,
+            vals,
+            color=leiden_palette[label],
+            label=f"Cluster {label}",
+            width=1,
+        )
         x_pos = xs[-1] + 5
-    plt.axhline(y=sil_avg, color="red", linestyle="--", label="Average Silhouette")
+    plt.axhline(
+        y=sil_avg,
+        color="black",
+        linestyle="--",
+        label="Average Silhouette",
+    )
     plt.ylabel("Silhouette Score")
     plt.xlabel("Cluster and Cell Index")
     plt.title(f"Silhouette (resolution {resolution}) – avg {sil_avg:.3f}")
@@ -197,14 +249,22 @@ try:
     plt.close()
 
     # Clustree (uses all pre-computed leiden columns)
-    resolutions = np.arange(RES_SCAN_MIN, RES_SCAN_MAX, RES_SCAN_STEP).round(1)
+    resolutions = _resolution_range(RES_SCAN_MIN, RES_SCAN_MAX, RES_SCAN_STEP)
     leiden_keys = [f"leiden_{str(r).replace('.', '_')}" for r in resolutions]
     available_keys = [k for k in leiden_keys if k in adata.obs.columns]
+    missing_keys = [k for k in leiden_keys if k not in adata.obs.columns]
+    if missing_keys:
+        log.warning("Clustree is missing screened columns: %s", missing_keys)
     if len(available_keys) >= 2:
         fig = clustree(adata, available_keys, edge_weight_threshold=0.00, show_fraction=True)
         fig.savefig(os.path.join(clust_eval_dir, f"clustree_{sample_id}.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
+    else:
+        log.warning(
+            "Clustree requires at least two available screened resolutions; found %s",
+            available_keys,
+        )
 
     # ── QC plots ─────────────────────────────────────────────────────────
     log.info("QC plots …")
