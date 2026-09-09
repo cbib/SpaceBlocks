@@ -15,3 +15,6 @@ dependencies:
   - mkdocs
   - pymdown-extensions
   - mkdocs-material
+
+  # Graphviz (for dot)
+  - graphviz
