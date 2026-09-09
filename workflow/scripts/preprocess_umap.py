@@ -58,6 +58,7 @@ RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
 RANDOM_SEED    = int(snakemake.params.random_seed)
 USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
 REGION_COLORS   = snakemake.params.region_colors
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 # Mitochondrial gene prefixes. Honour contract.mito_prefix when the rule passes it,
 # else default to human + mouse. The old hardcoded "MT-" silently disabled the
 # max_pct_mt filter on mouse ("mt-") data, even though the config advertises the key.
@@ -247,7 +248,7 @@ try:
         # the scalefactor-derived Visium spot size, so without this the dots render
         # invisibly and only the tissue image shows); add library_id to draw them
         # over the embedded image when one is present.
-        spatial_kw = {"spot_size": 20}
+        spatial_kw = {"spot_size": SPATIAL_POINT_SIZE}
         if isinstance(adata.uns.get("spatial"), dict) and adata.uns["spatial"]:
             spatial_kw["library_id"] = list(adata.uns["spatial"].keys())[0]
         sc.pl.spatial(adata, color="region_annotation", title="Annotated Regions",

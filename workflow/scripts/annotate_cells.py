@@ -93,7 +93,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
 
     # UMAP
     log.info("  [%s] UMAP …", label)
-    sc.pl.umap(adata, color=[annot_key], size=2, wspace=0.25, frameon=False,
+    sc.pl.umap(adata, color=[annot_key], size=UMAP_POINT_SIZE, wspace=0.25, frameon=False,
                title=f"Cell types ({label})")
     plt.savefig(os.path.join(subdir, f"UMAP_{label}_{sample_id}.png"),
                 dpi=DPI, bbox_inches="tight")
@@ -101,7 +101,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
 
     # Spatial overview
     try:
-        sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
+        sc.pl.spatial(adata, color=annot_key, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                       title=f"Spatial – {label}", library_id=library_id)
         plt.savefig(os.path.join(subdir, f"spatial_all_{label}_{sample_id}.png"),
                     dpi=DPI, bbox_inches="tight")
@@ -119,7 +119,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
             lambda x, c=ct: c if x == c else "Other"
         )
         try:
-            sc.pl.spatial(adata, color="_hl", spot_size=20, frameon=False,
+            sc.pl.spatial(adata, color="_hl", spot_size=SPATIAL_POINT_SIZE, frameon=False,
                           palette={"Other": "#d3d3d3", ct: "#000000"},
                           title=ct, library_id=library_id)
             safe = ct.replace("/", "_").replace(" ", "_")
@@ -179,6 +179,8 @@ EXT_ANNOT_CFG       = snakemake.params.external_annotation
 ANNOTATION_COLORS   = snakemake.params.annotation_colors
 REGION_COLORS       = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 NICHE_COLUMN        = getattr(snakemake.params, "niche_column", "")
 
 adata_path     = str(snakemake.input.adata)
@@ -397,7 +399,7 @@ try:
         fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
                                  gridspec_kw={"wspace": 0.5})
         for ax, col in zip(axes, annot_cols_present):
-            sc.pl.umap(adata, color=col, size=2, frameon=False,
+            sc.pl.umap(adata, color=col, size=UMAP_POINT_SIZE, frameon=False,
                        title=col.replace("cell_type_", ""), ax=ax, show=False,
                        legend_fontsize=6, na_in_legend=False)
         plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
@@ -410,7 +412,7 @@ try:
             fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
                                      gridspec_kw={"wspace": 0.5})
             for ax, col in zip(axes, annot_cols_present):
-                sc.pl.spatial(adata, color=col, spot_size=20, frameon=False,
+                sc.pl.spatial(adata, color=col, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                               title=col.replace("cell_type_", ""),
                               library_id=library_id, ax=ax, show=False,
                               legend_fontsize=6, na_in_legend=False)

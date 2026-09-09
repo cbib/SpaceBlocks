@@ -206,14 +206,14 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
                               gridspec_kw={"wspace": 0.5})
 
     try:
-        sc.pl.umap(adata, color=color_col, size=2, frameon=False,
+        sc.pl.umap(adata, color=color_col, size=UMAP_POINT_SIZE, frameon=False,
                     vmin=vmin, vmax=vmax, cmap="viridis",
                     title=title, ax=axes[0], show=False)
     except Exception as e:
         log.warning("  UMAP %s failed: %s", title, e)
 
     try:
-        sc.pl.umap(adata, color=annot_key, size=2, frameon=False,
+        sc.pl.umap(adata, color=annot_key, size=UMAP_POINT_SIZE, frameon=False,
                     title="Cell types", legend_fontsize=6,
                     na_in_legend=False,
                     ax=axes[1], show=False)
@@ -223,7 +223,7 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
     idx = 2
     if has_regions:
         try:
-            sc.pl.umap(adata, color="region_annotation", size=2, frameon=False,
+            sc.pl.umap(adata, color="region_annotation", size=UMAP_POINT_SIZE, frameon=False,
                         title="Regions", legend_fontsize=6,
                         na_in_legend=False,
                         ax=axes[idx], show=False)
@@ -239,7 +239,7 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
             if niche_palette:
                 adata.uns[f"{niche_col}_colors"] = [
                     niche_palette.get(str(c), "#cccccc") for c in cats]
-            sc.pl.umap(adata, color=niche_col, size=2, frameon=False,
+            sc.pl.umap(adata, color=niche_col, size=UMAP_POINT_SIZE, frameon=False,
                         title="Spatial niches", legend_fontsize=5,
                         na_in_legend=False, ax=axes[idx], show=False)
             _compact_legend(axes[idx], title="Niche")
@@ -261,6 +261,7 @@ ANNOT_KEY         = str(snakemake.params.annot_key)
 AUCELL_FRACTION   = float(snakemake.params.aucell_fraction)
 NICHE_COLUMN      = str(snakemake.params.niche_column) if snakemake.params.niche_column else ""
 DPI               = int(snakemake.params.dpi)
+UMAP_POINT_SIZE    = float(getattr(snakemake.params, "umap_point_size", 2))
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
@@ -299,7 +300,7 @@ try:
                 adata.uns[f"{_dc}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
                 _dd = os.path.join(base_dir, "_design")
                 os.makedirs(_dd, exist_ok=True)
-                sc.pl.umap(adata, color=[_dc], size=2, frameon=False,
+                sc.pl.umap(adata, color=[_dc], size=UMAP_POINT_SIZE, frameon=False,
                            title=f"Integrated – by {_dc}", show=False)
                 plt.savefig(os.path.join(_dd, f"UMAP_by_{_dc}.png"),
                             dpi=DPI, bbox_inches="tight")

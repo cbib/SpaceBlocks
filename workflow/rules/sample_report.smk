@@ -26,6 +26,8 @@ rule sample_report:
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),
+        umap_point_size=ANALYSIS.get("umap_point_size", 2),
+        spatial_point_size=ANALYSIS.get("spatial_point_size", 20),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
     script:
         "../scripts/sample_report.py"

@@ -52,6 +52,8 @@ res_dir        = str(snakemake.output.res_dir)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 
 
 def read_tsv_to_dict(tsv_path):
@@ -193,7 +195,7 @@ try:
     sc.pl.umap(
         adata,
         color=["n_genes_by_counts", "total_counts", "pct_counts_mt", "pct_counts_hb"],
-        size=2, wspace=0.25, frameon=False,
+        size=UMAP_POINT_SIZE, wspace=0.25, frameon=False,
     )
     plt.savefig(os.path.join(qc_dir, f"QC_UMAPs_{sample_id}.png"),
                 dpi=DPI, bbox_inches="tight")
@@ -213,18 +215,20 @@ try:
 
     # ── UMAPs ────────────────────────────────────────────────────────────
     log.info("UMAP plots …")
-    sc.pl.umap(adata, color=["leiden"], size=2, wspace=0.25, frameon=False)
+    sc.pl.umap(adata, color=["leiden"], size=UMAP_POINT_SIZE, wspace=0.25, frameon=False)
     plt.savefig(os.path.join(res_dir, f"UMAP_clusters_{sample_id}.png"),
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
     if has_annotations:
-        sc.pl.umap(adata, color=["region_annotation"], size=2, wspace=0.25, frameon=False)
+        sc.pl.umap(adata, color=["region_annotation"], size=UMAP_POINT_SIZE,
+                   wspace=0.25, frameon=False)
         plt.savefig(os.path.join(umap_dir, f"UMAP_region_{sample_id}.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
 
-        split_umap(adata, color="leiden", split_by="region_annotation", size=10)
+        split_umap(adata, color="leiden", split_by="region_annotation",
+                   size=max(UMAP_POINT_SIZE, 10.0))
         plt.savefig(os.path.join(umap_dir, f"UMAP_split_{sample_id}.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
@@ -245,7 +249,8 @@ try:
 
     # ── Spatial cluster maps ─────────────────────────────────────────────
     log.info("Spatial plots …")
-    sc.pl.spatial(adata, color="leiden", spot_size=20, title="Leiden Clusters", frameon=False)
+    sc.pl.spatial(adata, color="leiden", spot_size=SPATIAL_POINT_SIZE,
+                  title="Leiden Clusters", frameon=False)
     plt.savefig(os.path.join(res_dir, f"spatial_all_{sample_id}.png"),
                 dpi=DPI, bbox_inches="tight")
     plt.close()
@@ -253,7 +258,7 @@ try:
     for cluster in adata.obs["leiden"].unique():
         adata_sub = adata[adata.obs["leiden"] == cluster, :]
         sc.pl.spatial(
-            adata_sub, color="leiden", spot_size=20,
+            adata_sub, color="leiden", spot_size=SPATIAL_POINT_SIZE,
             title=f"Cluster {cluster}", frameon=False,
             palette=["black"], alpha_img=0.5,
         )
@@ -269,7 +274,7 @@ try:
             categories=["Other", str(cluster)],
         )
         sc.pl.umap(
-            adata, color="_highlight", size=2, wspace=0.25, frameon=False,
+            adata, color="_highlight", size=UMAP_POINT_SIZE, wspace=0.25, frameon=False,
             palette={"Other": "gray", str(cluster): "red"},
             title=f"Cluster {cluster}",
         )
@@ -327,7 +332,7 @@ try:
         plt.close()
 
         for gene in genes:
-            sc.pl.umap(adata, color=gene, show=False)
+            sc.pl.umap(adata, color=gene, size=UMAP_POINT_SIZE, show=False)
             plt.savefig(os.path.join(ct_dir, f"UMAP_{gene}.png"),
                         dpi=DPI, bbox_inches="tight")
             plt.close()

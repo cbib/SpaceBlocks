@@ -92,6 +92,9 @@ per_sample_qc: ''
 analysis:
   # qc thresholds
   plot_dpi: 300
+  # marker sizes for UMAP embeddings and spatial maps, respectively
+  umap_point_size: 2
+  spatial_point_size: 20
   min_counts: 1
   min_cells: 3
   min_genes: 100

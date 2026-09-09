@@ -106,6 +106,8 @@ Parameters are settings that live exclusively in `config/config.yaml` and determ
 | `integration.integrate_key` | **Mandatory** | Variable Harmony corrects over during integration (e.g. `sample`). |
 | `extra_annotations.columns` | **Optional** | `core_samples.tsv` columns to surface in downstream plots (e.g. `[patient, batch]`). All sample-sheet columns are carried into `obs` and can be used by pseudobulk models whether or not they are plotted. |
 | `analysis.pseudobulk.analyses` | Pseudobulk | Named aggregation/model specifications containing the comparison variables, explicit contrasts, exclusions, optional pairing/covariates, and optional LRT. |
+| `analysis.umap_point_size` | **Optional** | Marker size for ordinary UMAP embedding plots (default: `2`). Highlight and split UMAPs remain at least size `10`. |
+| `analysis.spatial_point_size` | **Optional** | Marker size for spatial maps (default: `20`). This is independent of the UMAP marker size; coordinate-only spatial-niche maps are scaled proportionally. |
 
 ## 4. Color scale customization
 

@@ -41,5 +41,6 @@ rule preprocess_umap:
             "keep_unannotated", True
         ),
         region_colors=ANALYSIS.get("region_colors", {}),
+        spatial_point_size=ANALYSIS.get("spatial_point_size", 20),
     script:
         "../scripts/preprocess_umap.py"

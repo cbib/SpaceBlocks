@@ -29,6 +29,7 @@ rule explore_genes_integrated:
         aucell_fraction=GENE_EXPLORATION.get("aucell_max_rank_fraction", 0.05),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
         dpi=GENE_EXPLORATION.get("dpi", ANALYSIS.get("plot_dpi", 300)),
+        umap_point_size=ANALYSIS.get("umap_point_size", 2),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,
@@ -71,6 +72,7 @@ rule explore_genes_sample:
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
         aucell_fraction=GENE_EXPLORATION.get("aucell_max_rank_fraction", 0.05),
         dpi=GENE_EXPLORATION.get("dpi", ANALYSIS.get("plot_dpi", 300)),
+        spatial_point_size=ANALYSIS.get("spatial_point_size", 20),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
     script:

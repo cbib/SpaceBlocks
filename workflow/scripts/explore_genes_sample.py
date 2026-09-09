@@ -78,7 +78,7 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
 
     # (1) Expression / AUCell
     try:
-        sc.pl.spatial(adata, color=color_col, spot_size=20, frameon=False,
+        sc.pl.spatial(adata, color=color_col, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                       vmin=vmin, vmax=vmax, cmap="viridis",
                       title=title, library_id=library_id,
                       ax=axes[0], show=False)
@@ -88,7 +88,7 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
 
     # (2) Cell type
     try:
-        sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
+        sc.pl.spatial(adata, color=annot_key, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                       title="Cell types", library_id=library_id,
                       legend_fontsize=6, na_in_legend=False,
                       ax=axes[1], show=False)
@@ -100,7 +100,7 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
     # (3) Region
     if has_regions:
         try:
-            sc.pl.spatial(adata, color="region_annotation", spot_size=20,
+            sc.pl.spatial(adata, color="region_annotation", spot_size=SPATIAL_POINT_SIZE,
                           frameon=False, title="Regions",
                           library_id=library_id,
                           legend_fontsize=6, na_in_legend=False,
@@ -120,7 +120,7 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
             if niche_palette:
                 adata.uns[f"{niche_col}_colors"] = [
                     niche_palette.get(str(c), "#cccccc") for c in cats]
-            sc.pl.spatial(adata, color=niche_col, spot_size=20, frameon=False,
+            sc.pl.spatial(adata, color=niche_col, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                           title="Spatial niches", library_id=library_id,
                           legend_fontsize=5, na_in_legend=False,
                           ax=axes[idx], show=False)
@@ -235,6 +235,7 @@ sample_id         = str(snakemake.params.sample_id)
 ANNOT_KEY         = str(snakemake.params.annot_key)
 AUCELL_FRACTION   = float(snakemake.params.aucell_fraction)
 DPI               = int(snakemake.params.dpi)
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 NICHE_COLUMN      = str(getattr(snakemake.params, "niche_column", "") or "")

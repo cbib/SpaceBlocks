@@ -46,6 +46,7 @@ try:
     ref_label_key  = str(getattr(snakemake.params, "ref_label_key", "cell_type"))
     region_colors  = dict(getattr(snakemake.params, "region_colors", {}) or {})
     region_levels  = list(getattr(snakemake.params, "region_levels", []) or [])
+    spatial_point_size = float(getattr(snakemake.params, "spatial_point_size", 20))
 
     out = snakemake.output
     out_dir = os.path.dirname(str(out.violins_png))
@@ -96,7 +97,7 @@ try:
     # (cell centroids are far smaller than the scalefactor-derived Visium spot size,
     # so without it the dots render invisibly and only the tissue image shows); add
     # library_id to draw the dots over the embedded image when one is present.
-    spatial_kw = {"spot_size": 20}
+    spatial_kw = {"spot_size": spatial_point_size}
     if isinstance(adata.uns.get("spatial"), dict) and adata.uns["spatial"]:
         spatial_kw["library_id"] = list(adata.uns["spatial"].keys())[0]
     has_coords = "spatial" in adata.obsm

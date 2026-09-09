@@ -33,5 +33,7 @@ rule ingest_ref:
         ref_label_key=config.get("ingest_ref_label_key", "cell_type"),
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         annotation_colors=config.get("annotation_colors", {}),
+        umap_point_size=ANALYSIS.get("umap_point_size", 2),
+        spatial_point_size=ANALYSIS.get("spatial_point_size", 20),
     script:
         "../scripts/ingest_ref.py"

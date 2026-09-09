@@ -47,6 +47,8 @@ sample_id      = snakemake.params.sample_id
 ref_label_key  = snakemake.params.ref_label_key
 DE_N_GENES     = int(snakemake.params.de_n_genes)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
+UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 
 adata_path     = str(snakemake.input.adata)
 ref_path       = str(snakemake.input.ingest_ref)
@@ -139,7 +141,7 @@ try:
         library_id = list(adata.uns["spatial"].keys())[0]
 
     # UMAP (original embedding) coloured by ingest labels
-    sc.pl.umap(adata, color=["cell_type_ingest"], size=2, frameon=False,
+    sc.pl.umap(adata, color=["cell_type_ingest"], size=UMAP_POINT_SIZE, frameon=False,
                title="Ingest annotation (original UMAP)")
     plt.savefig(os.path.join(plots_dir, f"UMAP_ingest_{sample_id}.png"),
                 dpi=300, bbox_inches="tight")
@@ -148,7 +150,7 @@ try:
     # UMAP from ingest projection
     adata.obsm["X_umap_orig"] = adata.obsm["X_umap"].copy()
     adata.obsm["X_umap"] = adata.obsm["X_umap_ingest"]
-    sc.pl.umap(adata, color=["cell_type_ingest"], size=2, frameon=False,
+    sc.pl.umap(adata, color=["cell_type_ingest"], size=UMAP_POINT_SIZE, frameon=False,
                title="Ingest annotation (projected UMAP)")
     plt.savefig(os.path.join(plots_dir, f"UMAP_ingest_projected_{sample_id}.png"),
                 dpi=300, bbox_inches="tight")
@@ -159,7 +161,7 @@ try:
 
     # Spatial overview
     try:
-        sc.pl.spatial(adata, color="cell_type_ingest", spot_size=20,
+        sc.pl.spatial(adata, color="cell_type_ingest", spot_size=SPATIAL_POINT_SIZE,
                       frameon=False, title="Ingest – spatial",
                       library_id=library_id)
         plt.savefig(os.path.join(plots_dir, f"spatial_ingest_{sample_id}.png"),
@@ -176,7 +178,7 @@ try:
             lambda x, c=ct: c if x == c else "Other"
         )
         try:
-            sc.pl.spatial(adata, color="_hl", spot_size=20, frameon=False,
+            sc.pl.spatial(adata, color="_hl", spot_size=SPATIAL_POINT_SIZE, frameon=False,
                           palette={"Other": "#d3d3d3", ct: "#e41a1c"},
                           title=ct, library_id=library_id)
             safe = ct.replace("/", "_").replace(" ", "_")

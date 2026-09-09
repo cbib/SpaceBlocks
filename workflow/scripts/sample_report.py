@@ -132,13 +132,13 @@ def _build_page1(adata, sample_id, keys, library_id, has_regions=False):
     fig.suptitle(f"Sample: {sample_id}", fontsize=18, fontweight="bold", y=0.99)
     for j, (key, title) in enumerate(panels):
         try:
-            sc.pl.umap(adata, color=key, size=2, frameon=False, title=title,
+            sc.pl.umap(adata, color=key, size=UMAP_POINT_SIZE, frameon=False, title=title,
                        legend_fontsize=6, na_in_legend=False,
                        ax=axes[0, j], show=False)
         except Exception as e:
             log.warning("  UMAP %s failed: %s", title, e); axes[0, j].set_title(f"{title} (failed)")
         try:
-            sc.pl.spatial(adata, color=key, spot_size=20, frameon=False,
+            sc.pl.spatial(adata, color=key, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                           title=title, library_id=library_id,
                           legend_fontsize=6, na_in_legend=False,
                           ax=axes[1, j], show=False)
@@ -307,6 +307,8 @@ sample_ids        = list(snakemake.params.sample_ids)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 out_report        = str(snakemake.output.report)
 

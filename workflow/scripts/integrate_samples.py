@@ -66,6 +66,7 @@ SKETCH_FRAC     = float(snakemake.params.sketch_fraction)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
 NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
 SAMPLE_COLORS     = getattr(snakemake.params, "sample_colors", {}) or {}
@@ -112,7 +113,7 @@ def _niche_umap(ad, title, out_path):
                      if isinstance(ANNOTATION_COLORS, dict) else {})
         pal = build_niche_palette(cats, niche_cfg)
         ad.uns[f"{niche_col}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
-        sc.pl.umap(ad, color=[niche_col], size=2, frameon=False, title=title)
+        sc.pl.umap(ad, color=[niche_col], size=UMAP_POINT_SIZE, frameon=False, title=title)
         plt.savefig(out_path, dpi=DPI, bbox_inches="tight")
         plt.close()
     except Exception as e:
@@ -176,14 +177,14 @@ try:
                     adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
     # Plot uncorrected
-    sc.pl.umap(adata, color=["sample_batch"], size=2, frameon=False,
+    sc.pl.umap(adata, color=["sample_batch"], size=UMAP_POINT_SIZE, frameon=False,
                title="Uncorrected – by sample")
     plt.savefig(os.path.join(output_dir, "UMAP_uncorrected_by_sample.png"),
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
     if _has_real_annotation(adata, "cell_type_tsv"):
-        sc.pl.umap(adata, color=["cell_type_tsv"], size=2, frameon=False,
+        sc.pl.umap(adata, color=["cell_type_tsv"], size=UMAP_POINT_SIZE, frameon=False,
                    title="Uncorrected – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_uncorrected_by_celltype.png"),
                     dpi=DPI, bbox_inches="tight")
@@ -193,7 +194,7 @@ try:
     for _dc in EXTRA_ANNOT_COLUMNS:
         if _apply_design_palette(adata, _dc):
             try:
-                sc.pl.umap(adata, color=[_dc], size=2, frameon=False,
+                sc.pl.umap(adata, color=[_dc], size=UMAP_POINT_SIZE, frameon=False,
                            title=f"Uncorrected – by {_dc}")
                 plt.savefig(os.path.join(output_dir, f"UMAP_uncorrected_by_{_dc}.png"),
                             dpi=DPI, bbox_inches="tight")
@@ -233,14 +234,14 @@ try:
             adata_harmony.uns[key] = adata.uns[key]
 
     # Plots
-    sc.pl.umap(adata_harmony, color=["sample_batch"], size=2, frameon=False,
+    sc.pl.umap(adata_harmony, color=["sample_batch"], size=UMAP_POINT_SIZE, frameon=False,
                title="Harmony – by sample")
     plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_sample.png"),
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
     if _has_real_annotation(adata_harmony, "cell_type_tsv"):
-        sc.pl.umap(adata_harmony, color=["cell_type_tsv"], size=2, frameon=False,
+        sc.pl.umap(adata_harmony, color=["cell_type_tsv"], size=UMAP_POINT_SIZE, frameon=False,
                    title="Harmony – by cell type (TSV)")
         plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype.png"),
                     dpi=DPI, bbox_inches="tight")
@@ -250,7 +251,7 @@ try:
     for _dc in EXTRA_ANNOT_COLUMNS:
         if _apply_design_palette(adata_harmony, _dc):
             try:
-                sc.pl.umap(adata_harmony, color=[_dc], size=2, frameon=False,
+                sc.pl.umap(adata_harmony, color=[_dc], size=UMAP_POINT_SIZE, frameon=False,
                            title=f"Harmony – by {_dc}")
                 plt.savefig(os.path.join(output_dir, f"UMAP_harmony_by_{_dc}.png"),
                             dpi=DPI, bbox_inches="tight")
@@ -392,13 +393,13 @@ try:
         adata_ingested.write(out_sketched)
 
         # Plot
-        sc.pl.umap(adata_ingested, color=["clusters"], size=2, frameon=False,
+        sc.pl.umap(adata_ingested, color=["clusters"], size=UMAP_POINT_SIZE, frameon=False,
                    title="Geosketch – ingested clusters")
         plt.savefig(os.path.join(output_dir, "UMAP_sketched_clusters.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
 
-        sc.pl.umap(adata_ingested, color=["sample_batch"], size=2, frameon=False,
+        sc.pl.umap(adata_ingested, color=["sample_batch"], size=UMAP_POINT_SIZE, frameon=False,
                    title="Geosketch – by sample")
         plt.savefig(os.path.join(output_dir, "UMAP_sketched_by_sample.png"),
                     dpi=DPI, bbox_inches="tight")

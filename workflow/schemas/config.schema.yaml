@@ -448,6 +448,16 @@ properties:
         type: integer
         minimum: 1
         description: Default figure DPI.
+      umap_point_size:
+        type: number
+        exclusiveMinimum: 0
+        default: 2
+        description: Marker size for ordinary UMAP embedding plots.
+      spatial_point_size:
+        type: number
+        exclusiveMinimum: 0
+        default: 20
+        description: Marker size for spatial maps.
 
   ingest_ref:
     type: string
