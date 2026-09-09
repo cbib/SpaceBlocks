@@ -91,7 +91,7 @@ For what every file is and why it is useful, see [Outputs](outputs.md); the tree
 │   ├── annotation/, adata_{sample}_annotated.h5ad   annotate_cells
 │   └── neighbourhood_analysis/{annot_type}/      neighbourhood_analysis
 ├── integrated_samples/                           concatenated / harmony / sketched / samples_report.pdf
-├── pseudobulk/{annot_type}/{analysis_level}/     aggregated/ + de_results/
+├── pseudobulk/{annot_type}/{analysis_name}/      aggregated/ + de_results/
 ├── Subcompartments/{name}/{Harmony,NoHarmony}/   subcluster
 ├── spatial_niches/                               tsv/, plots/
 ├── gene_exploration/                             expression_ranges.tsv, {entry}/…

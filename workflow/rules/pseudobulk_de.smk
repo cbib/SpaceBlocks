@@ -1,22 +1,19 @@
 rule pseudobulk_de:
-    """
-    DE with R DESeq2 (Wald + LRT), EnhancedVolcano, ComplexHeatmap, DEGpatterns.
-    Region levels and colors from config control ordering and visualization.
-    """
+    """Explicit pairwise Wald contrasts and optional omnibus LRT with R/DESeq2."""
     input:
         agg_dir=rules.pseudobulk_aggregate.output.agg_dir,
     output:
         results_dir=directory(
-            f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_level}}/de_results"
+            f"{OUTDIR_PP}/pseudobulk/{{annot_type}}/{{analysis_name}}/de_results"
         ),
     log:
-        out=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.out",
-        err=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_level}}.err",
+        out=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_name}}.out",
+        err=f"{LOGDIR}/pseudobulk_de/{{annot_type}}_{{analysis_name}}.err",
     benchmark:
-        f"{LOGDIR}/benchmarks/pseudobulk_de/{{annot_type}}_{{analysis_level}}.tsv"
+        f"{LOGDIR}/benchmarks/pseudobulk_de/{{annot_type}}_{{analysis_name}}.tsv"
     wildcard_constraints:
-        annot_type="tsv_annotation|refined_annotation|ingest_annotation",
-        analysis_level="by_region|by_celltype_region|by_niche_region",
+        annot_type="tsv_annotation|external_annotation|ingest_annotation|refined_annotation",
+        analysis_name="[A-Za-z0-9_-]+",
     conda:
         "../envs/pseudobulk_de.yaml"
     threads: get_resource("pseudobulk_de", "threads")
@@ -24,18 +21,32 @@ rule pseudobulk_de:
         mem_mb=mem_mb_attempt("pseudobulk_de"),
         runtime=get_resource("pseudobulk_de", "runtime"),
     params:
-        annot_type=lambda wc: wc.annot_type,
-        analysis_level=lambda wc: wc.analysis_level,
+        analysis_name=lambda wc: wc.analysis_name,
         min_replicates=ANALYSIS.get("min_replicates", 3),
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         padj_threshold=ANALYSIS.get("padj_threshold", 0.05),
         lfc_threshold=ANALYSIS.get("lfc_threshold", 0.5),
-        region_levels=REGION_LEVELS,
-        # Pass colors as two parallel lists for safe Python→R conversion
-        region_color_names=list(ANALYSIS.get("region_colors", {}).keys()),
-        region_color_values=list(ANALYSIS.get("region_colors", {}).values()),
-        # Design columns to annotate heatmaps with (chosen via config design.columns);
-        # palettes flattened into parallel lists (grey fallback applied in R).
+        dpi=ANALYSIS.get("plot_dpi", 300),
+        group_by_columns=lambda wc: pseudobulk_analysis(wc.analysis_name)["group_by"],
+        paired_by=lambda wc: pseudobulk_analysis(wc.analysis_name)["paired_by"],
+        covariates=lambda wc: pseudobulk_analysis(wc.analysis_name)["covariates"],
+        contrast_names=lambda wc: pseudobulk_contrast_param(wc.analysis_name, "names"),
+        contrast_numerators=lambda wc: pseudobulk_contrast_param(
+            wc.analysis_name, "numerator"
+        ),
+        contrast_denominators=lambda wc: pseudobulk_contrast_param(
+            wc.analysis_name, "denominator"
+        ),
+        lrt_enabled=lambda wc: bool(
+            pseudobulk_analysis(wc.analysis_name)["lrt"].get("enabled", False)
+        ),
+        group_color_names=lambda wc: list(
+            pseudobulk_group_palette(wc.analysis_name).keys()
+        ),
+        group_color_values=lambda wc: list(
+            pseudobulk_group_palette(wc.analysis_name).values()
+        ),
+        condition_level_order=lambda wc: pseudobulk_condition_order(wc.analysis_name),
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,
         extra_anno_col_names=EXTRA_ANNO_COLS,
         extra_anno_values=EXTRA_ANNO_VALS,

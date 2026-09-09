@@ -104,7 +104,10 @@ Parameters are settings that live exclusively in `config/config.yaml` and determ
 | `use_precomputed_clusters` | **Optional** (reproducibility) | If `true`, reuse Leiden clusters/metadata from `precomputed_metadata_dir` instead of recomputing them. |
 | `ingest_ref_label_key` | `ingest_ref` reference set | Column in the `ingest_ref` reference that holds the reference cell-type labels. |
 | `integration.integrate_key` | **Mandatory** | Variable Harmony corrects over during integration (e.g. `sample`). |
-| `extra_annotations.columns` | **Optional** | `core_samples.tsv` columns to carry into `obs` and surface in downstream plots (e.g. `[patient, batch]`). |
+| `extra_annotations.columns` | **Optional** | `core_samples.tsv` columns to surface in downstream plots (e.g. `[patient, batch]`). All sample-sheet columns are carried into `obs` and can be used by pseudobulk models whether or not they are plotted. |
+| `analysis.pseudobulk.analyses` | Pseudobulk | Named aggregation/model specifications containing the comparison variables, explicit contrasts, exclusions, optional pairing/covariates, and optional LRT. |
+| `analysis.umap_point_size` | **Optional** | Marker size for ordinary UMAP embedding plots (default: `2`). Highlight and split UMAPs remain at least size `10`. |
+| `analysis.spatial_point_size` | **Optional** | Marker size for spatial maps (default: `20`). This is independent of the UMAP marker size; coordinate-only spatial-niche maps are scaled proportionally. |
 
 ## 4. Color scale customization
 
@@ -132,8 +135,11 @@ annotation_colors:
   cell_type_external:          # declare explicitly; not inherited from cell_type_tsv
     "Tcells": "#1f77b4"
 
-# Region palette — lives under analysis, keyed by the region_levels
+# Preferred region order in QC-sweep, subcluster, and region-only pseudobulk split heatmaps.
+# Entries are shown first-to-last (typically left-to-right); unlisted levels follow.
+# region_colors sets the palette. Pseudobulk filtering uses exclude_levels.
 analysis:
+  region_levels: ["Tumor area", "Healthy area"]
   region_colors:
     "Tumor area": "#46337EFF"
     "Healthy area": "#FDE725FF"
@@ -151,7 +157,7 @@ The rest of the configuration lives in nested blocks. Files and single parameter
 | `atera` | `mode: atera` | Atera head settings: `atera_dir`, Zarr and pyramid options, plus optional registered H&E image, alignment, and keypoint patterns. |
 | `merscope` | `mode: merscope` | MERSCOPE head settings: `merscope_dir`, selected z-plane, embedded-image resolution, and image channels. |
 | `contract` | **Mandatory** | Semantic keys of the hand-off object: `sample_key`, `spatial_key`, `require_region`, `require_raw_counts`, `mito_prefix`. |
-| `analysis` | **Mandatory** | The bulk of the run: QC filters (`min_counts` / `min_genes` / `min_cells` / `max_counts` / `max_pct_mt`), the Leiden `resolution_scan_*`, the pseudobulk `analysis_levels` + thresholds, the `region_levels`, and the `run_*` toggles. Per-sample QC overrides come from `per_sample_qc`. |
+| `analysis` | **Mandatory** | The bulk of the run: QC filters (`min_counts` / `min_genes` / `min_cells` / `max_counts` / `max_pct_mt`), the Leiden `resolution_scan_*`, named pseudobulk analyses + thresholds, and the `run_*` toggles. Per-sample QC overrides come from `per_sample_qc`. |
 | `resources` | **Mandatory** | Per-rule `mem_mb` / `runtime` / `threads` (with a `default`). Memory scales with the retry attempt, so an OOM-killed job is resubmitted with more RAM. |
 | `external_annotation` | *optional* | Overlay labels from an external tool: `enabled`, `column`, `keep_unannotated` (see [section 6](#6-advanced-reproducibility-and-reusability)). |
 | `qc_sweep` | *optional* | Candidate-threshold QC diagnostics (never filters). |
@@ -161,6 +167,153 @@ The rest of the configuration lives in nested blocks. Files and single parameter
 
 !!! note
     A few one-key blocks are documented elsewhere for readability: `integration` (`integrate_key`) and `extra_annotations` (`columns`) are parameters in [section 3](#3-parameters); `cluster_annotations` is a file in [section 2](#2-paths-files-and-sample-sheets); and the colour blocks (`sample_colors`, `annotation_colors`, `analysis.region_colors`) are in [section 4](#4-color-scale-customization).
+
+### Pseudobulk experimental designs
+
+Pseudobulk analyses are configured under `analysis.pseudobulk.analyses`. Each entry
+has a stable `name`, one aggregation strategy, the sample metadata that define the
+comparison groups, and the statistical tests to run. Counts are summed within each
+pseudobulk observation described in the table below.
+
+The available aggregations are:
+
+| `aggregation` | One pseudobulk observation per | Separate result set per |
+| --- | --- | --- |
+| `all_cells` | sample | — |
+| `by_celltype` | sample and cell type | cell type |
+| `by_region` | sample and region | — |
+| `by_celltype_region` | sample, cell type and region | cell type |
+
+`cell_type` is a portable alias: SpaceBlocks resolves it to the cell-type column for
+the active `annotation_types` entry, so manual TSV, external, ingest-transferred, and
+refined cell-type annotations can use the same pseudobulk configuration.
+
+#### Independent phenotype comparison
+
+Add the experimental variables to `core_samples.tsv`:
+
+```tsv
+sample	phenotype	batch
+Cancer_P1	Cancer	Batch1
+Cancer_P2	Cancer	Batch2
+Cancer_P3	Cancer	Batch3
+Normal_P4	Normal	Batch1
+Normal_P5	Normal	Batch2
+Normal_P6	Normal	Batch3
+```
+
+Then compare phenotypes for each cell type while adjusting for batch:
+
+```yaml
+analysis:
+  run_pseudobulk_de: true
+  min_replicates: 3
+  pseudobulk:
+    analyses:
+      - name: phenotype_by_celltype
+        aggregation: by_celltype
+        group_by: [phenotype]
+        covariates: [batch]
+        exclude_levels:
+          cell_type: [Unannotated]
+        contrasts:
+          - name: cancer_vs_normal
+            numerator: {phenotype: Cancer}
+            denominator: {phenotype: Normal}
+        lrt:
+          enabled: false
+```
+
+The numerator determines the positive log2-fold-change direction. Levels not named
+in a pairwise contrast can remain in the fitted model and help dispersion estimation.
+Use `exclude_levels` only for values that should be removed from the analysis entirely.
+The exclusions are also applied to the LRT.
+
+In this example, P1–P6 are six independent biological samples: no individual
+contributes to both phenotypes, so `paired_by` must be omitted. The batch covariate is
+valid because every batch contains one Cancer and one Normal sample; omit `covariates`
+when there is no nuisance variable to adjust for. Use `aggregation: all_cells` instead
+if one whole-sample result is wanted rather than a separate result for each cell type.
+
+#### Phenotype and treatment
+
+Multiple `group_by` columns form a combined categorical group. In the example below,
+Cancer and Normal phenotype levels are combined with Drug and Vehicle treatment
+levels. This supports clear comparisons between observed combinations without exposing
+interaction formulas:
+
+```yaml
+- name: treatment_by_celltype
+  aggregation: by_celltype
+  group_by: [phenotype, treatment]
+  exclude_levels:
+    cell_type: [Unannotated]
+  contrasts:
+    - name: drug_vs_vehicle_in_cancer
+      numerator: {phenotype: Cancer, treatment: Drug}
+      denominator: {phenotype: Cancer, treatment: Vehicle}
+```
+
+This tests one combination against another; it is **not** a formal statistical
+interaction or difference-of-differences test.
+
+#### Paired regions or matched samples
+
+Use `paired_by: sample` when the same sample contributes both levels of a contrast,
+as in tumour and healthy regions from the same section:
+
+```yaml
+- name: regions_by_celltype
+  aggregation: by_celltype_region
+  group_by: [region_annotation]
+  paired_by: sample
+  exclude_levels:
+    region_annotation: [Unlabeled, Bubble]
+    cell_type: [Unannotated]
+  contrasts:
+    - name: tumor_vs_healthy
+      numerator: {region_annotation: Tumor area}
+      denominator: {region_annotation: Healthy area}
+  lrt:
+    enabled: true
+```
+
+For a paired Wald contrast, SpaceBlocks retains only matched units containing both
+requested levels and interprets `min_replicates` as the minimum number of complete pairs.
+
+When Cancer and Normal are separate samples matched from the same patients, add a
+shared patient identifier to `core_samples.tsv` and pair by that identifier:
+
+```tsv
+sample	phenotype	patient
+Cancer_P1	Cancer	P1
+Normal_P1	Normal	P1
+Cancer_P2	Cancer	P2
+Normal_P2	Normal	P2
+Cancer_P3	Cancer	P3
+Normal_P3	Normal	P3
+```
+
+```yaml
+- name: matched_phenotype_by_celltype
+  aggregation: by_celltype
+  group_by: [phenotype]
+  paired_by: patient
+  contrasts:
+    - name: cancer_vs_normal
+      numerator: {phenotype: Cancer}
+      denominator: {phenotype: Normal}
+```
+
+Thus, use `paired_by: sample` for multiple region levels from the same spatial sample,
+`paired_by: patient` for separate samples matched by patient, and omit `paired_by` for
+independent Cancer-versus-Normal samples.
+
+When `lrt.enabled` is true, SpaceBlocks runs an omnibus test across every non-excluded
+level with sufficient replication. With `paired_by`, the full model includes the paired
+unit term and the reduced model removes only the comparison group. DEGpatterns is run
+when the LRT finds enough significant genes; no order or trend direction is imposed by
+the configuration.
 
 ## 6. Advanced: Reproducibility and reusability
 
@@ -172,7 +325,16 @@ SpaceBlocks allows you to input:
 
 - **Externally assembled h5ad AnnData objects** — run `mode: decoupled` and point `contract_dir` at the directory of pre-built contract h5ads. The heads are skipped; the core validates and analyses them directly.
 - **Pre-computed clusters / annotations** — set `use_precomputed_clusters: true` and `precomputed_metadata_dir` to reuse Leiden clusters and metadata; for niches, set `spatial_niches.use_precomputed: true` with `spatial_niches.niche_dir`.
-- **Externally annotated data** — set `external_annotation.enabled: true` with `external_annotation.column`, and choose whether to keep or discard unannotated barcodes downstream via `external_annotation.keep_unannotated` (see [section 5](#5-key-sections)).
+- **Externally annotated data** — set `external_annotation.enabled: true` and use
+  `external_annotation.column` for the source column. Provide it in each
+  `metadata_{sample}.tsv`, or, in `mode: decoupled`, directly in each contract
+  h5ad's `obs`. The source column may have any name; SpaceBlocks copies it to the
+  canonical `cell_type_external` column used by downstream rules. Choose
+  whether to keep or discard unannotated barcodes via
+  `external_annotation.keep_unannotated` (see [section 5](#5-key-sections)). With
+  `keep_unannotated: true`, a mixture of real labels and `Unannotated` remains an
+  active annotation and both are shown in overview and composition plots. Only a
+  column containing no real labels is omitted from annotation plots and reports.
 
 These files are generated during the run, and can be shared with minimum effort to reproduce downstream results from raw data.
 

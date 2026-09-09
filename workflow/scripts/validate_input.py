@@ -39,10 +39,11 @@ import scipy.sparse as sp
 
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
-except NameError:  # very old Snakemake
+except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
-from external_metadata import annotated_cell_ids, optional_input_path, read_cell_metadata
+from annotation_utils import non_placeholder_annotation_mask
+from external_metadata import optional_input_path, read_cell_metadata
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stderr)]
@@ -195,25 +196,46 @@ try:
     ext_overlap = None
     if ext_enabled and ext_column:
         try:
-            _sv = read_cell_metadata(ext_path, required_columns=(ext_column,))
-            _bc = annotated_cell_ids(_sv, ext_column)
-            _match = len(_bc & set(adata.obs_names.astype(str)))
-            frac = round(_match / len(_bc), 4) if _bc else 0.0
-            ext_overlap = {
-                "annotated_barcodes": len(_bc),
-                "matched_obs_names": _match,
-                "fraction_matched": frac,
-            }
-            if _bc and _match == 0:
+            if ext_path:
+                _sv = read_cell_metadata(
+                    ext_path, required_columns=(ext_column,)
+                )
+                _lab = _sv[ext_column]
+            elif ext_column in adata.obs.columns:
+                _lab = adata.obs[ext_column]
+            else:
                 errors.append(
-                    f"external_annotation: 0 of {len(_bc)} annotated "
-                    "barcodes match obs_names — check barcode formatting"
+                    f"external_annotation column '{ext_column}' is absent from the "
+                    "contract h5ad obs and no external metadata TSV was supplied"
                 )
-            elif _bc and frac < 0.5:
-                warnings.append(
-                    f"external_annotation: only {_match}/{len(_bc)} annotated "
-                    f"barcodes match obs_names ({frac:.0%})"
+                _lab = None
+
+            if _lab is not None:
+                _bc = set(
+                    _lab[non_placeholder_annotation_mask(_lab)].index.astype(str)
                 )
+                _match = len(_bc & set(adata.obs_names.astype(str)))
+                frac = round(_match / len(_bc), 4) if _bc else 0.0
+                ext_overlap = {
+                    "annotated_barcodes": len(_bc),
+                    "matched_obs_names": _match,
+                    "fraction_matched": frac,
+                }
+                if _bc and _match == 0:
+                    errors.append(
+                        f"external_annotation: 0 of {len(_bc)} annotated barcodes "
+                        "match obs_names — check barcode formatting"
+                    )
+                elif _bc and frac < 0.5:
+                    warnings.append(
+                        f"external_annotation: only {_match}/{len(_bc)} annotated "
+                        f"barcodes match obs_names ({frac:.0%})"
+                    )
+                elif not _bc:
+                    warnings.append(
+                        "external_annotation column contains no non-placeholder "
+                        "labels; external-annotation plots will be omitted"
+                    )
         except Exception as e:
             errors.append(f"external_annotation metadata is invalid: {e}")
 

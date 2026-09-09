@@ -35,6 +35,7 @@ from banksy_utils.refine_clusters import refine_once
 # Shared composition-barplot helpers (scripts/ is on sys.path for script: rules)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from composition_barplots import composition_pair, build_niche_palette  # noqa: E402
+from plotting_legends import draw_legend_on_axis, grid_figure  # noqa: E402
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -79,7 +80,9 @@ REFINE_ITERS    = int(getattr(snakemake.params, "refine_iterations", 1))
 REFINE_AUTO     = bool(getattr(snakemake.params, "refine_auto", False))
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
-DPI             = int(getattr(snakemake.params, "dpi", 300))
+DPI               = int(getattr(snakemake.params, "dpi", 300))
+UMAP_POINT_SIZE    = float(getattr(snakemake.params, "umap_point_size", 2))
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 
 out_concat   = str(snakemake.output.concatenated)
 niche_tsvs   = [str(p) for p in snakemake.output.niche_tsvs]
@@ -87,6 +90,17 @@ plots_dir    = str(snakemake.output.plots_dir)
 
 NICHE_KEY = "spatial_niche"
 COORD_KEYS = ("x_pixel", "y_pixel", "coord_xy")   # BANKSY reads obsm[coord_keys[2]]
+
+
+def _spatial_scatter_area(default_area):
+    """Scale Matplotlib scatter area with the configured spatial diameter.
+
+    ``sc.pl.spatial`` interprets ``spot_size`` as a diameter in coordinate units,
+    whereas Matplotlib's ``s`` is an area in points squared. Squaring the ratio
+    keeps their visible diameters proportional and preserves the existing areas
+    when ``spatial_point_size`` retains its default value of 20.
+    """
+    return default_area * (SPATIAL_POINT_SIZE / 20.0) ** 2
 
 
 def harmony_embedding(emb, obs, batch_key, seed):
@@ -146,8 +160,14 @@ def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
     n = len(samples)
     ncol = min(4, n)
     nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4 * ncol, 4 * nrow),
-                             squeeze=False)
+    fig, axes, legend_ax = grid_figure(
+        nrow,
+        ncol,
+        [str(c) for c in cats],
+        cell_width=4,
+        cell_height=4,
+        max_legend_columns=min(8, 2 * ncol),
+    )
     for ax in axes.ravel():
         ax.set_axis_off()
     for i, s in enumerate(samples):
@@ -159,17 +179,24 @@ def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
         for c in cats:
             mm = vals == c
             if mm.any():
-                ax.scatter(sp[mm, 0], sp[mm, 1], s=2, linewidths=0,
-                           color=colour[c], rasterized=True)
+                ax.scatter(
+                    sp[mm, 0], sp[mm, 1], s=_spatial_scatter_area(2),
+                    linewidths=0, color=colour[c], rasterized=True,
+                )
         ax.set_title(str(s), fontsize=9)
         ax.set_aspect("equal")
         ax.invert_yaxis()
         ax.set_xticks([]); ax.set_yticks([])
     handles = [plt.Line2D([0], [0], marker="o", linestyle="", markersize=5,
                           color=colour[c], label=str(c)) for c in cats]
-    fig.legend(handles=handles, loc="center left", bbox_to_anchor=(1.0, 0.5),
-               frameon=False, title="Spatial niche", fontsize=7, title_fontsize=8)
-    fig.tight_layout()
+    draw_legend_on_axis(
+        legend_ax,
+        handles,
+        [str(c) for c in cats],
+        title="Spatial niche",
+        fontsize=12,
+        max_columns=min(8, 2 * ncol),
+    )
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
@@ -183,7 +210,15 @@ def _spatial_scatter_highlight(adata, sample_key, color_key, target, out_path, d
     n = len(samples)
     ncol = min(4, n)
     nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4 * ncol, 4 * nrow), squeeze=False)
+    highlight_labels = [f"niche {target}", "other"]
+    fig, axes, legend_ax = grid_figure(
+        nrow,
+        ncol,
+        highlight_labels,
+        cell_width=4,
+        cell_height=4,
+        max_legend_columns=min(8, 2 * ncol),
+    )
     for ax in axes.ravel():
         ax.set_axis_off()
     for i, s in enumerate(samples):
@@ -194,11 +229,15 @@ def _spatial_scatter_highlight(adata, sample_key, color_key, target, out_path, d
         v = vals_all[m]
         bg, hi = v != str(target), v == str(target)
         if bg.any():
-            ax.scatter(sp[bg, 0], sp[bg, 1], s=2, linewidths=0,
-                       color=bg_color, rasterized=True)
+            ax.scatter(
+                sp[bg, 0], sp[bg, 1], s=_spatial_scatter_area(2),
+                linewidths=0, color=bg_color, rasterized=True,
+            )
         if hi.any():
-            ax.scatter(sp[hi, 0], sp[hi, 1], s=2, linewidths=0,
-                       color=hi_color, rasterized=True)
+            ax.scatter(
+                sp[hi, 0], sp[hi, 1], s=_spatial_scatter_area(2),
+                linewidths=0, color=hi_color, rasterized=True,
+            )
         ax.set_title(str(s), fontsize=9)
         ax.set_aspect("equal")
         ax.invert_yaxis()
@@ -207,9 +246,13 @@ def _spatial_scatter_highlight(adata, sample_key, color_key, target, out_path, d
                           color=hi_color, label=f"niche {target}"),
                plt.Line2D([0], [0], marker="o", linestyle="", markersize=5,
                           color=bg_color, label="other")]
-    fig.legend(handles=handles, loc="center left", bbox_to_anchor=(1.0, 0.5),
-               frameon=False, fontsize=7)
-    fig.tight_layout()
+    draw_legend_on_axis(
+        legend_ax,
+        handles,
+        highlight_labels,
+        fontsize=12,
+        max_columns=min(8, 2 * ncol),
+    )
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
@@ -482,7 +525,8 @@ try:
         xy = adata.obsm[COORD_KEYS[2]]
         codes = pd.Categorical(adata.obs["sample"]).codes
         fig, ax = plt.subplots(figsize=(min(40, 4 * len(sample_ids)), 5))
-        ax.scatter(xy[:, 0], xy[:, 1], c=codes, cmap="tab20", s=1,
+        ax.scatter(xy[:, 0], xy[:, 1], c=codes, cmap="tab20",
+                   s=_spatial_scatter_area(1),
                    linewidths=0, rasterized=True)
         ax.set_aspect("equal"); ax.invert_yaxis(); ax.set_axis_off()
         ax.set_title("Staggered coordinates (coloured by sample)", fontsize=10)
@@ -497,7 +541,8 @@ try:
         xy = adata.obsm[COORD_KEYS[2]]
         colors = adata.obs[NICHE_KEY].astype(str).map(niche_palette).values
         fig, ax = plt.subplots(figsize=(min(40, 4 * len(sample_ids)), 5))
-        ax.scatter(xy[:, 0], xy[:, 1], c=colors, s=1,
+        ax.scatter(xy[:, 0], xy[:, 1], c=colors,
+                   s=_spatial_scatter_area(1),
                    linewidths=0, rasterized=True)
         ax.set_aspect("equal"); ax.invert_yaxis(); ax.set_axis_off()
         ax.set_title("BANKSY spatial niches (staggered, all samples)", fontsize=10)
@@ -516,7 +561,8 @@ try:
         for color, fname in [(NICHE_KEY, "umap_by_niche.png"),
                              ("sample", "umap_by_sample.png")]:
             try:
-                sc.pl.embedding(adata, basis="X_umap_banksy", color=color, size=3,
+                sc.pl.embedding(adata, basis="X_umap_banksy", color=color,
+                                size=UMAP_POINT_SIZE,
                                 frameon=False, show=False,
                                 title=f"BANKSY (Harmony) – {color}")
                 plt.savefig(os.path.join(plots_dir, fname), dpi=DPI,

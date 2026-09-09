@@ -28,7 +28,12 @@ from composition_barplots import find_niche_column, build_niche_palette
 from explore_genes_common import (
     read_tsv_to_dict, classify_entries, apply_annotation_palette, apply_region_palette,
     make_score_adata, annotate_ct_region_dotplot, create_annotation_legend,
-    composite_vertical, _compact_legend,
+    composite_vertical,
+)
+from plotting_legends import (
+    category_labels,
+    move_legend_to_axis,
+    panel_figure,
 )
 
 # Large cell type × region dotplots can exceed PIL's default pixel limit
@@ -165,7 +170,8 @@ def generate_dotplots(adata, var_names, annot_key, has_regions, out_dir,
             plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
             tmp_files.append(tmp)
 
-            # Standalone annotation legend (before plt.close so gcf() works)
+            # Temporary annotation-legend band (before plt.close so gcf() works).
+            # It is composited into the same output PNG below and then deleted.
             if annotation_colors or region_colors:
                 tmp_leg = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
                 create_annotation_legend(annot_key,
@@ -202,31 +208,45 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
     multi-column legend for high niche counts."""
     has_niche = bool(niche_col and niche_col in adata.obs.columns)
     n_panels = 2 + (1 if has_regions else 0) + (1 if has_niche else 0)
-    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7),
-                              gridspec_kw={"wspace": 0.5})
+    panel_keys = [None, annot_key]
+    if has_regions:
+        panel_keys.append("region_annotation")
+    if has_niche:
+        panel_keys.append(niche_col)
+    labels_by_panel = [category_labels(adata, key) for key in panel_keys]
+    fig, plot_axes, legend_axes = panel_figure(
+        n_panels,
+        labels_by_panel,
+        panel_width=8,
+        plot_height=6,
+        wspace=0.18,
+    )
+    axes = plot_axes[0]
 
     try:
-        sc.pl.umap(adata, color=color_col, size=2, frameon=False,
+        sc.pl.umap(adata, color=color_col, size=UMAP_POINT_SIZE, frameon=False,
                     vmin=vmin, vmax=vmax, cmap="viridis",
                     title=title, ax=axes[0], show=False)
     except Exception as e:
         log.warning("  UMAP %s failed: %s", title, e)
 
     try:
-        sc.pl.umap(adata, color=annot_key, size=2, frameon=False,
-                    title="Cell types", legend_fontsize=6,
+        sc.pl.umap(adata, color=annot_key, size=UMAP_POINT_SIZE, frameon=False,
+                    title="Cell types", legend_fontsize=12,
                     na_in_legend=False,
                     ax=axes[1], show=False)
+        move_legend_to_axis(axes[1], legend_axes[1], title="Cell types")
     except Exception as e:
         log.warning("  UMAP celltype failed: %s", e)
 
     idx = 2
     if has_regions:
         try:
-            sc.pl.umap(adata, color="region_annotation", size=2, frameon=False,
-                        title="Regions", legend_fontsize=6,
+            sc.pl.umap(adata, color="region_annotation", size=UMAP_POINT_SIZE, frameon=False,
+                        title="Regions", legend_fontsize=12,
                         na_in_legend=False,
                         ax=axes[idx], show=False)
+            move_legend_to_axis(axes[idx], legend_axes[idx], title="Regions")
         except Exception as e:
             log.warning("  UMAP region failed: %s", e)
         idx += 1
@@ -239,10 +259,12 @@ def generate_umap_composite(adata, color_col, annot_key, has_regions, out_path,
             if niche_palette:
                 adata.uns[f"{niche_col}_colors"] = [
                     niche_palette.get(str(c), "#cccccc") for c in cats]
-            sc.pl.umap(adata, color=niche_col, size=2, frameon=False,
-                        title="Spatial niches", legend_fontsize=5,
+            sc.pl.umap(adata, color=niche_col, size=UMAP_POINT_SIZE, frameon=False,
+                        title="Spatial niches", legend_fontsize=12,
                         na_in_legend=False, ax=axes[idx], show=False)
-            _compact_legend(axes[idx], title="Niche")
+            move_legend_to_axis(
+                axes[idx], legend_axes[idx], title="Spatial niches", fontsize=12
+            )
         except Exception as e:
             log.warning("  UMAP niche failed: %s", e)
         idx += 1
@@ -261,6 +283,7 @@ ANNOT_KEY         = str(snakemake.params.annot_key)
 AUCELL_FRACTION   = float(snakemake.params.aucell_fraction)
 NICHE_COLUMN      = str(snakemake.params.niche_column) if snakemake.params.niche_column else ""
 DPI               = int(snakemake.params.dpi)
+UMAP_POINT_SIZE    = float(getattr(snakemake.params, "umap_point_size", 2))
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
@@ -299,7 +322,7 @@ try:
                 adata.uns[f"{_dc}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
                 _dd = os.path.join(base_dir, "_design")
                 os.makedirs(_dd, exist_ok=True)
-                sc.pl.umap(adata, color=[_dc], size=2, frameon=False,
+                sc.pl.umap(adata, color=[_dc], size=UMAP_POINT_SIZE, frameon=False,
                            title=f"Integrated – by {_dc}", show=False)
                 plt.savefig(os.path.join(_dd, f"UMAP_by_{_dc}.png"),
                             dpi=DPI, bbox_inches="tight")

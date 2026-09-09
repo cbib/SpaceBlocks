@@ -1,13 +1,10 @@
 ################################################################################
-## pseudobulk_de.R – DESeq2 Wald + LRT, ComplexHeatmap, DEGpatterns,
-##                   DEGpatterns
+## pseudobulk_de.R – explicit DESeq2 Wald contrasts and optional omnibus LRT
 ################################################################################
 
-# ── Redirect logs FIRST — before anything else ──────────────────────────────
-# This ensures any crash during param parsing is captured in the log files.
+# Redirect logs before parsing parameters so early failures are captured.
 log_out <- tryCatch(snakemake@log[["out"]], error = function(e) "")
 log_err <- tryCatch(snakemake@log[["err"]], error = function(e) "")
-
 if (!is.null(log_out) && nzchar(log_out)) {
   dir.create(dirname(log_out), recursive = TRUE, showWarnings = FALSE)
   log_out_con <- file(log_out, open = "wt")
@@ -20,422 +17,514 @@ if (!is.null(log_err) && nzchar(log_err)) {
 }
 
 message("=== pseudobulk_de.R starting ===")
-message("Loading libraries …")
-
 suppressPackageStartupMessages({
   library(DESeq2)
   library(ComplexHeatmap)
   library(circlize)
-  library(RColorBrewer)
-  library(tidyverse)
+  library(dplyr)
+  library(tibble)
+  library(ggplot2)
   library(ggrepel)
-  library(DEGreport)
 })
 
-message("Libraries loaded OK")
-
-# ── Snakemake params (with diagnostics) ──────────────────────────────────────
-message("Parsing snakemake params …")
-
-agg_dir        <- snakemake@input[["agg_dir"]]
-results_dir    <- snakemake@output[["results_dir"]]
-message("  agg_dir:     ", agg_dir)
-message("  results_dir: ", results_dir)
-
+agg_dir <- snakemake@input[["agg_dir"]]
+results_dir <- snakemake@output[["results_dir"]]
+analysis_name <- as.character(snakemake@params[["analysis_name"]])
 min_replicates <- as.integer(snakemake@params[["min_replicates"]])
-de_n_genes     <- as.integer(snakemake@params[["de_n_genes"]])
-padj_thr       <- as.numeric(snakemake@params[["padj_threshold"]])
-lfc_thr        <- as.numeric(snakemake@params[["lfc_threshold"]])
-# Plot resolution (config param); defaults to 300 if the rule doesn't pass it.
-.dpi_param     <- snakemake@params[["dpi"]]
-res_dpi        <- if (is.null(.dpi_param)) 300L else as.integer(.dpi_param)
-px_scale       <- res_dpi / 150                  # keep physical size, scale pixels
-message("  min_reps: ", min_replicates, ", de_n_genes: ", de_n_genes,
-        ", padj: ", padj_thr, ", lfc: ", lfc_thr)
+de_n_genes <- as.integer(snakemake@params[["de_n_genes"]])
+padj_thr <- as.numeric(snakemake@params[["padj_threshold"]])
+lfc_thr <- as.numeric(snakemake@params[["lfc_threshold"]])
+res_dpi <- as.integer(snakemake@params[["dpi"]])
+group_by_columns <- as.character(snakemake@params[["group_by_columns"]])
+paired_by <- as.character(snakemake@params[["paired_by"]])
+covariates <- as.character(snakemake@params[["covariates"]])
+contrast_names <- as.character(snakemake@params[["contrast_names"]])
+contrast_numerators <- as.character(snakemake@params[["contrast_numerators"]])
+contrast_denominators <- as.character(snakemake@params[["contrast_denominators"]])
+lrt_enabled <- isTRUE(as.logical(snakemake@params[["lrt_enabled"]]))
+paired_by <- paired_by[nzchar(paired_by)]
+covariates <- covariates[nzchar(covariates)]
+condition_level_order <- tryCatch(
+  as.character(snakemake@params[["condition_level_order"]]),
+  error = function(e) character(0)
+)
+condition_level_order <- unique(condition_level_order[nzchar(condition_level_order)])
+px_scale <- res_dpi / 150
 
-# Region levels
-message("  Parsing region_levels …")
-region_levels <- tryCatch({
-  rl <- snakemake@params[["region_levels"]]
-  if (is.null(rl)) character(0) else as.character(rl)
-}, error = function(e) {
-  message("  WARNING: Failed to parse region_levels: ", conditionMessage(e))
-  character(0)
-})
-message("  region_levels: [", paste(region_levels, collapse = ", "), "]")
-
-# Region colors — reconstruct named vector from parallel lists
-message("  Parsing region_colors …")
-region_colors <- tryCatch({
-  rc_names  <- snakemake@params[["region_color_names"]]
-  rc_values <- snakemake@params[["region_color_values"]]
-  message("    rc_names type: ", class(rc_names), " length: ", length(rc_names))
-  message("    rc_values type: ", class(rc_values), " length: ", length(rc_values))
-  if (length(rc_names) > 0 && length(rc_names) == length(rc_values)) {
-    setNames(as.character(rc_values), as.character(rc_names))
-  } else {
-    character(0)
-  }
-}, error = function(e) {
-  message("  WARNING: Failed to parse region_colors: ", conditionMessage(e))
-  character(0)
-})
-message("  region_colors: ", paste(names(region_colors), region_colors, sep = "=", collapse = ", "))
-
-# ── Design annotation columns + palettes (parallel lists → named vectors) ─────
-extra_annot_columns <- tryCatch(as.character(snakemake@params[["extra_annot_columns"]]),
-                           error = function(e) character(0))
-extra_annot_columns <- extra_annot_columns[nzchar(extra_annot_columns)]
-extra_palettes <- tryCatch({
-  dc <- as.character(snakemake@params[["extra_anno_col_names"]])
-  dv <- as.character(snakemake@params[["extra_anno_values"]])
-  dh <- as.character(snakemake@params[["extra_anno_colors"]])
-  pals <- list()
-  if (length(dc) > 0 && length(dc) == length(dv) && length(dv) == length(dh)) {
-    for (u in unique(dc)) {
-      idx <- which(dc == u)
-      pals[[u]] <- setNames(dh[idx], dv[idx])
-    }
-  }
-  pals
-}, error = function(e) {
-  message("  WARNING: Failed to parse design palettes: ", conditionMessage(e))
-  list()
-})
-message("  extra_annot_columns: [", paste(extra_annot_columns, collapse = ", "), "]")
-
-# Build a ComplexHeatmap top annotation: Region (existing behaviour) plus one
-# track per design column present in `meta_df`, coloured from extra_palettes with
-# a grey (#cccccc) fallback for values absent from the config palette. Design
-# columns are annotation-only — they are NOT added to the DESeq2 model.
-build_top_annotation <- function(meta_df, condition_col, region_cols) {
-  anno_args <- list(Region = meta_df[[condition_col]])
-  anno_cols <- list()
-  avail <- region_cols[names(region_cols) %in% unique(as.character(meta_df[[condition_col]]))]
-  if (length(avail) > 0) anno_cols[["Region"]] <- avail
-  for (dc in extra_annot_columns) {
-    if (dc %in% colnames(meta_df)) {
-      vals <- as.character(meta_df[[dc]])
-      anno_args[[dc]] <- vals
-      lv   <- unique(vals)
-      full <- setNames(rep("#cccccc", length(lv)), lv)
-      pal  <- extra_palettes[[dc]]
-      if (!is.null(pal)) {
-        common <- intersect(names(pal), lv)
-        if (length(common) > 0) full[common] <- pal[common]
-      }
-      anno_cols[[dc]] <- full
-    }
-  }
-  if (length(anno_cols) > 0) anno_args[["col"]] <- anno_cols
-  anno_args[["show_legend"]] <- TRUE
-  do.call(HeatmapAnnotation, anno_args)
+if (!(length(contrast_names) == length(contrast_numerators) &&
+      length(contrast_names) == length(contrast_denominators))) {
+  stop("Contrast parameter lists have inconsistent lengths.")
 }
 
-message("Params parsed OK")
+# Reconstruct configured palettes from parallel lists.
+group_colors <- tryCatch({
+  nms <- as.character(snakemake@params[["group_color_names"]])
+  vals <- as.character(snakemake@params[["group_color_values"]])
+  if (length(nms) > 0 && length(nms) == length(vals)) setNames(vals, nms)
+  else character(0)
+}, error = function(e) character(0))
 
+extra_annot_columns <- tryCatch(
+  as.character(snakemake@params[["extra_annot_columns"]]),
+  error = function(e) character(0)
+)
+extra_annot_columns <- extra_annot_columns[nzchar(extra_annot_columns)]
+extra_palettes <- tryCatch({
+  cols <- as.character(snakemake@params[["extra_anno_col_names"]])
+  vals <- as.character(snakemake@params[["extra_anno_values"]])
+  hex <- as.character(snakemake@params[["extra_anno_colors"]])
+  palettes <- list()
+  if (length(cols) > 0 && length(cols) == length(vals) && length(vals) == length(hex)) {
+    for (column in unique(cols)) {
+      idx <- which(cols == column)
+      palettes[[column]] <- setNames(hex[idx], vals[idx])
+    }
+  }
+  palettes
+}, error = function(e) list())
+
+message("  analysis: ", analysis_name)
+message("  group_by: [", paste(group_by_columns, collapse = ", "), "]")
+message("  paired_by: ", ifelse(length(paired_by), paired_by, "<none>"))
+message("  covariates: [", paste(covariates, collapse = ", "), "]")
+message("  contrasts: [", paste(contrast_names, collapse = ", "), "]")
+message("  LRT: ", lrt_enabled)
 dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 
 
-# ── ComplexHeatmap helper ────────────────────────────────────────────────────
-draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, top_genes,
-                                   contrast_name, out_dir, region_lvls, region_cols) {
-  # Reorder columns by region level
-  if (length(region_lvls) > 0) {
-    col_order_factor <- factor(meta[[condition_col]], levels = region_lvls, ordered = TRUE)
-  } else {
-    col_order_factor <- factor(meta[[condition_col]])
-  }
-  ord <- order(col_order_factor)
-  mat_ordered <- mat_scaled[, ord, drop = FALSE]
-  meta_ordered <- meta[ord, , drop = FALSE]
-  split_factor <- factor(meta_ordered[[condition_col]],
-                         levels = if (length(region_lvls) > 0) region_lvls else unique(meta_ordered[[condition_col]]),
-                         ordered = TRUE)
+safe_name <- function(value) {
+  safe <- gsub("[^A-Za-z0-9_.-]+", "_", as.character(value))
+  safe <- gsub("^_+|_+$", "", safe)
+  ifelse(nzchar(safe), safe, "contrast")
+}
 
-  # Drop genes that became all-NaN after scaling (zero variance) — they
-  # collapse the layout and break row clustering.
-  finite_rows <- apply(mat_ordered, 1, function(z) all(is.finite(z)))
-  if (any(!finite_rows)) {
-    message("      Dropping ", sum(!finite_rows),
-            " zero-variance gene(s) from heatmap")
-    mat_ordered <- mat_ordered[finite_rows, , drop = FALSE]
-  }
-  if (nrow(mat_ordered) < 2) {
-    message("      <2 finite genes left — skipping heatmap")
-    return(invisible(NULL))
-  }
 
-  # Pin the heatmap BODY so each gene row has a fixed physical height.
-  n_row <- nrow(mat_ordered); n_col <- ncol(mat_ordered)
-  row_mm   <- 5
-  body_mm  <- max(n_row * row_mm, 40)
-  body_h   <- unit(body_mm, "mm")
-  dev_h_px <- round((body_mm / 25.4 + 2.6) * res_dpi)  # +2.6in for title/anno/legend
+heatmap_condition_factor <- function(values) {
+  observed <- unique(as.character(values))
+  preferred <- condition_level_order[condition_level_order %in% observed]
+  factor(as.character(values), levels = unique(c(preferred, observed)))
+}
 
-  # Region + design-column annotation tracks (grey fallback for missing values)
-  col_anno <- build_top_annotation(meta_ordered, condition_col, region_cols)
 
-  col_fun <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+formula_for <- function(condition_col, paired = character(0), covars = character(0),
+                        include_condition = TRUE) {
+  terms <- c(covars, paired)
+  if (include_condition) terms <- c(terms, condition_col)
+  terms <- unique(terms[nzchar(terms)])
+  if (length(terms) == 0) return(~1)
+  as.formula(paste("~", paste(sprintf("`%s`", terms), collapse = " + ")))
+}
 
-  # 1. Unsplit heatmap
-  tryCatch({
-    ht_unsplit <- Heatmap(
-      mat_ordered,
-      name = "Z-score",
-      col = col_fun,
-      top_annotation = col_anno,
-      height = body_h,
-      cluster_columns = TRUE,
-      cluster_rows = TRUE,
-      show_row_names = TRUE,
-      show_column_names = TRUE,
-      row_names_gp = gpar(fontsize = 7),
-      column_names_gp = gpar(fontsize = 7),
-      column_title = paste0("Top DE genes — ", contrast_name),
-      heatmap_legend_param = list(title = "Z-score")
+
+assert_full_rank <- function(meta, design_formula, label) {
+  matrix <- model.matrix(design_formula, data = meta)
+  rank <- qr(matrix)$rank
+  if (rank < ncol(matrix)) {
+    stop(
+      label, " model matrix is not full rank (rank ", rank, "/", ncol(matrix),
+      "). Check for confounded covariates or pairing variables."
     )
-    png(file.path(out_dir, paste0("heatmap_unsplit_", contrast_name, ".png")),
-        width = round(max(800, n_col * 50) * px_scale),
-        height = dev_h_px, res = res_dpi)
-    draw(ht_unsplit, merge_legend = TRUE)
+  }
+  invisible(matrix)
+}
+
+
+build_top_annotation <- function(meta, condition_col) {
+  annotation_args <- list(Group = as.character(meta[[condition_col]]))
+  annotation_colors <- list()
+  present_groups <- unique(as.character(meta[[condition_col]]))
+  available <- group_colors[names(group_colors) %in% present_groups]
+  if (length(available) > 0) annotation_colors[["Group"]] <- available
+
+  for (column in extra_annot_columns) {
+    if (column %in% colnames(meta)) {
+      values <- as.character(meta[[column]])
+      annotation_args[[column]] <- values
+      levels <- unique(values)
+      palette <- setNames(rep("#cccccc", length(levels)), levels)
+      configured <- extra_palettes[[column]]
+      if (!is.null(configured)) {
+        common <- intersect(names(configured), levels)
+        palette[common] <- configured[common]
+      }
+      annotation_colors[[column]] <- palette
+    }
+  }
+  if (length(annotation_colors) > 0) annotation_args[["col"]] <- annotation_colors
+  annotation_args[["show_legend"]] <- TRUE
+  do.call(HeatmapAnnotation, annotation_args)
+}
+
+
+draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, contrast_name, out_dir) {
+  finite_rows <- apply(mat_scaled, 1, function(values) all(is.finite(values)))
+  mat_scaled <- mat_scaled[finite_rows, , drop = FALSE]
+  if (nrow(mat_scaled) < 2) return(invisible(NULL))
+
+  condition <- heatmap_condition_factor(meta[[condition_col]])
+  order_idx <- order(condition)
+  mat_ordered <- mat_scaled[, order_idx, drop = FALSE]
+  meta_ordered <- meta[order_idx, , drop = FALSE]
+  split_factor <- droplevels(condition[order_idx])
+  annotation <- build_top_annotation(meta_ordered, condition_col)
+  color_function <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+
+  n_row <- nrow(mat_ordered)
+  n_col <- ncol(mat_ordered)
+  body_mm <- max(n_row * 5, 40)
+  body_height <- grid::unit(body_mm, "mm")
+  device_height <- round((body_mm / 25.4 + 2.6) * res_dpi)
+
+  tryCatch({
+    heatmap <- Heatmap(
+      mat_ordered, name = "Z-score", col = color_function,
+      top_annotation = annotation, height = body_height,
+      cluster_columns = TRUE, cluster_rows = TRUE,
+      show_row_names = TRUE, show_column_names = TRUE,
+      row_names_gp = grid::gpar(fontsize = 7), column_names_gp = grid::gpar(fontsize = 7),
+      column_title = paste0("Top DE genes — ", contrast_name)
+    )
+    png(
+      file.path(out_dir, paste0("heatmap_unsplit_", safe_name(contrast_name), ".png")),
+      width = round(max(800, n_col * 50) * px_scale),
+      height = device_height, res = res_dpi
+    )
+    draw(heatmap, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Unsplit heatmap failed: ", conditionMessage(e)))
 
-  # 2. Split heatmap by region level
   tryCatch({
-    ht_split <- Heatmap(
-      mat_ordered,
-      name = "Z-score",
-      col = col_fun,
-      top_annotation = col_anno,
-      column_split = split_factor,
-      height = body_h,
-      cluster_columns = FALSE,
-      cluster_column_slices = TRUE,
-      cluster_rows = TRUE,
-      show_row_names = TRUE,
-      show_column_names = TRUE,
-      row_names_gp = gpar(fontsize = 7),
-      column_names_gp = gpar(fontsize = 7),
-      column_title = paste0("Top DE genes — ", contrast_name, " (split)"),
-      heatmap_legend_param = list(title = "Z-score")
+    heatmap <- Heatmap(
+      mat_ordered, name = "Z-score", col = color_function,
+      top_annotation = annotation, column_split = split_factor,
+      height = body_height, cluster_columns = FALSE,
+      cluster_column_slices = FALSE, cluster_rows = TRUE,
+      show_row_names = TRUE, show_column_names = TRUE,
+      row_names_gp = grid::gpar(fontsize = 7), column_names_gp = grid::gpar(fontsize = 7),
+      column_title = paste0("Top DE genes — ", contrast_name, " (split)")
     )
-    png(file.path(out_dir, paste0("heatmap_split_", contrast_name, ".png")),
-        width = round(max(900, n_col * 55) * px_scale),
-        height = dev_h_px, res = res_dpi)
-    draw(ht_split, merge_legend = TRUE)
+    png(
+      file.path(out_dir, paste0("heatmap_split_", safe_name(contrast_name), ".png")),
+      width = round(max(900, n_col * 55) * px_scale),
+      height = device_height, res = res_dpi
+    )
+    draw(heatmap, merge_legend = TRUE)
     dev.off()
   }, error = function(e) message("      Split heatmap failed: ", conditionMessage(e)))
 }
 
 
-# ── Helper: run DE on one pseudobulk subgroup ────────────────────────────────
-run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
+write_volcano <- function(results_df, contrast_name, prefix, out_dir) {
+  volcano <- results_df %>%
+    filter(!is.na(padj) & !is.na(log2FoldChange)) %>%
+    mutate(
+      sig_group = case_when(
+        padj < padj_thr & log2FoldChange > lfc_thr ~ "Up",
+        padj < padj_thr & log2FoldChange < -lfc_thr ~ "Down",
+        TRUE ~ "NS"
+      ),
+      neg_log10p = -log10(pmax(padj, 1e-300))
+    )
+  labels <- bind_rows(
+    volcano %>% filter(sig_group == "Up") %>% arrange(desc(log2FoldChange)) %>% head(10),
+    volcano %>% filter(sig_group == "Down") %>% arrange(log2FoldChange) %>% head(10)
+  )
+  plot <- ggplot(volcano, aes(x = log2FoldChange, y = neg_log10p, color = sig_group)) +
+    geom_point(size = 0.8, alpha = 0.6) +
+    scale_color_manual(values = c("NS" = "grey70", "Up" = "#e41a1c", "Down" = "#377eb8"), name = "") +
+    geom_hline(yintercept = -log10(padj_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
+    geom_vline(xintercept = c(-lfc_thr, lfc_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
+    ggrepel::geom_text_repel(
+      data = labels, aes(label = gene), size = 2.5, max.overlaps = 20,
+      color = "black", segment.size = 0.2, segment.color = "grey50"
+    ) +
+    labs(title = contrast_name, subtitle = paste0(prefix, " — Wald test"),
+         x = "log2 Fold Change", y = "-log10(padj)") +
+    theme_bw()
+  ggsave(
+    file.path(out_dir, paste0("volcano_", safe_name(contrast_name), ".png")),
+    plot = plot, width = 9, height = 7, dpi = res_dpi
+  )
+}
 
-  counts_file   <- file.path(agg_dir, "matrices", paste0("counts_", prefix, ".tsv"))
-  metadata_file <- file.path(agg_dir, "metadata", paste0("metadata_", prefix, ".tsv"))
 
-  if (!file.exists(counts_file) || !file.exists(metadata_file)) {
-    message("  Skipping '", prefix, "': files not found.")
-    return(NULL)
+write_de_heatmap <- function(results_df, vsd, meta, condition_col, contrast_name, out_dir) {
+  significant <- results_df %>% filter(padj < padj_thr)
+  top_up <- significant %>%
+    filter(log2FoldChange > 0) %>% arrange(desc(log2FoldChange)) %>%
+    head(de_n_genes) %>% pull(gene)
+  top_down <- significant %>%
+    filter(log2FoldChange < 0) %>% arrange(log2FoldChange) %>%
+    head(de_n_genes) %>% pull(gene)
+  genes <- unique(c(top_up, top_down))
+  genes <- genes[genes %in% rownames(assay(vsd))]
+  if (length(genes) >= 2) {
+    scaled <- t(scale(t(assay(vsd)[genes, , drop = FALSE])))
+    draw_complex_heatmaps(scaled, meta, condition_col, contrast_name, out_dir)
+  }
+}
+
+
+fit_wald <- function(counts, meta, condition_col, paired = character(0)) {
+  design_formula <- formula_for(condition_col, paired, covariates, TRUE)
+  assert_full_rank(meta, design_formula, "Wald")
+  counts_t <- t(counts)
+  counts_t <- counts_t[, rownames(meta), drop = FALSE]
+  dds <- DESeqDataSetFromMatrix(countData = counts_t, colData = meta, design = design_formula)
+  dds <- DESeq(dds, test = "Wald")
+  vsd <- tryCatch(
+    vst(dds, blind = FALSE),
+    error = function(e) {
+      message("    vst failed, using normTransform: ", conditionMessage(e))
+      normTransform(dds)
+    }
+  )
+  list(dds = dds, vsd = vsd)
+}
+
+
+run_lrt <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
+  if (!lrt_enabled) return(invisible(NULL))
+  message("    Explicit omnibus LRT …")
+
+  unit_col <- if (length(paired_by)) paired_by else sample_col
+  replicate_counts <- meta %>%
+    mutate(.unit = as.character(.data[[unit_col]])) %>%
+    group_by(.data[[condition_col]]) %>%
+    summarise(n = n_distinct(.unit), .groups = "drop")
+  valid <- as.character(replicate_counts[[condition_col]][replicate_counts$n >= min_replicates])
+  lrt_meta <- meta[as.character(meta[[condition_col]]) %in% valid, , drop = FALSE]
+  lrt_counts <- counts[rownames(lrt_meta), , drop = FALSE]
+  lrt_meta[[condition_col]] <- droplevels(factor(lrt_meta[[condition_col]]))
+
+  if (length(paired_by)) {
+    informative <- lrt_meta %>%
+      mutate(.row = rownames(lrt_meta)) %>%
+      group_by(.data[[paired_by]]) %>%
+      filter(n_distinct(.data[[condition_col]]) >= 2) %>%
+      pull(.row)
+    lrt_meta <- lrt_meta[informative, , drop = FALSE]
+    lrt_counts <- lrt_counts[informative, , drop = FALSE]
+    lrt_meta[[paired_by]] <- droplevels(factor(lrt_meta[[paired_by]]))
   }
 
+  lrt_meta[[condition_col]] <- droplevels(factor(lrt_meta[[condition_col]]))
+  if (nlevels(lrt_meta[[condition_col]]) < 2) {
+    message("    LRT skipped: fewer than two non-excluded levels have sufficient replicates.")
+    lrt_dir <- file.path(out_base, "LRT")
+    dir.create(lrt_dir, recursive = TRUE, showWarnings = FALSE)
+    writeLines("Insufficient replicated levels for LRT.", file.path(lrt_dir, "SKIPPED_insufficient.txt"))
+    return(invisible(NULL))
+  }
+
+  full_formula <- formula_for(condition_col, paired_by, covariates, TRUE)
+  reduced_formula <- formula_for(condition_col, paired_by, covariates, FALSE)
+  assert_full_rank(lrt_meta, full_formula, "LRT full")
+  assert_full_rank(lrt_meta, reduced_formula, "LRT reduced")
+  counts_t <- t(lrt_counts)
+  counts_t <- counts_t[, rownames(lrt_meta), drop = FALSE]
+  dds <- DESeqDataSetFromMatrix(countData = counts_t, colData = lrt_meta, design = full_formula)
+  dds <- DESeq(dds, test = "LRT", reduced = reduced_formula)
+  result <- results(dds)
+  # An LRT p-value tests the group term as a whole. DESeq2 also returns one
+  # coefficient's fold change, which is not an omnibus effect size and is easy to
+  # misinterpret when there are more than two levels, so omit it here.
+  result_df <- as.data.frame(result) %>%
+    rownames_to_column("gene") %>%
+    select(gene, baseMean, stat, pvalue, padj) %>%
+    arrange(padj)
+  lrt_dir <- file.path(out_base, "LRT")
+  dir.create(lrt_dir, recursive = TRUE, showWarnings = FALSE)
+  write.table(result_df, file.path(lrt_dir, "LRT_results.tsv"),
+              sep = "\t", quote = FALSE, row.names = FALSE)
+
+  significant <- rownames(result)[which(result$padj < padj_thr)]
+  message("    LRT: ", length(significant), " significant genes")
+  if (length(significant) < 10) return(invisible(NULL))
+
+  tryCatch({
+    transformed <- tryCatch(vst(dds, blind = FALSE), error = function(e) normTransform(dds))
+    matrix <- assay(transformed)[significant, , drop = FALSE]
+    clusters <- DEGreport::degPatterns(
+      matrix, metadata = lrt_meta, time = condition_col, plot = FALSE
+    )
+    if (!is.null(clusters$df)) {
+      normalized <- clusters$normalized
+      old_levels <- sort(unique(normalized$cluster))
+      remap <- setNames(seq_along(old_levels), as.character(old_levels))
+      normalized$cluster <- as.integer(remap[as.character(normalized$cluster)])
+      cluster_df <- clusters$df
+      cluster_df$cluster <- as.integer(remap[as.character(cluster_df$cluster)])
+      cluster_df <- cluster_df %>% arrange(cluster, genes)
+
+      plot <- DEGreport::degPlotCluster(
+        normalized, time = condition_col, color = condition_col, points = TRUE
+      ) +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+      if (length(group_colors) > 0) {
+        plot <- plot + scale_color_manual(values = group_colors)
+      }
+      ggsave(file.path(lrt_dir, "DEGpatterns_groups.png"), plot = plot,
+             width = 14, height = 10, dpi = max(res_dpi, 500L))
+
+      grouped_genes <- split(cluster_df$genes, paste0("group_", cluster_df$cluster))
+      max_length <- max(lengths(grouped_genes))
+      gene_table <- as.data.frame(lapply(grouped_genes, function(genes) {
+        c(genes, rep("", max_length - length(genes)))
+      }))
+      write.table(gene_table, file.path(lrt_dir, "gene_groups.tsv"),
+                  sep = "\t", quote = FALSE, row.names = FALSE)
+    }
+  }, error = function(e) message("    DEGpatterns failed: ", conditionMessage(e)))
+}
+
+
+run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
+  counts_file <- file.path(agg_dir, "matrices", paste0("counts_", prefix, ".tsv"))
+  metadata_file <- file.path(agg_dir, "metadata", paste0("metadata_", prefix, ".tsv"))
+  if (!file.exists(counts_file) || !file.exists(metadata_file)) return(NULL)
   dir.create(out_base, recursive = TRUE, showWarnings = FALSE)
 
   counts <- read.delim(counts_file, row.names = 1, check.names = FALSE)
-  meta   <- read.delim(metadata_file, row.names = 1, check.names = FALSE)
-
-  counts <- round(counts)
-  counts <- as.matrix(counts)
+  meta <- read.delim(metadata_file, row.names = 1, check.names = FALSE)
+  counts <- round(as.matrix(counts))
   storage.mode(counts) <- "integer"
-
   common <- intersect(rownames(counts), rownames(meta))
-  if (length(common) == 0) {
-    message("  '", prefix, "': no common samples. Skipping.")
-    return(NULL)
-  }
   counts <- counts[common, , drop = FALSE]
-  meta   <- meta[common, , drop = FALSE]
+  meta <- meta[common, , drop = FALSE]
 
-  # Filter to configured region levels if provided
-  if (length(region_levels) > 0) {
-    keep <- meta[[condition_col]] %in% region_levels
-    if (sum(!keep) > 0) {
-      dropped <- unique(meta[[condition_col]][!keep])
-      message("  Filtering out region levels not in config: ", paste(dropped, collapse = ", "))
+  required <- unique(c(condition_col, sample_col, paired_by, covariates))
+  missing <- setdiff(required, colnames(meta))
+  if (length(missing) > 0) stop("Missing pseudobulk metadata columns: ", paste(missing, collapse = ", "))
+  complete <- complete.cases(meta[, required, drop = FALSE])
+  counts <- counts[complete, , drop = FALSE]
+  meta <- meta[complete, , drop = FALSE]
+  meta[[condition_col]] <- factor(meta[[condition_col]])
+  for (column in unique(c(paired_by, covariates))) meta[[column]] <- factor(meta[[column]])
+
+  unit_col <- if (length(paired_by)) paired_by else sample_col
+  unit_groups <- meta[, c(unit_col, condition_col), drop = FALSE]
+  duplicate_units <- duplicated(unit_groups) | duplicated(unit_groups, fromLast = TRUE)
+  if (any(duplicate_units)) {
+    examples <- unique(apply(unit_groups[duplicate_units, , drop = FALSE], 1, paste, collapse = " / "))
+    stop(
+      "More than one pseudobulk observation exists for an independent unit/group: ",
+      paste(head(examples, 5), collapse = ", "),
+      ". Choose an aggregation aligned with group_by; repeated observations are not independent."
+    )
+  }
+  if (!length(paired_by)) {
+    groups_per_sample <- tapply(
+      as.character(meta[[condition_col]]), as.character(meta[[sample_col]]),
+      function(values) length(unique(values))
+    )
+    if (any(groups_per_sample > 1)) {
+      stop(
+        "At least one sample contributes multiple comparison levels. Configure paired_by: ",
+        sample_col, " for a paired design."
+      )
     }
-    counts <- counts[keep, , drop = FALSE]
-    meta   <- meta[keep, , drop = FALSE]
-    meta[[condition_col]] <- factor(meta[[condition_col]], levels = region_levels)
-  } else {
-    meta[[condition_col]] <- factor(meta[[condition_col]])
   }
 
-  meta[[condition_col]] <- droplevels(meta[[condition_col]])
-  conditions <- levels(meta[[condition_col]])
-
-  cond_counts <- table(meta[[condition_col]])
-  valid_conds <- names(cond_counts[cond_counts >= min_replicates])
-  if (length(valid_conds) < 2) {
-    message("  '", prefix, "': < 2 conditions with >= ", min_replicates, " replicates. Skipping.")
-    writeLines("Insufficient replicates.", file.path(out_base, "SKIPPED_insufficient.txt"))
+  counts <- counts[, colSums(counts) > 0, drop = FALSE]
+  if (nrow(counts) == 0 || ncol(counts) == 0) {
+    writeLines("No usable counts.", file.path(out_base, "SKIPPED_no_counts.txt"))
     return(NULL)
   }
-  keep_samples <- meta[[condition_col]] %in% valid_conds
-  counts <- counts[keep_samples, , drop = FALSE]
-  meta   <- meta[keep_samples, , drop = FALSE]
-  meta[[condition_col]] <- droplevels(meta[[condition_col]])
-  conditions <- levels(meta[[condition_col]])
 
-  gene_sums <- colSums(counts)
-  counts <- counts[, gene_sums > 0, drop = FALSE]
-
-  message("  '", prefix, "': ", nrow(counts), " samples, ", ncol(counts), " genes, ",
-          length(conditions), " conditions: ", paste(conditions, collapse = " -> "))
-
-  counts_t <- t(counts)
-
-  if (!identical(colnames(counts_t), rownames(meta))) {
-    meta <- meta[colnames(counts_t), , drop = FALSE]
-  }
-
-  design_formula <- as.formula(paste("~", condition_col))
-  dds <- DESeqDataSetFromMatrix(
-    countData = counts_t, colData = meta, design = design_formula
-  )
-
-  # ── LRT ────────────────────────────────────────────────────────────────
-  message("    LRT …")
-  dds_lrt <- NULL
-  tryCatch({
-    dds_lrt <- DESeq(dds, test = "LRT", reduced = ~ 1)
-    res_lrt <- results(dds_lrt)
-    res_lrt_df <- as.data.frame(res_lrt) %>%
-      rownames_to_column("gene") %>%
-      arrange(desc(log2FoldChange))
-    # LRT results saved inside DEGpatterns dir (created later)
-    lrt_save_dir <- file.path(out_base, "DEGpatterns")
-    dir.create(lrt_save_dir, recursive = TRUE, showWarnings = FALSE)
-    write.table(res_lrt_df, file.path(lrt_save_dir, "LRT_results.tsv"),
-                sep = "\t", quote = FALSE, row.names = FALSE)
-    n_sig <- sum(res_lrt_df$padj < padj_thr, na.rm = TRUE)
-    message("    LRT: ", n_sig, " significant genes (padj < ", padj_thr, ")")
-  }, error = function(e) {
-    message("    LRT failed: ", conditionMessage(e))
-  })
-
-  # ── Pairwise Wald ──────────────────────────────────────────────────────
-  message("    Wald pairwise tests …")
-  dds_wald <- DESeq(dds, test = "Wald")
-
-  vsd <- tryCatch(
-    vst(dds_wald, blind = FALSE),
+  message("  '", prefix, "': ", nrow(counts), " observations, ", ncol(counts), " genes")
+  tryCatch(
+    run_lrt(counts, meta, condition_col, sample_col, prefix, out_base),
     error = function(e) {
-      message("    vst failed, using normTransform: ", conditionMessage(e))
-      normTransform(dds_wald)
+      message("    LRT failed: ", conditionMessage(e))
+      lrt_dir <- file.path(out_base, "LRT")
+      dir.create(lrt_dir, recursive = TRUE, showWarnings = FALSE)
+      writeLines(conditionMessage(e), file.path(lrt_dir, "ERROR.txt"))
     }
   )
 
   pairwise_dir <- file.path(out_base, "pairwise")
   dir.create(pairwise_dir, recursive = TRUE, showWarnings = FALSE)
   summary_rows <- list()
-  pairs <- combn(conditions, 2, simplify = FALSE)
 
-  for (pair in pairs) {
-    cond_a <- pair[1]
-    cond_b <- pair[2]
-    contrast_name <- paste0(cond_a, "_vs_", cond_b)
-    message("      Contrast: ", contrast_name)
+  # Unpaired analyses share a single fit across all sufficiently replicated levels.
+  shared_fit <- NULL
+  shared_meta <- NULL
+  if (!length(paired_by) && length(contrast_names) > 0) {
+    replicate_counts <- meta %>%
+      mutate(.sample = as.character(.data[[sample_col]])) %>%
+      group_by(.data[[condition_col]]) %>%
+      summarise(n = n_distinct(.sample), .groups = "drop")
+    valid <- as.character(replicate_counts[[condition_col]][replicate_counts$n >= min_replicates])
+    shared_meta <- meta[as.character(meta[[condition_col]]) %in% valid, , drop = FALSE]
+    shared_meta[[condition_col]] <- droplevels(factor(shared_meta[[condition_col]]))
+    if (nlevels(shared_meta[[condition_col]]) >= 2) {
+      shared_counts <- counts[rownames(shared_meta), , drop = FALSE]
+      shared_fit <- fit_wald(shared_counts, shared_meta, condition_col)
+    }
+  }
+
+  for (index in seq_along(contrast_names)) {
+    contrast_name <- contrast_names[index]
+    numerator <- contrast_numerators[index]
+    denominator <- contrast_denominators[index]
+    message("    Contrast: ", contrast_name, " (", numerator, " vs ", denominator, ")")
 
     tryCatch({
-      res <- results(dds_wald, contrast = c(condition_col, cond_a, cond_b))
-      res_df <- as.data.frame(res) %>%
-        rownames_to_column("gene") %>%
-        arrange(desc(log2FoldChange))
+      if (length(paired_by)) {
+        pair_meta <- meta[as.character(meta[[condition_col]]) %in% c(numerator, denominator), , drop = FALSE]
+        pair_meta[[condition_col]] <- droplevels(factor(pair_meta[[condition_col]]))
+        complete_units <- pair_meta %>%
+          mutate(.row = rownames(pair_meta)) %>%
+          group_by(.data[[paired_by]]) %>%
+          filter(all(c(numerator, denominator) %in% as.character(.data[[condition_col]]))) %>%
+          pull(.row)
+        pair_meta <- pair_meta[complete_units, , drop = FALSE]
+        pair_meta[[condition_col]] <- droplevels(factor(pair_meta[[condition_col]]))
+        pair_meta[[paired_by]] <- droplevels(factor(pair_meta[[paired_by]]))
+        n_replicates <- n_distinct(pair_meta[[paired_by]])
+        if (n_replicates < min_replicates) {
+          stop("only ", n_replicates, " complete pairs; need ", min_replicates)
+        }
+        pair_counts <- counts[rownames(pair_meta), , drop = FALSE]
+        fit <- fit_wald(pair_counts, pair_meta, condition_col, paired_by)
+        fit_meta <- pair_meta
+      } else {
+        if (is.null(shared_fit) ||
+            !all(c(numerator, denominator) %in% levels(shared_meta[[condition_col]]))) {
+          stop("one or both levels have fewer than ", min_replicates, " independent samples")
+        }
+        fit <- shared_fit
+        fit_meta <- shared_meta
+      }
 
-      write.table(res_df, file.path(pairwise_dir, paste0(contrast_name, ".tsv")),
+      result <- results(
+        fit$dds,
+        contrast = c(condition_col, numerator, denominator),
+        alpha = padj_thr
+      )
+      result_df <- as.data.frame(result) %>%
+        rownames_to_column("gene") %>% arrange(desc(log2FoldChange))
+      output_name <- safe_name(contrast_name)
+      write.table(result_df, file.path(pairwise_dir, paste0(output_name, ".tsv")),
                   sep = "\t", quote = FALSE, row.names = FALSE)
 
-      n_sig  <- sum(res_df$padj < padj_thr, na.rm = TRUE)
-      n_up   <- sum(res_df$padj < padj_thr & res_df$log2FoldChange > 0, na.rm = TRUE)
-      n_down <- sum(res_df$padj < padj_thr & res_df$log2FoldChange < 0, na.rm = TRUE)
-      message("      ", n_sig, " sig (up:", n_up, ", down:", n_down, ")")
-
+      n_sig <- sum(result_df$padj < padj_thr, na.rm = TRUE)
+      n_up <- sum(result_df$padj < padj_thr & result_df$log2FoldChange > 0, na.rm = TRUE)
+      n_down <- sum(result_df$padj < padj_thr & result_df$log2FoldChange < 0, na.rm = TRUE)
       summary_rows[[contrast_name]] <- tibble(
-        contrast = contrast_name, n_tested = nrow(res_df),
-        n_significant = n_sig, n_up = n_up, n_down = n_down
+        contrast = contrast_name, numerator = numerator, denominator = denominator,
+        n_tested = nrow(result_df), n_significant = n_sig, n_up = n_up, n_down = n_down,
+        error = NA_character_
       )
-
-      # Custom volcano plot (grey=NS, red=up, blue=down, top genes labelled)
-      tryCatch({
-        volc_df <- res_df %>%
-          filter(!is.na(padj) & !is.na(log2FoldChange)) %>%
-          mutate(
-            sig_group = case_when(
-              padj >= padj_thr ~ "NS",
-              log2FoldChange > lfc_thr ~ "Up",
-              log2FoldChange < -lfc_thr ~ "Down",
-              TRUE ~ "NS"
-            ),
-            neg_log10p = -log10(pmax(padj, 1e-300))
-          )
-
-        # Top genes to label
-        top_up <- volc_df %>% filter(sig_group == "Up") %>%
-          arrange(desc(log2FoldChange)) %>% head(10)
-        top_down <- volc_df %>% filter(sig_group == "Down") %>%
-          arrange(log2FoldChange) %>% head(10)
-        label_genes <- bind_rows(top_up, top_down)
-
-        p <- ggplot(volc_df, aes(x = log2FoldChange, y = neg_log10p, color = sig_group)) +
-          geom_point(size = 0.8, alpha = 0.6) +
-          scale_color_manual(values = c("NS" = "grey70", "Up" = "#e41a1c", "Down" = "#377eb8"),
-                             name = "") +
-          geom_hline(yintercept = -log10(padj_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
-          geom_vline(xintercept = c(-lfc_thr, lfc_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
-          ggrepel::geom_text_repel(
-            data = label_genes, aes(label = gene),
-            size = 2.5, max.overlaps = 20, color = "black",
-            segment.size = 0.2, segment.color = "grey50"
-          ) +
-          labs(title = contrast_name, subtitle = paste0(prefix, " — Wald test"),
-               x = "log2 Fold Change", y = "-log10(padj)") +
-          theme_bw() +
-          theme(legend.position = "right")
-
-        ggsave(file.path(pairwise_dir, paste0("volcano_", contrast_name, ".png")),
-               plot = p, width = 9, height = 7, dpi = res_dpi)
-      }, error = function(e) {
-        message("      Volcano failed: ", conditionMessage(e))
-      })
-
-      # ComplexHeatmap
-      tryCatch({
-        sig_genes <- res_df %>% filter(padj < padj_thr)
-        top_up   <- sig_genes %>% filter(log2FoldChange > 0) %>% head(de_n_genes) %>% pull(gene)
-        top_down <- sig_genes %>% filter(log2FoldChange < 0) %>% head(de_n_genes) %>% pull(gene)
-        top_genes <- c(top_up, top_down)
-        top_genes <- top_genes[top_genes %in% rownames(assay(vsd))]
-
-        if (length(top_genes) >= 2) {
-          mat <- assay(vsd)[top_genes, , drop = FALSE]
-          mat_scaled <- t(scale(t(mat)))
-
-          draw_complex_heatmaps(
-            mat_scaled, meta, condition_col, top_genes,
-            contrast_name, pairwise_dir, conditions, region_colors
-          )
-        }
-      }, error = function(e) {
-        message("      Heatmap failed: ", conditionMessage(e))
-      })
-
+      write_volcano(result_df, contrast_name, prefix, pairwise_dir)
+      write_de_heatmap(result_df, fit$vsd, fit_meta, condition_col, contrast_name, pairwise_dir)
     }, error = function(e) {
-      message("      Wald test failed: ", conditionMessage(e))
-      summary_rows[[contrast_name]] <- tibble(
-        contrast = contrast_name, n_tested = 0,
-        n_significant = 0, n_up = 0, n_down = 0, error = conditionMessage(e)
+      message("      Contrast skipped: ", conditionMessage(e))
+      summary_rows[[contrast_name]] <<- tibble(
+        contrast = contrast_name, numerator = numerator, denominator = denominator,
+        n_tested = 0L, n_significant = 0L, n_up = 0L, n_down = 0L,
+        error = conditionMessage(e)
       )
     })
   }
@@ -445,389 +534,31 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
       write.table(file.path(out_base, "pairwise_summary.tsv"),
                   sep = "\t", quote = FALSE, row.names = FALSE)
   }
-
-  # ── DEGpatterns ────────────────────────────────────────────────────────
-  if (!is.null(dds_lrt)) {
-    tryCatch({
-      res_lrt_all <- results(dds_lrt)
-      sig_genes <- rownames(res_lrt_all)[which(res_lrt_all$padj < padj_thr)]
-
-      if (length(sig_genes) >= 10) {
-        message("    DEGpatterns on ", length(sig_genes), " LRT-significant genes …")
-        sig_mat <- assay(vsd)[sig_genes, , drop = FALSE]
-
-        deg_dir <- file.path(out_base, "DEGpatterns")
-        dir.create(deg_dir, recursive = TRUE, showWarnings = FALSE)
-
-        clusters <- degPatterns(
-          sig_mat, metadata = meta, time = condition_col, plot = FALSE
-        )
-
-        if (!is.null(clusters$df)) {
-          # ── Remap cluster ids to a contiguous 1..N (degPatterns skips ids)
-          norm <- clusters$normalized
-          old_levels <- sort(unique(norm$cluster))
-          remap <- setNames(seq_along(old_levels), as.character(old_levels))
-          # keep cluster as INTEGER — degPlotCluster joins on it internally and a
-          # factor here triggers "Can't join <factor> with <integer>".
-          norm$cluster <- as.integer(remap[as.character(norm$cluster)])
-
-          cluster_df <- clusters$df
-          cluster_df$cluster <- as.integer(remap[as.character(cluster_df$cluster)])
-          cluster_df <- cluster_df %>% arrange(cluster, genes)
-
-          # Base plot from degPlotCluster (now facetted by 1..N)
-          p <- degPlotCluster(
-            norm, time = condition_col, color = condition_col, points = TRUE
-          )
-
-          # Apply custom colors if available
-          if (length(region_colors) > 0) {
-            p <- p +
-              ggplot2::aes(col = .data[[condition_col]]) +
-              ggplot2::scale_color_manual(values = region_colors)
-          }
-
-          # Loess trend + rotated x labels
-          p <- p +
-            ggplot2::geom_smooth(
-              mapping = ggplot2::aes(x = .data[[condition_col]], y = value, group = 1),
-              method = "loess", color = "black", se = FALSE, linewidth = 1.2
-            ) +
-            ggplot2::theme(
-              axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5)
-            )
-
-          ggsave(file.path(deg_dir, "DEGpatterns_groups.png"),   # renamed
-                 plot = p, width = 14, height = 10, dpi = max(res_dpi, 500L))
-          message("    DEGpatterns: ", length(old_levels), " groups (renumbered 1..",
-                  length(old_levels), ")")
-
-          # Gene groups TSV — use the remapped, contiguous group numbers
-          tryCatch({
-            grouped_genes <- split(cluster_df$genes,
-                                   paste0("group_", cluster_df$cluster))
-            max_len <- max(sapply(grouped_genes, length))
-            gene_df <- as.data.frame(do.call(cbind, lapply(grouped_genes, function(x) {
-              c(x, rep("", max_len - length(x)))
-            })))
-            colnames(gene_df) <- gsub("[^A-Za-z0-9_]", "_", colnames(gene_df))
-            colnames(gene_df) <- gsub("_+", "_", colnames(gene_df))
-            colnames(gene_df) <- gsub("_$", "", colnames(gene_df))
-            write.table(gene_df, file.path(deg_dir, "gene_groups.tsv"),
-                        sep = "\t", quote = FALSE, row.names = FALSE)
-            message("    Gene groups saved: ", ncol(gene_df), " groups")
-          }, error = function(e) {
-            message("    Gene groups export failed: ", conditionMessage(e))
-          })
-
-          # ── Per-group heatmaps: the genes of every DEGpatterns group ─────
-          # Reuses the DE heatmap helper (unsplit + region-split, z-scored vsd),
-          # written alongside the group plots in DEGpatterns/.
-          tryCatch({
-            for (g in sort(unique(cluster_df$cluster))) {
-              genes_g <- cluster_df$genes[cluster_df$cluster == g]
-              genes_g <- genes_g[genes_g %in% rownames(assay(vsd))]
-              if (length(genes_g) >= 2) {
-                mat_g_scaled <- t(scale(t(assay(vsd)[genes_g, , drop = FALSE])))
-                draw_complex_heatmaps(
-                  mat_g_scaled, meta, condition_col, genes_g,
-                  paste0("group_", g), deg_dir, conditions, region_colors
-                )
-              }
-            }
-            message("    DEGpatterns per-group heatmaps written")
-          }, error = function(e) {
-            message("    DEGpatterns per-group heatmaps failed: ", conditionMessage(e))
-          })
-        }
-      } else {
-        message("    Too few LRT-significant genes for DEGpatterns (", length(sig_genes), ")")
-      }
-    }, error = function(e) {
-      message("    DEGpatterns failed: ", conditionMessage(e))
-    })
-  }
-
-  # ── One-vs-rest comparisons + unique marker identification ──────────
-  message("    One-vs-rest comparisons …")
-  ovr_dir <- file.path(out_base, "one_vs_rest")
-  dir.create(ovr_dir, recursive = TRUE, showWarnings = FALSE)
-
-  ovr_results <- list()  # store results for cross-comparison
-
-  for (focal in conditions) {
-    focal_safe <- gsub("[^A-Za-z0-9_]", "_", focal)
-    message("      ", focal, " vs rest")
-
-    tryCatch({
-      # Create binary factor: focal vs rest
-      meta_ovr <- meta
-      meta_ovr[["ovr_group"]] <- ifelse(meta_ovr[[condition_col]] == focal, focal, "rest")
-      meta_ovr[["ovr_group"]] <- factor(meta_ovr[["ovr_group"]], levels = c("rest", focal))
-
-      dds_ovr <- DESeqDataSetFromMatrix(
-        countData = counts_t, colData = meta_ovr, design = ~ ovr_group
-      )
-      dds_ovr <- DESeq(dds_ovr, test = "Wald")
-      res_ovr <- results(dds_ovr, contrast = c("ovr_group", focal, "rest"))
-
-      res_ovr_df <- as.data.frame(res_ovr) %>%
-        rownames_to_column("gene") %>%
-        arrange(desc(log2FoldChange))
-
-      write.table(res_ovr_df, file.path(ovr_dir, paste0(focal_safe, "_vs_rest.tsv")),
-                  sep = "\t", quote = FALSE, row.names = FALSE)
-
-      n_sig <- sum(res_ovr_df$padj < padj_thr, na.rm = TRUE)
-      n_up  <- sum(res_ovr_df$padj < padj_thr & res_ovr_df$log2FoldChange > 0, na.rm = TRUE)
-      message("      ", n_sig, " sig (", n_up, " up)")
-
-      # Store for cross-comparison
-      ovr_results[[focal]] <- res_ovr_df
-
-      # Volcano plot (same style as pairwise)
-      tryCatch({
-        volc_df <- res_ovr_df %>%
-          filter(!is.na(padj) & !is.na(log2FoldChange)) %>%
-          mutate(
-            sig_group = case_when(
-              padj >= padj_thr ~ "NS",
-              log2FoldChange > lfc_thr ~ "Up",
-              log2FoldChange < -lfc_thr ~ "Down",
-              TRUE ~ "NS"
-            ),
-            neg_log10p = -log10(pmax(padj, 1e-300))
-          )
-        top_up <- volc_df %>% filter(sig_group == "Up") %>% arrange(desc(log2FoldChange)) %>% head(10)
-        top_down <- volc_df %>% filter(sig_group == "Down") %>% arrange(log2FoldChange) %>% head(10)
-        label_genes <- bind_rows(top_up, top_down)
-
-        p <- ggplot(volc_df, aes(x = log2FoldChange, y = neg_log10p, color = sig_group)) +
-          geom_point(size = 0.8, alpha = 0.6) +
-          scale_color_manual(values = c("NS" = "grey70", "Up" = "#e41a1c", "Down" = "#377eb8"), name = "") +
-          geom_hline(yintercept = -log10(padj_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
-          geom_vline(xintercept = c(-lfc_thr, lfc_thr), linetype = "dashed", color = "grey40", linewidth = 0.3) +
-          ggrepel::geom_text_repel(data = label_genes, aes(label = gene), size = 2.5,
-                                    max.overlaps = 20, color = "black",
-                                    segment.size = 0.2, segment.color = "grey50") +
-          labs(title = paste0(focal, " vs rest"), x = "log2 Fold Change", y = "-log10(padj)") +
-          theme_bw() + theme(legend.position = "right")
-
-        ggsave(file.path(ovr_dir, paste0("volcano_", focal_safe, "_vs_rest.png")),
-               plot = p, width = 9, height = 7, dpi = res_dpi)
-      }, error = function(e) {
-        message("      OVR volcano failed: ", conditionMessage(e))
-      })
-
-      # Top DE gene heatmap
-      tryCatch({
-        sig_genes_ovr <- res_ovr_df %>% filter(padj < padj_thr)
-        top_up_genes   <- sig_genes_ovr %>% filter(log2FoldChange > 0) %>% head(de_n_genes) %>% pull(gene)
-        top_down_genes <- sig_genes_ovr %>% filter(log2FoldChange < 0) %>% head(de_n_genes) %>% pull(gene)
-        top_genes_ovr <- c(top_up_genes, top_down_genes)
-        top_genes_ovr <- top_genes_ovr[top_genes_ovr %in% rownames(assay(vsd))]
-
-        if (length(top_genes_ovr) >= 2) {
-          draw_complex_heatmaps(
-            t(scale(t(assay(vsd)[top_genes_ovr, , drop = FALSE]))),
-            meta, condition_col, top_genes_ovr,
-            paste0(focal_safe, "_vs_rest"), ovr_dir, conditions, region_colors
-          )
-        }
-      }, error = function(e) {
-        message("      OVR heatmap failed: ", conditionMessage(e))
-      })
-
-    }, error = function(e) {
-      message("      OVR test failed for '", focal, "': ", conditionMessage(e))
-    })
-  }
-
-  # ── Unique marker identification ───────────────────────────────────
-  # A gene is a unique marker for level X if it is:
-  # - significantly UP in X vs rest (padj < thr, log2FC > lfc_thr)
-  # - NOT significantly UP in any other level vs rest
-  if (length(ovr_results) >= 2) {
-    message("    Identifying unique markers …")
-    tryCatch({
-      # For each level, get the set of significantly upregulated genes
-      up_gene_sets <- lapply(ovr_results, function(df) {
-        df %>% filter(padj < padj_thr & log2FoldChange > lfc_thr) %>% pull(gene)
-      })
-
-      unique_markers <- list()
-      for (lvl in names(up_gene_sets)) {
-        others <- setdiff(names(up_gene_sets), lvl)
-        other_genes <- unique(unlist(up_gene_sets[others]))
-        unique_to_lvl <- setdiff(up_gene_sets[[lvl]], other_genes)
-
-        if (length(unique_to_lvl) > 0) {
-          # Get the DE stats for these genes
-          lvl_df <- ovr_results[[lvl]] %>%
-            filter(gene %in% unique_to_lvl) %>%
-            arrange(desc(log2FoldChange))
-          unique_markers[[lvl]] <- lvl_df
-          message("      ", lvl, ": ", nrow(lvl_df), " unique markers")
-        } else {
-          message("      ", lvl, ": 0 unique markers")
-        }
-      }
-
-      # Save as combined TSV
-      if (length(unique_markers) > 0) {
-        all_markers <- bind_rows(unique_markers, .id = "level") %>%
-          arrange(level, desc(log2FoldChange))
-        write.table(all_markers, file.path(ovr_dir, "unique_markers.tsv"),
-                    sep = "\t", quote = FALSE, row.names = FALSE)
-
-        # Also save as column-format (one column per level, padded)
-        max_len <- max(sapply(unique_markers, nrow))
-        marker_cols <- lapply(unique_markers, function(df) {
-          c(df$gene, rep("", max_len - nrow(df)))
-        })
-        marker_df <- as.data.frame(marker_cols)
-        colnames(marker_df) <- gsub("[^A-Za-z0-9_]", "_", colnames(marker_df))
-        write.table(marker_df, file.path(ovr_dir, "unique_markers_by_level.tsv"),
-                    sep = "\t", quote = FALSE, row.names = FALSE)
-      }
-
-      # Summary barplot: number of unique markers per level
-      if (length(unique_markers) > 0) {
-        counts_bar <- tibble(
-          level = factor(names(unique_markers), levels = conditions),
-          n_markers = sapply(unique_markers, nrow)
-        )
-        p <- ggplot(counts_bar, aes(x = level, y = n_markers, fill = level)) +
-          geom_col(show.legend = FALSE) +
-          geom_text(aes(label = n_markers), vjust = -0.3, size = 3) +
-          labs(title = "Unique upregulated markers per level",
-               x = "", y = "Number of unique markers") +
-          theme_bw() +
-          theme(axis.text.x = element_text(angle = 45, hjust = 1))
-        ggsave(file.path(ovr_dir, "unique_markers_barplot.png"),
-               plot = p, width = max(6, length(unique_markers) * 1.2), height = 5, dpi = res_dpi)
-      }
-
-      # Heatmap: ALL unique marker genes (rows), samples (cols), row-split by
-      # the level each gene is unique to. May be tall — that is intended.
-      if (length(unique_markers) > 0) {
-        tryCatch({
-          # gene -> level map, preserving level order in `conditions`
-          gene_level <- unlist(lapply(names(unique_markers), function(lvl)
-            setNames(rep(lvl, nrow(unique_markers[[lvl]])),
-                     unique_markers[[lvl]]$gene)))
-          genes_all <- names(gene_level)
-          genes_all <- genes_all[genes_all %in% rownames(assay(vsd))]
-
-          if (length(genes_all) >= 2) {
-            mat <- assay(vsd)[genes_all, , drop = FALSE]
-            mat_scaled <- t(scale(t(mat)))
-
-            # order columns by region level
-            col_ord <- order(factor(meta[[condition_col]],
-                                    levels = if (length(conditions) > 0) conditions
-                                             else unique(meta[[condition_col]])))
-            mat_scaled <- mat_scaled[, col_ord, drop = FALSE]
-            meta_ord   <- meta[col_ord, , drop = FALSE]
-
-            # drop zero-variance genes (all-NaN rows after scaling)
-            finite_rows <- apply(mat_scaled, 1, function(z) all(is.finite(z)))
-            mat_scaled  <- mat_scaled[finite_rows, , drop = FALSE]
-
-            if (nrow(mat_scaled) >= 2) {
-              row_split <- factor(gene_level[rownames(mat_scaled)],
-                                  levels = if (length(conditions) > 0) conditions
-                                           else unique(gene_level))
-
-              col_anno <- build_top_annotation(meta_ord, condition_col, region_colors)
-
-              col_fun  <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
-              n_row    <- nrow(mat_scaled); n_col <- ncol(mat_scaled)
-              res_png  <- res_dpi
-              extra_in <- 3.0                              # title + anno + legend
-              max_px   <- 30000                            # png/cairo device ceiling
-              row_mm   <- 3                                # desired mm per gene row
-              body_mm  <- max(n_row * row_mm, 40)
-              dev_h_px <- round((body_mm / 25.4 + extra_in) * res_png)
-              if (dev_h_px > max_px) {                      # too tall for the device:
-                dev_h_px <- max_px                          # cap and shrink rows to fit
-                body_mm  <- (max_px / res_png - extra_in) * 25.4
-              }
-              row_fs   <- if (n_row > 400) 3 else 5         # smaller font when dense
-
-              ht_uniq <- Heatmap(
-                mat_scaled, name = "Z-score", col = col_fun,
-                top_annotation = col_anno,
-                height = unit(body_mm, "mm"),
-                row_split = row_split,
-                cluster_row_slices = FALSE,
-                cluster_columns = FALSE,
-                cluster_rows = TRUE,
-                show_row_names = (n_row <= 1500),           # labels unreadable beyond this
-                show_column_names = TRUE,
-                row_names_gp = gpar(fontsize = row_fs),
-                column_names_gp = gpar(fontsize = 7),
-                row_title_gp = gpar(fontsize = 8),
-                column_title = "Unique markers per level (all genes)",
-                heatmap_legend_param = list(title = "Z-score")
-              )
-              png(file.path(ovr_dir, "unique_markers_heatmap.png"),
-                  width = round(max(900, n_col * 55) * px_scale),
-                  height = dev_h_px, res = res_png)
-              draw(ht_uniq, merge_legend = TRUE)
-              dev.off()
-              message("    Unique markers heatmap: ", n_row, " genes")
-            }
-          }
-        }, error = function(e) {
-          message("    Unique markers heatmap failed: ", conditionMessage(e))
-        })
-      }
-
-    }, error = function(e) {
-      message("    Unique marker identification failed: ", conditionMessage(e))
-    })
-  }
-
-  return(summary_rows)
+  invisible(summary_rows)
 }
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
 manifest_file <- file.path(agg_dir, "manifest.tsv")
-
 if (!file.exists(manifest_file)) {
-  message("No manifest.tsv found.")
   writeLines("No pseudobulk matrices found.", file.path(results_dir, "SKIPPED_no_manifest.txt"))
-  if (exists("log_err_con")) { sink(type = "message"); close(log_err_con) }
-  if (exists("log_out_con")) { sink(); close(log_out_con) }
-  quit(save = "no", status = 0)
+} else {
+  manifest <- read.delim(manifest_file)
+  message("Manifest: ", nrow(manifest), " subgroup(s)")
+  for (index in seq_len(nrow(manifest))) {
+    row <- manifest[index, ]
+    prefix <- row$prefix
+    out_base <- if (prefix == "pooled") results_dir else file.path(results_dir, prefix)
+    tryCatch(
+      run_de_for_prefix(prefix, row$condition_col, row$sample_col, out_base),
+      error = function(e) {
+        message("  FAILED for '", prefix, "': ", conditionMessage(e))
+        dir.create(out_base, recursive = TRUE, showWarnings = FALSE)
+        writeLines(conditionMessage(e), file.path(out_base, "ERROR.txt"))
+      }
+    )
+  }
 }
 
-manifest <- read.delim(manifest_file)
-message("Manifest: ", nrow(manifest), " subgroups")
-
-for (i in seq_len(nrow(manifest))) {
-  row <- manifest[i, ]
-  prefix        <- row$prefix
-  condition_col <- row$condition_col
-  sample_col    <- row$sample_col
-
-  message("\n--- Processing: ", prefix, " ---")
-
-  out_base <- if (prefix == "pooled") results_dir else file.path(results_dir, prefix)
-  tryCatch(
-    run_de_for_prefix(prefix, condition_col, sample_col, out_base),
-    error = function(e) {
-      message("  FAILED for '", prefix, "': ", conditionMessage(e))
-      dir.create(out_base, recursive = TRUE, showWarnings = FALSE)
-      writeLines(conditionMessage(e), file.path(out_base, "ERROR.txt"))
-    }
-  )
-}
-
-message("\n=== Pseudobulk DE complete ===")
-
+message("=== Pseudobulk DE complete ===")
 if (exists("log_err_con")) { sink(type = "message"); close(log_err_con) }
 if (exists("log_out_con")) { sink(); close(log_out_con) }

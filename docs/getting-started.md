@@ -115,7 +115,14 @@ snakemake run_postprocessing --sdm conda  # annotate → integrate → DE → ne
 
 This command will produce the integrated object, a per-sample report `sample_report.pdf` to share with collaborators, pseudobulk DE (*optional*, but recommended), neighbourhood/co-occurrence and optional subcompartment re-clustering (for cell subtyping exploration).
 
-## 7. Explore genes and signatures
+## 7. Differential expression
+
+SpaceBlocks performs differential expression on raw counts summed into pseudobulk observations. Comparison variables come from the `core_samples.tsv` sample sheet and may define a single contrast (for example, treated versus untreated), combined categorical groups (for example, phenotype and treatment), or a multilevel variable (for example, cancer stage).
+Importantly, combined groups are compared directly, since SpaceBlocks does not currently fit statistical interaction terms. An optional omnibus LRT can test all retained levels of a multilevel variable, and the R package DEGreport provides summarization of gene expression trends across levels.
+
+Independent samples should omit `paired_by`. When comparison levels are matched within the same patient or spatial sample, `paired_by` identifies that repeated unit. For each explicit pairwise contrast, only complete pairs are tested. See the [pseudobulk experimental-design configuration](configuration.md#pseudobulk-experimental-designs) for independent, combined-group, multilevel, and paired examples.
+
+## 8. Explore genes and signatures
 
 Once the integrated file is available, you may explore any gene or gene set of interest (generated in the results, or completely external).
 
@@ -125,18 +132,18 @@ List the genes / gene sets in the `gene_exploration.queries` TSV; integrated and
 snakemake explore_genes --sdm conda       # AUCell scoring + spatial/dotplot composites
 ```
 
-## 8. Reproducibility
+## 9. Reproducibility
 
-### 8.1 Recommendations at a glance
+### 9.1 Recommendations at a glance
 
 - **Colours** are consistent across every plot — set them once in `config.yaml`
   ([color scale configuration](configuration.md#4-color-scale-customization)).
 - **Reproducibility**: to close the UMAP/Leiden non-determinism gap across machines, share
   pre-computed clusters/annotations or a pre-built contract h5ad (`mode: decoupled`) — see
   [reproducibility configuration](configuration.md#6-advanced-reproducibility-and-reusability).
-- Make sure to back up the intermediate files (see section 7.2) and to [save a locked copy your environment versions](environments.md).
+- Make sure to back up the intermediate files (see section 9.2) and to [save a locked copy of your environment versions](environments.md).
 
-### 8.2 Files to ensure reproducibility
+### 9.2 Files to ensure reproducibility
 
 To reproduce your full run, make sure to back up:
 1. The design files (`config/core_samples.tsv`; `visiumhd_samples.csv`).
@@ -145,7 +152,7 @@ To reproduce your full run, make sure to back up:
 4. The annotated metadata, generated during the postprocessing. Optionally, if using manual annotation, the TSV mapping cluster-to-cell type equivalences.
 5. The environment versions (recommended for publication).
 
-## 9. Example runs
+## 10. Example runs
 
 You may check our [public data end-to-end example runs](demos.md) to see how a full run looks.
 

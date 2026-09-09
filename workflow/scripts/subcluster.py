@@ -35,6 +35,7 @@ except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
 from composition_barplots import save_stacked_composition, find_niche_column, build_niche_palette
+from plotting_legends import category_labels, grid_figure, move_legend_to_axis
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -66,10 +67,21 @@ def _resolution_range(rmin, rmax, step):
 
 def split_umap(adata, split_by, ncol=None, nrow=None, **kwargs):
     categories = adata.obs[split_by].cat.categories
-    ncol = ncol or len(categories)
+    ncol = ncol or min(4, len(categories))
     nrow = nrow or int(np.ceil(len(categories) / ncol))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(5 * ncol, 4 * nrow))
-    axs = np.atleast_1d(axs).flatten()
+    color_key = kwargs.get("color")
+    if isinstance(color_key, (list, tuple)):
+        color_key = color_key[0] if color_key else None
+    labels = category_labels(adata, color_key)
+    fig, axes, legend_ax = grid_figure(
+        nrow,
+        ncol,
+        labels,
+        cell_width=5,
+        cell_height=4,
+        max_legend_columns=min(8, 2 * ncol),
+    )
+    axs = axes.ravel()
     for i, cat in enumerate(categories):
         sc.pl.umap(
             adata[adata.obs[split_by] == cat],
@@ -77,7 +89,12 @@ def split_umap(adata, split_by, ncol=None, nrow=None, **kwargs):
         )
     for j in range(i + 1, len(axs)):
         axs[j].set_visible(False)
-    plt.tight_layout()
+    move_legend_to_axis(
+        axs[:len(categories)],
+        legend_ax,
+        title=str(color_key).replace("_", " ").title() if color_key else None,
+        max_columns=min(8, 2 * ncol),
+    )
 
 
 def recalculate_qc_metrics(adata):
@@ -318,7 +335,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
     qc_cols = [c for c in ["n_genes_by_counts", "total_counts", "pct_counts_mt", "pct_counts_hb"]
                if c in adata.obs.columns]
     if qc_cols:
-        sc.pl.umap(adata, color=qc_cols, size=2, wspace=0.25, frameon=False)
+        sc.pl.umap(adata, color=qc_cols, size=UMAP_POINT_SIZE, wspace=0.25, frameon=False)
         plt.savefig(os.path.join(qc_dir, "QC_UMAPs.png"), dpi=DPI, bbox_inches="tight")
         plt.close()
 
@@ -358,21 +375,21 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                 adata.uns[f"{annot_col}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
     for res, key in zip(resolutions, leiden_keys):
-        sc.pl.umap(adata, color=[key], size=2, wspace=0.25, frameon=False,
+        sc.pl.umap(adata, color=[key], size=UMAP_POINT_SIZE, wspace=0.25, frameon=False,
                    title=f"Leiden {res}")
         plt.savefig(os.path.join(umap_dir, f"UMAP_clusters_res{res}.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
 
     if sample_col:
-        sc.pl.umap(adata, color=[sample_col], size=2, wspace=0.25, frameon=False,
+        sc.pl.umap(adata, color=[sample_col], size=UMAP_POINT_SIZE, wspace=0.25, frameon=False,
                    title="By sample")
         plt.savefig(os.path.join(umap_dir, "UMAP_by_sample.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
 
     if annot_col in adata.obs.columns:
-        sc.pl.umap(adata, color=[annot_col], size=2, wspace=0.25, frameon=False,
+        sc.pl.umap(adata, color=[annot_col], size=UMAP_POINT_SIZE, wspace=0.25, frameon=False,
                    title=f"Original annotation ({annot_col})")
         plt.savefig(os.path.join(umap_dir, f"UMAP_by_{annot_col}.png"),
                     dpi=DPI, bbox_inches="tight")
@@ -391,7 +408,8 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
             adata.obs["region_annotation"].astype(str), categories=ordered)
         adata.uns["region_annotation_colors"] = [REGION_COLORS.get(str(c), "#cccccc")
                                                  for c in ordered]
-        sc.pl.umap(adata, color=["region_annotation"], size=2, wspace=0.25, frameon=False,
+        sc.pl.umap(adata, color=["region_annotation"], size=UMAP_POINT_SIZE,
+                   wspace=0.25, frameon=False,
                    title="By region")
         plt.savefig(os.path.join(umap_dir, "UMAP_by_region.png"),
                     dpi=DPI, bbox_inches="tight")
@@ -405,7 +423,8 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                 cats = adata.obs[_dc].cat.categories
                 pal = sample_colors.get(_dc, {}) if isinstance(sample_colors, dict) else {}
                 adata.uns[f"{_dc}_colors"] = [pal.get(str(c), "#cccccc") for c in cats]
-                sc.pl.umap(adata, color=[_dc], size=2, wspace=0.25, frameon=False,
+                sc.pl.umap(adata, color=[_dc], size=UMAP_POINT_SIZE,
+                           wspace=0.25, frameon=False,
                            title=f"By {_dc}")
                 plt.savefig(os.path.join(umap_dir, f"UMAP_by_{_dc}.png"),
                             dpi=DPI, bbox_inches="tight")
@@ -423,7 +442,8 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
                      if isinstance(ANNOTATION_COLORS, dict) else {})
             _npal = build_niche_palette(_ncats, _ncfg)
             adata.uns[f"{_niche_col}_colors"] = [_npal.get(str(c), "#cccccc") for c in _ncats]
-            sc.pl.umap(adata, color=[_niche_col], size=2, wspace=0.25, frameon=False,
+            sc.pl.umap(adata, color=[_niche_col], size=UMAP_POINT_SIZE,
+                       wspace=0.25, frameon=False,
                        title="By spatial niche")
             plt.savefig(os.path.join(umap_dir, "UMAP_by_spatial_niche.png"),
                         dpi=DPI, bbox_inches="tight")
@@ -440,7 +460,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
         try:
             adata.obs[sample_col] = adata.obs[sample_col].astype("category")
             split_umap(adata, color=split_leiden_key, split_by=sample_col,
-                       size=10, ncol=4)
+                       size=max(UMAP_POINT_SIZE, 10.0), ncol=4)
             plt.savefig(os.path.join(umap_dir, "UMAP_split_by_sample.png"),
                         dpi=DPI, bbox_inches="tight")
             plt.close()
@@ -450,7 +470,7 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
     if has_regions:
         try:
             split_umap(adata, color=split_leiden_key, split_by="region_annotation",
-                       size=10, ncol=3)
+                       size=max(UMAP_POINT_SIZE, 10.0), ncol=3)
             plt.savefig(os.path.join(umap_dir, "UMAP_split_by_region.png"),
                         dpi=DPI, bbox_inches="tight")
             plt.close()
@@ -503,6 +523,7 @@ ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS  = snakemake.params.region_colors
 REGION_LEVELS  = list(getattr(snakemake.params, "region_levels", []) or [])
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
 EXTRA_ANNOT_COLUMNS = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
 SAMPLE_COLORS  = getattr(snakemake.params, "sample_colors", {}) or {}
 sub_dir        = str(snakemake.output.sub_dir)

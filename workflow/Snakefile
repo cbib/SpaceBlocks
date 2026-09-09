@@ -9,7 +9,9 @@ directly below; helper functions live in rules/common.smk.
 
 import glob
 import os
+import re
 import sys
+from itertools import combinations
 import pandas as pd
 from snakemake.utils import validate, min_version
 
@@ -208,14 +210,37 @@ _ANNOT_TYPE_TO_COL = {
 DEFAULT_ANNOT_COL = _ANNOT_TYPE_TO_COL.get(PRIMARY_ANNOT_TYPE, "cell_type_tsv")
 ANNOT_TYPES = list(config.get("annotation_types") or [PRIMARY_ANNOT_TYPE])
 
-ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"])
+_PSEUDOBULK_AGGREGATIONS = {
+    "all_cells",
+    "by_celltype",
+    "by_region",
+    "by_celltype_region",
+}
+
+
+PSEUDOBULK = ANALYSIS.get("pseudobulk", {}) or {}
+_configured_pseudobulk_analyses = PSEUDOBULK.get("analyses")
+if _configured_pseudobulk_analyses:
+    PSEUDOBULK_ANALYSES = [
+        _validate_pseudobulk_analysis(spec) for spec in _configured_pseudobulk_analyses
+    ]
+else:
+    PSEUDOBULK_ANALYSES = [
+        _validate_pseudobulk_analysis(spec) for spec in _legacy_pseudobulk_analyses()
+    ]
+
+PSEUDOBULK_ANALYSIS_BY_NAME = {spec["name"]: spec for spec in PSEUDOBULK_ANALYSES}
+if len(PSEUDOBULK_ANALYSIS_BY_NAME) != len(PSEUDOBULK_ANALYSES):
+    sys.exit("[config error] analysis.pseudobulk analysis names must be unique.")
+PSEUDOBULK_ANALYSIS_NAMES = list(PSEUDOBULK_ANALYSIS_BY_NAME)
 
 # Pseudobulk DESeq2 DE is OPTIONAL and on by default
 RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 
 RUN_LEIDEN_ANALYSIS = bool(ANALYSIS.get("run_leiden_analysis", True))
 
-# External annotation: fail fast if enabled but the column is not present in every sample's metadata
+# External annotation: validate metadata headers now, or decoupled h5ad obs per sample
+# in validate_input when no external metadata directory is configured.
 check_external_annotation()
 
 # Consistency: analysing the external annotation downstream requires it to be produced.
@@ -357,7 +382,7 @@ rule run_postprocessing:
             expand(
                 rules.pseudobulk_de.output.results_dir,
                 annot_type=ANNOT_TYPES,
-                analysis_level=ANALYSIS_LEVELS,
+                analysis_name=PSEUDOBULK_ANALYSIS_NAMES,
             )
             if RUN_DE
             else []

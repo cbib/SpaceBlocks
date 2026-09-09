@@ -210,7 +210,8 @@ properties:
     type: ["object", "null"]
     description: >-
       core_samples.tsv columns to surface downstream as UMAP colourings, pseudobulk
-      QC panels, and DE heatmap annotation tracks. Annotation-only (no DESeq2 covariate).
+      QC panels, and DE heatmap annotation tracks. This controls plotting only;
+      sample-sheet columns may independently be selected as pseudobulk covariates.
     properties:
       columns:
         type: array
@@ -302,6 +303,32 @@ properties:
         type: boolean
         default: false
         description: Gate the optional R/DESeq2 pseudobulk_de step.
+      min_cells_per_pseudobulk:
+        type: integer
+        minimum: 1
+        default: 10
+        description: Minimum cells contributing to one retained pseudobulk observation.
+      min_counts_per_pseudobulk:
+        type: integer
+        minimum: 1
+        default: 1000
+        description: Minimum summed raw counts in one retained pseudobulk observation.
+      min_replicates:
+        type: integer
+        minimum: 2
+        default: 3
+        description: >-
+          Minimum independent samples per unpaired level, or complete pairs when
+          paired_by is configured, required to run a contrast or include an LRT level.
+      padj_threshold:
+        type: number
+        exclusiveMinimum: 0
+        maximum: 1
+        default: 0.05
+      lfc_threshold:
+        type: number
+        minimum: 0
+        default: 0.5
       run_leiden_analysis:
         type: boolean
         default: true
@@ -313,21 +340,124 @@ properties:
         type: array
         items:
           type: string
-        description: Pseudobulk analysis levels (e.g. by_region, by_celltype_region).
+          enum: ["by_region", "by_celltype_region"]
+        description: >-
+          Deprecated region-only pseudobulk configuration retained for older
+          configs. New configs should use analysis.pseudobulk.analyses.
       region_levels:
         type: array
         items:
           type: string
-        description: Ordered region names (must match region_annotation values in the data).
+        description: >-
+          Optional preferred first-to-last display order for region names in QC-sweep,
+          subcluster, and region-only pseudobulk split heatmaps. This does not filter
+          pseudobulk observations; use pseudobulk analyses' exclude_levels instead.
       region_colors:
         type: object
         additionalProperties:
           type: string
         description: region name -> hex colour.
+      pseudobulk:
+        type: object
+        additionalProperties: false
+        description: >-
+          Named pseudobulk aggregations and DE models. Each analysis defines how
+          cells are pooled, which sample metadata form the comparison group,
+          exclusions, explicit Wald contrasts, and an optional omnibus LRT.
+        required: [analyses]
+        properties:
+          analyses:
+            type: array
+            minItems: 1
+            items:
+              type: object
+              additionalProperties: false
+              required: [name, aggregation, group_by]
+              properties:
+                name:
+                  type: string
+                  pattern: "^[A-Za-z0-9_-]+$"
+                  description: Stable analysis identifier used in output paths.
+                aggregation:
+                  type: string
+                  enum: ["all_cells", "by_celltype", "by_region", "by_celltype_region"]
+                group_by:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+                  description: >-
+                    One or more obs/core_samples columns whose values define the
+                    comparison groups. Multiple columns form a combined group.
+                paired_by:
+                  type: string
+                  default: ""
+                  description: >-
+                    Optional matched-unit column, normally sample for comparisons
+                    between regions from the same sample. Empty means unpaired.
+                covariates:
+                  type: array
+                  uniqueItems: true
+                  default: []
+                  items:
+                    type: string
+                  description: Categorical sample metadata adjusted for before group_by.
+                exclude_levels:
+                  type: object
+                  default: {}
+                  additionalProperties:
+                    type: array
+                    uniqueItems: true
+                    items:
+                      type: string
+                  description: >-
+                    Column -> levels removed before aggregation. The same exclusion
+                    applies to explicit Wald contrasts and the optional LRT.
+                contrasts:
+                  type: array
+                  default: []
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [name, numerator, denominator]
+                    properties:
+                      name:
+                        type: string
+                        pattern: "^[A-Za-z0-9_-]+$"
+                      numerator:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      denominator:
+                        type: object
+                        additionalProperties:
+                          type: string
+                lrt:
+                  type: object
+                  additionalProperties: false
+                  default: {}
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                      description: >-
+                        Run an omnibus LRT across all sufficiently replicated levels
+                        remaining after exclude_levels.
       plot_dpi:
         type: integer
         minimum: 1
         description: Default figure DPI.
+      umap_point_size:
+        type: number
+        exclusiveMinimum: 0
+        default: 2
+        description: Marker size for ordinary UMAP embedding plots.
+      spatial_point_size:
+        type: number
+        exclusiveMinimum: 0
+        default: 20
+        description: Marker size for spatial maps.
 
   ingest_ref:
     type: string
@@ -371,13 +501,19 @@ properties:
         default: false
       column:
         type: string
-        description: obs/metadata column holding the external label.
+        description: >-
+          Source column holding the external label, either in
+          metadata_{sample}.tsv or, in decoupled mode without external metadata,
+          directly in the contract h5ad obs. The name is arbitrary; SpaceBlocks
+          copies it to the canonical cell_type_external obs column downstream.
       keep_unannotated:
         type: boolean
         default: true
         description: >-
           false → keep only externally-annotated cells and skip pipeline QC (external
-          labels drive QC); true → normal QC, labels overlaid at annotation.
+          labels drive QC); true → normal QC, labels overlaid at annotation and
+          cells labelled Unannotated retained. A mixed labelled/Unannotated column
+          remains available for plots; only placeholder-only columns are omitted.
 
   contract:
     type: ["object", "null"]

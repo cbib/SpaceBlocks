@@ -32,7 +32,16 @@ except NameError:                      # very old Snakemake
     _here = os.getcwd()
 sys.path.insert(0, _here)
 from composition_barplots import composition_pair, find_niche_column
-from external_metadata import normalized_labels, optional_input_path, read_cell_metadata
+from annotation_utils import (
+    normalize_annotation_labels,
+    record_active_annotation_columns,
+)
+from external_metadata import optional_input_path, read_cell_metadata
+from plotting_legends import (
+    category_labels,
+    move_legend_to_axis,
+    panel_figure,
+)
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -93,7 +102,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
 
     # UMAP
     log.info("  [%s] UMAP …", label)
-    sc.pl.umap(adata, color=[annot_key], size=2, wspace=0.25, frameon=False,
+    sc.pl.umap(adata, color=[annot_key], size=UMAP_POINT_SIZE, wspace=0.25, frameon=False,
                title=f"Cell types ({label})")
     plt.savefig(os.path.join(subdir, f"UMAP_{label}_{sample_id}.png"),
                 dpi=DPI, bbox_inches="tight")
@@ -101,7 +110,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
 
     # Spatial overview
     try:
-        sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
+        sc.pl.spatial(adata, color=annot_key, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                       title=f"Spatial – {label}", library_id=library_id)
         plt.savefig(os.path.join(subdir, f"spatial_all_{label}_{sample_id}.png"),
                     dpi=DPI, bbox_inches="tight")
@@ -119,7 +128,7 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
             lambda x, c=ct: c if x == c else "Other"
         )
         try:
-            sc.pl.spatial(adata, color="_hl", spot_size=20, frameon=False,
+            sc.pl.spatial(adata, color="_hl", spot_size=SPATIAL_POINT_SIZE, frameon=False,
                           palette={"Other": "#d3d3d3", ct: "#000000"},
                           title=ct, library_id=library_id)
             safe = ct.replace("/", "_").replace(" ", "_")
@@ -179,6 +188,8 @@ EXT_ANNOT_CFG       = snakemake.params.external_annotation
 ANNOTATION_COLORS   = snakemake.params.annotation_colors
 REGION_COLORS       = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
+UMAP_POINT_SIZE = float(getattr(snakemake.params, "umap_point_size", 2))
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 NICHE_COLUMN        = getattr(snakemake.params, "niche_column", "")
 
 adata_path     = str(snakemake.input.adata)
@@ -254,77 +265,98 @@ try:
         annot_col, resolution = find_sample_column(annot_df, sample_id)
 
         if annot_col is None:
-            log.warning("Sample '%s' not found in TSV. All cells → 'Unannotated'.", sample_id)
-            adata.obs["cell_type_tsv"] = "Unannotated"
-            Path(out_adata_path).parent.mkdir(parents=True, exist_ok=True)
-            adata.write(out_adata_path)
-            sys.exit(0)
-
-        log.info("Using column '%s' (resolution: %s)", annot_col,
-                 resolution if resolution else "not specified")
-
-        if resolution is not None:
-            leiden_key = f"leiden_{resolution.replace('.', '_')}"
+            log.warning(
+                "Sample '%s' not found in cluster_annotations TSV. "
+                "cell_type_tsv set to 'Unannotated'; continuing with any "
+                "external/ingest annotation.",
+                sample_id,
+            )
+            adata.obs["cell_type_tsv"] = pd.Categorical(
+                ["Unannotated"] * adata.n_obs
+            )
         else:
-            leiden_cols = [c for c in adata.obs.columns if c.startswith("leiden_")]
-            if leiden_cols:
-                leiden_key = leiden_cols[0]
-            else:
-                raise ValueError("No leiden columns found in adata.")
+            log.info("Using column '%s' (resolution: %s)", annot_col,
+                     resolution if resolution else "not specified")
 
-        if leiden_key not in adata.obs.columns:
-            available = [c for c in adata.obs.columns if c.startswith("leiden_")]
-            raise ValueError(
-                f"Leiden column '{leiden_key}' not found. Available: {available}."
+            if resolution is not None:
+                leiden_key = f"leiden_{resolution.replace('.', '_')}"
+            else:
+                leiden_cols = [c for c in adata.obs.columns if c.startswith("leiden_")]
+                if leiden_cols:
+                    leiden_key = leiden_cols[0]
+                else:
+                    raise ValueError("No leiden columns found in adata.")
+
+            if leiden_key not in adata.obs.columns:
+                available = [c for c in adata.obs.columns if c.startswith("leiden_")]
+                raise ValueError(
+                    f"Leiden column '{leiden_key}' not found. Available: {available}."
+                )
+
+            cluster_to_celltype = annot_df[annot_col].dropna().to_dict()
+            cluster_to_celltype = {str(k): str(v) for k, v in cluster_to_celltype.items()}
+            log.info("Cluster → cell type mapping (%d entries): %s",
+                     len(cluster_to_celltype), cluster_to_celltype)
+
+            adata.obs["cell_type_tsv"] = (
+                adata.obs[leiden_key].astype(str)
+                .map(cluster_to_celltype)
+                .fillna("Unannotated")
+                .astype("category")
             )
 
-        cluster_to_celltype = annot_df[annot_col].dropna().to_dict()
-        cluster_to_celltype = {str(k): str(v) for k, v in cluster_to_celltype.items()}
-        log.info("Cluster → cell type mapping (%d entries): %s",
-                 len(cluster_to_celltype), cluster_to_celltype)
-
-        adata.obs["cell_type_tsv"] = (
-            adata.obs[leiden_key].astype(str)
-            .map(cluster_to_celltype)
-            .fillna("Unannotated")
-            .astype("category")
-        )
-
-        tsv_counts = adata.obs["cell_type_tsv"].value_counts()
-        log.info("TSV annotation distribution:\n%s", tsv_counts.to_string())
+            tsv_counts = adata.obs["cell_type_tsv"].value_counts()
+            log.info("TSV annotation distribution:\n%s", tsv_counts.to_string())
 
     # ── 2. External annotation (from metadata TSV column) ────────────────
     # When enabled the pipeline MUST find the column for this sample — a missing
     # source or column is a hard error (fail loudly rather than silently skipping),
     # so a run only proceeds when the external labels are in place for every sample.
-    ext_enabled = False
     if isinstance(EXT_ANNOT_CFG, dict) and EXT_ANNOT_CFG.get("enabled", False):
         ext_col = EXT_ANNOT_CFG.get("column", "")
         if not ext_col:
             raise ValueError("external_annotation.enabled is true but no 'column' is set in config.")
-        if not external_metadata_path:
-            raise FileNotFoundError(
-                f"external_annotation enabled but no metadata found for sample "
-                f"'{sample_id}'.")
+        # Prefer the explicitly supplied metadata TSV. In decoupled mode, a custom
+        # source column may instead already be present in the contract h5ad and is
+        # preserved by preprocessing.
+        if external_metadata_path:
+            _ext_source = external_metadata_path
+            log.info(
+                "Loading external annotation from '%s' in %s …",
+                ext_col,
+                _ext_source,
+            )
+            saved = read_cell_metadata(
+                _ext_source, required_columns=(ext_col,)
+            )
+            external_labels = saved[ext_col].reindex(
+                adata.obs_names.astype(str)
+            )
+        elif ext_col in adata.obs.columns:
+            _ext_source = f"processed contract h5ad obs['{ext_col}']"
+            log.info("Loading external annotation from %s …", _ext_source)
+            external_labels = adata.obs[ext_col]
+        else:
+            raise ValueError(
+                f"external_annotation column '{ext_col}' not found for sample "
+                f"'{sample_id}': no matching precomputed metadata column or h5ad "
+                "obs column is available"
+            )
 
+        adata.obs["cell_type_external"] = normalize_annotation_labels(
+            external_labels
+        ).astype("category")
+        adata.uns["external_annotation_source_column"] = ext_col
+        n_external_unannotated = int(
+            (adata.obs["cell_type_external"] == "Unannotated").sum()
+        )
         log.info(
-            "Loading external annotation from '%s' in %s …",
+            "  External annotation '%s' copied to 'cell_type_external': %d types "
+            "(%d cells unmatched → Unannotated)",
             ext_col,
-            external_metadata_path,
+            adata.obs["cell_type_external"].nunique(),
+            n_external_unannotated,
         )
-        saved = read_cell_metadata(
-            external_metadata_path, required_columns=(ext_col,)
-        )
-        labels = normalized_labels(saved, ext_col)
-        adata.obs["cell_type_external"] = (
-            labels.reindex(adata.obs_names.astype(str))
-            .fillna("Unannotated")
-            .astype("category")
-        )
-        ext_enabled = True
-        log.info("  External annotation: %d types (%d cells unmatched → Unannotated)",
-                 adata.obs["cell_type_external"].nunique(),
-                 int((adata.obs["cell_type_external"] == "Unannotated").sum()))
 
     # ── 2b. Spatial niche labels (from spatial_niches rule / external) ───
     _ni = getattr(snakemake.input, "spatial_niche", "")
@@ -361,11 +393,25 @@ try:
     # ── 3. Plots ─────────────────────────────────────────────────────────
     log.info("Generating annotation plots …")
 
+    active_annotations = record_active_annotation_columns(adata)
+    log.info("Active annotation columns: %s", active_annotations or "none")
+    if (
+        isinstance(EXT_ANNOT_CFG, dict)
+        and EXT_ANNOT_CFG.get("enabled", False)
+        and "cell_type_external" not in active_annotations
+    ):
+        log.warning(
+            "External annotation is enabled, but '%s' contains no non-placeholder "
+            "labels matching this sample. No external-annotation plots will be made.",
+            EXT_ANNOT_CFG.get("column", ""),
+        )
+
     # Apply custom palettes if configured
     if isinstance(ANNOTATION_COLORS, dict):
-        for obs_key in ["cell_type_tsv", "cell_type_ingest", "cell_type_external"]:
+        for obs_key in active_annotations:
             cd = ANNOTATION_COLORS.get(obs_key, {})
             if cd and obs_key in adata.obs.columns:
+                adata.obs[obs_key] = adata.obs[obs_key].astype("category")
                 cats = adata.obs[obs_key].cat.categories
                 adata.uns[f"{obs_key}_colors"] = [cd.get(str(c), "#cccccc") for c in cats]
 
@@ -376,30 +422,37 @@ try:
             REGION_COLORS.get(str(c), "#cccccc") for c in cats
         ]
 
-    generate_annotation_plots(adata, "cell_type_tsv", "tsv", plots_dir,
-                              sample_id, DE_N_GENES, library_id)
-
-    # If ingest labels exist, plot those too
-    if has_ingest:
-        generate_annotation_plots(adata, "cell_type_ingest", "ingest", plots_dir,
-                                  sample_id, DE_N_GENES, library_id)
-
-    if ext_enabled:
-        generate_annotation_plots(adata, "cell_type_external", "external", plots_dir,
-                                  sample_id, DE_N_GENES, library_id)
+    annotation_labels = {
+        "cell_type_tsv": "tsv",
+        "cell_type_ingest": "ingest",
+        "cell_type_external": "external",
+        "cell_type_refined": "refined",
+    }
+    for annot_col in active_annotations:
+        generate_annotation_plots(
+            adata, annot_col, annotation_labels.get(annot_col, annot_col),
+            plots_dir, sample_id, DE_N_GENES, library_id,
+        )
 
     # Side-by-side comparison (dynamic number of panels)
-    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_ingest",
-                                       "cell_type_external"]
-                          if c in adata.obs.columns]
+    annot_cols_present = active_annotations
     n_panels = len(annot_cols_present)
     if n_panels >= 2:
-        fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
-                                 gridspec_kw={"wspace": 0.5})
-        for ax, col in zip(axes, annot_cols_present):
-            sc.pl.umap(adata, color=col, size=2, frameon=False,
-                       title=col.replace("cell_type_", ""), ax=ax, show=False,
-                       legend_fontsize=6, na_in_legend=False)
+        labels_by_panel = [category_labels(adata, col) for col in annot_cols_present]
+        fig, plot_axes, legend_axes = panel_figure(
+            n_panels,
+            labels_by_panel,
+            panel_width=8,
+            plot_height=6,
+            wspace=0.18,
+        )
+        axes = plot_axes[0]
+        for ax, legend_ax, col in zip(axes, legend_axes, annot_cols_present):
+            title = col.replace("cell_type_", "")
+            sc.pl.umap(adata, color=col, size=UMAP_POINT_SIZE, frameon=False,
+                       title=title, ax=ax, show=False,
+                       legend_fontsize=12, na_in_legend=False)
+            move_legend_to_axis(ax, legend_ax, title=title)
         plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
@@ -407,13 +460,24 @@ try:
     # Side-by-side SPATIAL comparison (only if >1 annotation method)
     if n_panels >= 2:
         try:
-            fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
-                                     gridspec_kw={"wspace": 0.5})
-            for ax, col in zip(axes, annot_cols_present):
-                sc.pl.spatial(adata, color=col, spot_size=20, frameon=False,
-                              title=col.replace("cell_type_", ""),
+            labels_by_panel = [
+                category_labels(adata, col) for col in annot_cols_present
+            ]
+            fig, plot_axes, legend_axes = panel_figure(
+                n_panels,
+                labels_by_panel,
+                panel_width=8,
+                plot_height=6,
+                wspace=0.18,
+            )
+            axes = plot_axes[0]
+            for ax, legend_ax, col in zip(axes, legend_axes, annot_cols_present):
+                title = col.replace("cell_type_", "")
+                sc.pl.spatial(adata, color=col, spot_size=SPATIAL_POINT_SIZE, frameon=False,
+                              title=title,
                               library_id=library_id, ax=ax, show=False,
-                              legend_fontsize=6, na_in_legend=False)
+                              legend_fontsize=12, na_in_legend=False)
+                move_legend_to_axis(ax, legend_ax, title=title)
             plt.savefig(os.path.join(plots_dir, f"spatial_comparison_{sample_id}.png"),
                         dpi=DPI, bbox_inches="tight")
             plt.close()
@@ -421,9 +485,7 @@ try:
             log.warning("Spatial comparison plot failed: %s", e)
 
     # ── Per-sample composition barplots (sample / region / niche) ────────
-    annot_cols_present = [c for c in ["cell_type_tsv", "cell_type_ingest",
-                                      "cell_type_external"]
-                          if c in adata.obs.columns]
+    annot_cols_present = active_annotations
 
     # sample column (one bar per sample; here a single sample). Per-sample adatas
     # carry "sample"; "sample_batch" is an integration-time concat label and does

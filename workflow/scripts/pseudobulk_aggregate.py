@@ -11,6 +11,7 @@ Output structure:
 
 import logging
 import os
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -48,6 +49,7 @@ ANNOT_COL_MAP = {
     "tsv_annotation": "cell_type_tsv",
     "ingest_annotation": "cell_type_ingest",
     "external_annotation": "cell_type_external",
+    "refined_annotation": "cell_type_refined",
 }
 
 
@@ -216,134 +218,249 @@ def _plot_pseudobulk_qc(pdata, condition_col, sample_col, prefix, plots_dir,
     plt.close()
 
 
+def _safe_name(value):
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_")
+    return safe or "group"
+
+
+def _group_label(row, columns):
+    if len(columns) == 1:
+        return str(row[columns[0]])
+    return " | ".join(f"{column}={row[column]}" for column in columns)
+
+
+class DesignMetadataError(ValueError):
+    """Requested model metadata is not constant within a count unit."""
+
+
+def _attach_design_metadata(pdata, source, sample_col, groups_col, columns):
+    """Attach metadata that is constant within every pseudobulk count unit.
+
+    decoupler retains grouping columns, but preservation of unrelated obs columns
+    is version-dependent. Reconstructing them explicitly makes the DE contract
+    stable and detects invalid designs where a requested value varies inside one
+    pseudobulk observation.
+    """
+    columns = list(dict.fromkeys(c for c in columns if c not in {sample_col, groups_col}))
+    if not columns:
+        return pdata
+
+    keys = [sample_col, groups_col]
+    frame = source.obs[keys + columns].copy()
+    for column in keys + columns:
+        frame[column] = frame[column].astype(str)
+
+    grouped = frame.groupby(keys, observed=True, dropna=False)
+    for column in columns:
+        variable = grouped[column].nunique(dropna=False)
+        if (variable > 1).any():
+            examples = [" / ".join(map(str, idx if isinstance(idx, tuple) else [idx]))
+                        for idx in variable[variable > 1].index[:5]]
+            raise DesignMetadataError(
+                f"Design column '{column}' varies within pseudobulk unit(s): {examples}. "
+                "Use an aggregation that keeps this variable separate."
+            )
+
+    lookup = grouped[columns].first()
+    pdata_keys = pdata.obs[keys].astype(str)
+    lookup_index = pd.MultiIndex.from_frame(pdata_keys)
+    for column in columns:
+        pdata.obs[column] = lookup[column].reindex(lookup_index).to_numpy()
+    return pdata
+
+
+def _aggregate(source, groups_col, design_columns):
+    pdata = dc.get_pseudobulk(
+        source,
+        sample_col="sample",
+        groups_col=groups_col,
+        layer="raw_counts",
+        mode="sum",
+        min_cells=MIN_CELLS,
+        min_counts=MIN_COUNTS,
+    )
+    return _attach_design_metadata(
+        pdata, source, "sample", groups_col, design_columns
+    )
+
+
 # ── Parameters ───────────────────────────────────────────────────────────────
-annot_type     = snakemake.params.annot_type
-analysis_level = snakemake.params.analysis_level
-MIN_CELLS      = int(snakemake.params.min_cells_per_pseudobulk)
-MIN_COUNTS     = int(snakemake.params.min_counts_per_pseudobulk)
+annot_type = str(snakemake.params.annot_type)
+analysis_spec = dict(snakemake.params.analysis_spec)
+analysis_name = str(analysis_spec["name"])
+aggregation = str(analysis_spec["aggregation"])
+group_by = list(analysis_spec["group_by"])
+paired_by = str(analysis_spec.get("paired_by", "") or "")
+covariates = list(analysis_spec.get("covariates") or [])
+exclude_levels = dict(analysis_spec.get("exclude_levels") or {})
+MIN_CELLS = int(snakemake.params.min_cells_per_pseudobulk)
+MIN_COUNTS = int(snakemake.params.min_counts_per_pseudobulk)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
-REGION_COLORS     = snakemake.params.region_colors
-DPI          = int(getattr(snakemake.params, "dpi", 300))
+REGION_COLORS = snakemake.params.region_colors
+DPI = int(getattr(snakemake.params, "dpi", 300))
 EXTRA_ANNOT_COLUMNS = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
-SAMPLE_COLORS  = getattr(snakemake.params, "sample_colors", {}) or {}
-agg_dir        = str(snakemake.output.agg_dir)
+SAMPLE_COLORS = getattr(snakemake.params, "sample_colors", {}) or {}
+agg_dir = str(snakemake.output.agg_dir)
 
 try:
     log.info("=" * 70)
-    log.info("Pseudobulk aggregation: %s / %s", annot_type, analysis_level)
+    log.info("Pseudobulk aggregation: %s / %s", annot_type, analysis_name)
+    log.info("  aggregation=%s, group_by=%s", aggregation, group_by)
     log.info("  min_cells=%d, min_counts=%d", MIN_CELLS, MIN_COUNTS)
     log.info("=" * 70)
 
     matrices_dir = os.path.join(agg_dir, "matrices")
     metadata_dir = os.path.join(agg_dir, "metadata")
-    plots_dir    = os.path.join(agg_dir, "plots")
-    for d in [agg_dir, matrices_dir, metadata_dir, plots_dir]:
-        os.makedirs(d, exist_ok=True)
+    plots_dir = os.path.join(agg_dir, "plots")
+    for directory in [agg_dir, matrices_dir, metadata_dir, plots_dir]:
+        os.makedirs(directory, exist_ok=True)
 
     adata = sc.read_h5ad(str(snakemake.input.adata))
     log.info("Loaded: %d cells, %d genes", adata.n_obs, adata.n_vars)
 
+    # sample_batch is created by integrate_samples from the authoritative core
+    # sample sheet. Prefer it over a potentially renamed contract obs['sample'].
+    if "sample_batch" in adata.obs.columns:
+        adata.obs["sample"] = adata.obs["sample_batch"].astype(str).to_numpy()
+    elif "sample" not in adata.obs.columns:
+        raise ValueError("No canonical sample column found.")
+
     cell_type_col = ANNOT_COL_MAP.get(annot_type)
-    if cell_type_col and cell_type_col not in adata.obs.columns:
-        log.warning("Column '%s' not found. Skipping.", cell_type_col)
-        Path(os.path.join(agg_dir, f"SKIPPED_no_{cell_type_col}.txt")).write_text(
-            f"Column {cell_type_col} not found.\n"
-        )
-        sys.exit(0)
+    referenced_columns = set(group_by + covariates + list(exclude_levels))
+    if paired_by:
+        referenced_columns.add(paired_by)
+    needs_cell_type = (
+        aggregation in {"by_celltype", "by_celltype_region"}
+        or "cell_type" in referenced_columns
+    )
+    if needs_cell_type:
+        if not cell_type_col or cell_type_col not in adata.obs.columns:
+            log.warning("Column '%s' not found. Skipping.", cell_type_col)
+            Path(os.path.join(agg_dir, f"SKIPPED_no_{cell_type_col}.txt")).write_text(
+                f"Column {cell_type_col} not found.\n"
+            )
+            sys.exit(0)
+        adata.obs["cell_type"] = adata.obs[cell_type_col].astype(str).to_numpy()
 
-    sample_col = None
-    for c in ["sample", "sample_batch"]:
-        if c in adata.obs.columns:
-            sample_col = c
-            break
-    if sample_col is None:
-        raise ValueError("No sample column found.")
-
-    region_col = "region_annotation"
-    if region_col not in adata.obs.columns:
-        log.warning("No region_annotation. Skipping.")
+    needs_region = aggregation in {"by_region", "by_celltype_region"}
+    if needs_region and "region_annotation" not in adata.obs.columns:
+        log.warning("No region_annotation for region-based aggregation. Skipping.")
         Path(os.path.join(agg_dir, "SKIPPED_no_regions.txt")).write_text("")
         sys.exit(0)
 
-    for col in [region_col, sample_col]:
-        adata = _clean_nan(adata, col)
-    if cell_type_col:
-        adata = _clean_nan(adata, cell_type_col)
+    required_columns = list(dict.fromkeys(
+        ["sample"] + group_by + covariates + ([paired_by] if paired_by else [])
+    ))
+    missing = [column for column in required_columns if column not in adata.obs.columns]
+    if missing:
+        raise ValueError(
+            f"Pseudobulk analysis '{analysis_name}' requires missing obs column(s): {missing}. "
+            "Add them to core_samples.tsv or correct group_by/covariates/paired_by."
+        )
 
-    valid_regions = [r for r in adata.obs[region_col].unique()
-                     if r not in ("Unlabeled", "Bubble")]
-    adata = adata[adata.obs[region_col].isin(valid_regions)].copy()
-    log.info("Regions: %s (%d cells)", valid_regions, adata.n_obs)
+    for column in required_columns:
+        adata = _clean_nan(adata, column)
 
-    if len(valid_regions) < 2:
-        Path(os.path.join(agg_dir, "SKIPPED_fewer_than_2_regions.txt")).write_text("")
+    # Exclusions are shared by aggregation, explicit Wald contrasts, and LRT.
+    for column, excluded in exclude_levels.items():
+        if column not in adata.obs.columns:
+            raise ValueError(
+                f"exclude_levels references missing column '{column}' in analysis '{analysis_name}'."
+            )
+        excluded = {str(value) for value in (excluded or [])}
+        if excluded:
+            values = adata.obs[column].astype(str)
+            keep = ~values.isin(excluded)
+            log.info("  Excluding %d cells from %s levels: %s",
+                     int((~keep).sum()), column, sorted(excluded))
+            adata = adata[keep].copy()
+
+    if adata.n_obs == 0:
+        Path(os.path.join(agg_dir, "SKIPPED_no_cells_after_exclusion.txt")).write_text("")
         sys.exit(0)
-
     if "raw_counts" not in adata.layers:
         raise ValueError("raw_counts layer missing.")
 
+    group_palette = {}
+    if len(group_by) == 1:
+        group_column = group_by[0]
+        if group_column == "region_annotation":
+            group_palette = REGION_COLORS if isinstance(REGION_COLORS, dict) else {}
+        elif isinstance(SAMPLE_COLORS, dict):
+            group_palette = SAMPLE_COLORS.get(group_column, {}) or {}
+
+    # Plot-only annotations are optional. Model columns were validated above and
+    # remain mandatory, while absent plotting annotations should not abort DE.
+    present_extra_annotations = [
+        column for column in EXTRA_ANNOT_COLUMNS if column in adata.obs.columns
+    ]
+    design_columns = list(dict.fromkeys(
+        group_by + covariates + ([paired_by] if paired_by else []) + present_extra_annotations
+    ))
     manifest_rows = []
+    used_prefixes = set()
 
-    if analysis_level == "by_region":
-        pdata = dc.get_pseudobulk(
-            adata, sample_col=sample_col, groups_col=region_col,
-            layer="raw_counts", mode="sum",
-            min_cells=MIN_CELLS, min_counts=MIN_COUNTS,
-        )
-        _save_pseudobulk(pdata, matrices_dir, metadata_dir, "pooled")
-        _plot_pseudobulk_qc(pdata, region_col, sample_col, "pooled", plots_dir,
-                            REGION_COLORS, ANNOTATION_COLORS,
-                            EXTRA_ANNOT_COLUMNS, SAMPLE_COLORS)
-        manifest_rows.append({
-            "prefix": "pooled", "grouping": "all_cells",
-            "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,
-            "condition_col": region_col, "sample_col": sample_col,
-        })
+    if aggregation in {"all_cells", "by_celltype"}:
+        adata.obs["__all__"] = "all"
+        groups_col = "__all__"
+    else:
+        groups_col = "region_annotation"
 
-    elif analysis_level == "by_celltype_region":
-        adata = adata[adata.obs[cell_type_col] != "Unannotated"].copy()
-        cell_types = sorted(adata.obs[cell_type_col].unique())
-
-        for ct in cell_types:
-            safe_ct = ct.replace("/", "_").replace(" ", "_")
-            ct_adata = adata[adata.obs[cell_type_col] == ct].copy()
-
-            if ct_adata.n_obs < MIN_CELLS:
-                log.warning("  '%s': too few cells (%d). Skipping.", ct, ct_adata.n_obs)
-                continue
-
-            try:
-                pdata = dc.get_pseudobulk(
-                    ct_adata, sample_col=sample_col, groups_col=region_col,
-                    layer="raw_counts", mode="sum",
-                    min_cells=MIN_CELLS, min_counts=MIN_COUNTS,
+    if aggregation in {"all_cells", "by_region"}:
+        subgroups = [("pooled", "all_cells", adata)]
+    else:
+        subgroups = []
+        for cell_type in sorted(adata.obs["cell_type"].astype(str).unique()):
+            prefix = _safe_name(cell_type)
+            if prefix in used_prefixes:
+                raise ValueError(
+                    f"Cell-type names collide after filename sanitization: '{cell_type}' -> '{prefix}'."
                 )
-            except Exception as e:
-                log.warning("  '%s': aggregation failed: %s", ct, e)
-                continue
+            used_prefixes.add(prefix)
+            subset = adata[adata.obs["cell_type"].astype(str) == cell_type].copy()
+            subgroups.append((prefix, cell_type, subset))
 
-            if pdata.n_obs < 4:
-                log.warning("  '%s': too few pseudobulk samples (%d). Skipping.", ct, pdata.n_obs)
-                continue
+    for prefix, grouping, subset in subgroups:
+        if subset.n_obs < MIN_CELLS:
+            log.warning("  '%s': too few cells (%d). Skipping.", grouping, subset.n_obs)
+            continue
+        try:
+            pdata = _aggregate(subset, groups_col, design_columns)
+        except DesignMetadataError:
+            raise
+        except Exception as exc:
+            log.warning("  '%s': aggregation failed: %s", grouping, exc)
+            continue
+        if pdata.n_obs == 0:
+            log.warning("  '%s': no pseudobulk observations passed QC. Skipping.", grouping)
+            continue
 
-            _save_pseudobulk(pdata, matrices_dir, metadata_dir, safe_ct)
-            _plot_pseudobulk_qc(pdata, region_col, sample_col, safe_ct, plots_dir,
-                                REGION_COLORS, ANNOTATION_COLORS,
-                                EXTRA_ANNOT_COLUMNS, SAMPLE_COLORS)
-            manifest_rows.append({
-                "prefix": safe_ct, "grouping": ct,
-                "n_samples": pdata.n_obs, "n_genes": pdata.n_vars,
-                "condition_col": region_col, "sample_col": sample_col,
-            })
-
-    elif analysis_level == "by_niche_region":
-        log.warning("by_niche_region not yet implemented.")
-        Path(os.path.join(agg_dir, "SKIPPED_niche_not_implemented.txt")).write_text("")
+        pdata.obs[".comparison_group"] = [
+            _group_label(row, group_by) for _, row in pdata.obs.iterrows()
+        ]
+        _save_pseudobulk(pdata, matrices_dir, metadata_dir, prefix)
+        _plot_pseudobulk_qc(
+            pdata, ".comparison_group", "sample", prefix, plots_dir,
+            group_palette, ANNOTATION_COLORS,
+            EXTRA_ANNOT_COLUMNS, SAMPLE_COLORS,
+        )
+        manifest_rows.append({
+            "prefix": prefix,
+            "grouping": grouping,
+            "n_samples": pdata.n_obs,
+            "n_genes": pdata.n_vars,
+            "condition_col": ".comparison_group",
+            "sample_col": "sample",
+            "analysis_name": analysis_name,
+            "aggregation": aggregation,
+        })
 
     if manifest_rows:
         pd.DataFrame(manifest_rows).to_csv(
             os.path.join(agg_dir, "manifest.tsv"), sep="\t", index=False
         )
+    else:
+        Path(os.path.join(agg_dir, "SKIPPED_no_pseudobulks.txt")).write_text("")
 
     log.info("Aggregation complete.")
 

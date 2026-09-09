@@ -155,7 +155,7 @@ This second CoreBlock includes rules from sample annotation to integration and d
 
 #### `annotate_cells`
 Adds cell-type annotations from a manually curated TSV (cluster → cell type), or from an external annotation TSV (barcode → cell type).
-Writes `adata_{sample}_annotated.h5ad` plus annotation plots and composition barplots.
+Writes `adata_{sample}_annotated.h5ad` plus annotation plots and composition barplots. The output records which annotation columns contain real labels; placeholder-only columns such as an all-`Unannotated` `cell_type_tsv` are retained for compatibility but are not treated as available annotations. The external source column configured by `external_annotation.column` may have any name and is copied to the canonical `cell_type_external` column. It can come from `metadata_{sample}.tsv` or, in decoupled mode without external metadata, directly from the contract h5ad's `obs`. When `keep_unannotated: true`, mixed real and `Unannotated` labels remain active and the unannotated cells are retained in overview and composition plots.
 
 #### `integrate_samples`
 Concatenates all annotated samples, runs Harmony batch correction on the specified variable (`integration.integrate_key`), geosketch subsampling, and composition barplots.
@@ -163,19 +163,20 @@ Concatenates all annotated samples, runs Harmony batch correction on the specifi
 Writes `concatenated.h5ad`, `harmony_integrated.h5ad`, and `sketched.h5ad`. This is the input to pseudobulk, subclustering (CoreBlock 2), and gene exploration (CoreBlock 3).
 
 #### `pseudobulk_aggregate`
-Builds pseudobulk count matrices via [decoupler](https://decoupler.readthedocs.io/en/latest/) per `region`, `cell type` and (optionally) `niche` from the integrated object.
+Builds raw-count pseudobulk matrices via [decoupler](https://decoupler.readthedocs.io/en/latest/) from the integrated object. Named analyses in `analysis.pseudobulk.analyses` choose one of four aggregations: all cells per sample, per cell type, per region, or per cell type and region. Sample metadata from `core_samples.tsv` are preserved for downstream models, and configured levels are excluded consistently before aggregation and testing.
 
 Produces diagnostic QC and PCA plots coloured by sample and by each extra-annotation column.
 
 #### `pseudobulk_de` *(optional; `analysis.run_pseudobulk_de: true`)*
-Identifies deregulated genes between conditions and annotated regions via differential expression with DESeq2 (R package) on the pseudobulk matrices.
+Identifies deregulated genes with DESeq2 on the pseudobulk matrices. The comparison may use region annotations or one or more sample-level variables such as phenotype and treatment.
 
-Differential expression runs in three ways:
-- pairwise Wald contrasts between level pairs (region A vs region B),
-- each level against the rest,
-- and, if there are more than 2 levels, a likelihood-ratio test (LRT) with DEGpatterns for gene-group clustering.
+Differential expression runs only for tests requested in the named analysis:
 
-Produces TSV tables, volcano plots, and metadata-annotated heatmaps between conditions.
+- explicit pairwise Wald contrasts, with optional categorical covariates;
+- paired Wald contrasts using `paired_by: sample`, retaining complete pairs;
+- and an optional omnibus likelihood-ratio test (LRT) across sufficiently replicated, non-excluded levels, with DEGpatterns gene-group clustering when enough genes are significant.
+
+Multiple `group_by` columns create a combined categorical group for comparisons such as drug versus vehicle within one phenotype. Produces TSV tables, volcano plots, and metadata-annotated heatmaps between configured groups. Note that SpaceBlocks does not currently support fitting statistical interactions.
 
 #### `neighbourhood_analysis`
 Runs squidpy neighbourhood enrichment per sample and per `region`, plus per-region cell-type co-occurrence (a full co-occurrence figure per region and compact pairwise heatmaps).
@@ -188,7 +189,7 @@ Generates integrated (Harmony) and unintegrated results, with UMAPs coloured by 
 #### `sample_report`
 Assembles a compact, multi-page PDF with graphical outputs per sample, ideal to share with internal and external collaborators.
 
-Each page contains the most important data-descriptive information: cluster / annotation / region / niche UMAPs and matching spatial maps, bar plots for absolute and relative composition, and a dot plot with the top-10 expressed markers per cell type.
+Each page contains the most important data-descriptive information: cluster / annotation / region / niche UMAPs and matching spatial maps, bar plots for absolute and relative composition, and a dot plot with the top-10 expressed markers per cell type. Only annotation sources containing real labels are shown; in runs without a manual TSV annotation, the external or ingest annotation also drives cell-type composition. Categorical legends use reserved bands below their plots, with adaptive rows and wrapped long labels, and always remain on the same PDF page as the corresponding panels.
 
 ---
 
@@ -201,12 +202,12 @@ Integrated exploration scales are standardized to ease interpretation of the res
 #### `explore_genes_integrated`
 Exploration of the integrated samples.
 
-Loads the Harmony-integrated object once and computes AUCell scores for the input gene or gene set. It then writes shared expression ranges and produces integrated UMAP/dotplot PNGs per gene or gene set.
+Loads the Harmony-integrated object once and computes AUCell scores for the input gene or gene set. It then writes shared expression ranges and produces integrated UMAP/dotplot PNGs per gene or gene set. Multi-panel categorical legends are kept in dedicated bands within each composite.
 
 #### `explore_genes_sample`
 Exploration of individual samples.
 
-Using the shared expression ranges from the integrated exploration, produces per-sample spatial composites (expression + cell type + region) and stacked dotplot composites for each query entry.
+Using the shared expression ranges from the integrated exploration, produces per-sample spatial composites (expression + cell type + region) and stacked dotplot composites for each query entry. Multi-panel categorical legends are kept in dedicated bands within each composite.
 
 ---
 

@@ -10,6 +10,7 @@ dependencies:
   # Formatting and linting tools
   - pre_commit
   - bioconda::snakefmt
+  - conda-forge::go-shfmt
 
   # Documentation tools
   - mkdocs
