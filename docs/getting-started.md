@@ -14,6 +14,8 @@ If you want to see an example run on public data, see the [public data end-to-en
 - [QuPath](https://qupath.github.io/) (desktop), recommended to include manual region annotations for the downstream analyses (see [QuPath annotation tutorial](qupath-tutorial.md)).
 - Configure your Snakemake profile in `--profile profiles/default`. An example for HPCs with Slurm scheduler is provided (tested with version 24.11.5).
 
+!!! tip "Setting project directory" The default profile is configured to run the `test` project. Change the path to `directory: .` to run the project on the root of the SpaceBlocks repository.
+
 We recommend to always run snakemake with `--sdm conda`, so each rule is executed within its pinned environment.
 
 ## 2. Configure

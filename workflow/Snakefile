@@ -27,11 +27,16 @@ configfile: "config/config.yaml"
 # configfile: "demos/atera/atera_config.yaml"        # alpha: Atera HeadBlock test
 # configfile: "demos/merscope/merscope_config.yaml"
 
-validate(config, schema="schemas/config.schema.yaml")
-
 
 # Helper functions
 include: "rules/common.smk"
+
+
+# Expand config paths recursively
+config = _expand_base_dir(config)
+
+# Validate config against schema after path expansion
+validate(config, schema="schemas/config.schema.yaml")
 
 
 # ── Globals ──────────────────────────────────────────────────────────────────
@@ -47,7 +52,7 @@ RANDOM_SEED = config.get("random_seed", 42)
 
 # Xenium 5K head specifics
 XENIUM5K = config.get("xenium5k", {}) or {}
-XENIUM_ZARR_DIR = XENIUM5K.get("zarr_dir", "") or OUTDIR_SR
+XENIUM_ZARR_DIR = OUTDIR_SR
 
 # Atera head specifics (ALPHA — the platform ships H2 2026 and its output format is
 # still a preview; see docs/rules.md).

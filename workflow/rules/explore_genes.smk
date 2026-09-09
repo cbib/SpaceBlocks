@@ -8,7 +8,7 @@ rule explore_genes_integrated:
     """
     input:
         integrated=rules.integrate_samples.output.harmony,
-        queries=GENE_EXPLORATION.get("queries", "") or [],
+        queries=GENE_EXPLORATION.get("queries", "config/gene_queries.tsv"),
     output:
         ranges=f"{OUTDIR_PP}/gene_exploration/expression_ranges.tsv",
         done=touch(f"{OUTDIR_PP}/gene_exploration/.integrated_done"),

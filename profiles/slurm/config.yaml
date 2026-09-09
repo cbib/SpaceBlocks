@@ -3,7 +3,12 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Invoke with:  snakemake --profile profiles/slurm
 # Set as default for a shell session with:  export SNAKEMAKE_PROFILE=profiles/slurm
-
+#
+# IMPORTANT
+# "directory: .test" is necessary for Snakemake catalog's linting
+# Switch from "directory: .test" to "directory: ." when running from the repository root,
+# or define a custom directory "directory: /path/to/your/working/directory" to run from anywhere.
+directory: .test
 executor: slurm
 jobs: 30
 

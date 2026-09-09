@@ -1,16 +1,17 @@
 # Canonical catalogue/CI fixture (mode: decoupled). Paths are relative to .test/.
 mode: decoupled
-post_processing_outdir: output
-logdir: logs
-spaceranger_processing_outdir: sr
-geojson_path: geojson
-contract_dir: data
+base_dir: test_output
+post_processing_outdir: "{base_dir}/output"
+logdir: "{base_dir}/logs"
+spaceranger_processing_outdir: "{base_dir}/sr"
+geojson_path: "{base_dir}/geojson"
+contract_dir: "data"
 random_seed: 0
 use_precomputed_clusters: false
 precomputed_metadata_dir: ''
 core_samples: config/core_samples.tsv
 xenium5k:
-  xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
+  xenium_dir: "{base_dir}/xenium/{sample}"
   zarr_dir: ''
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
@@ -266,7 +267,7 @@ resources:
     mem_mb: 65536
     runtime: 240
     threads: 4
-  explore_genes_spatial:
+  explore_genes_sample:
     mem_mb: 32768
     runtime: 360
     threads: 4

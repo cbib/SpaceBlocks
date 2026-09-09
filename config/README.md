@@ -31,21 +31,55 @@ The analysis **CoreBlocks** are identical in all five cases. Atera support is cu
 
 The SpaceBlocks `config/config.yaml` sets the input and output directories, and gets the sample information and metadata (for integration and plotting) from one or two TSV files, depending on the `config["mode"]` set.
 
+!!! tip "Setting a base directory"
+    `base_dir` is the project-root prefix for generated output directories. In the shipped template, most output folders are written relative to it, but several required inputs are intentionally left as explicit filesystem paths because they point to external software or reference data.
+
+Paths in SpaceBlocks fall into three categories:
+
+- Project output paths: typically relative to `base_dir` or kept under the config directory for metadata files.
+- Project input paths: configuration or pre-computed data used by the pipeline. These can be defined relative to `config/` or as absolute paths.
+- External absolute paths: installed tools, references, and other files that must be supplied explicitly.
+
+### Project output paths
+
+These are the paths that are normally defined relative to `base_dir`.
+
 | Path / File | Key | Condition | Meaning |
 | --- | --- | --- | --- |
-| Path | `spaceranger_processing_outdir` | Head modes | Directory where the head writes heavy intermediates such as Space Ranger outputs or SpatialData Zarr stores. |
-| File | `spaceranger` | `mode: visiumhd` | Path to the Space Ranger installation. |
-| File | `probe_set` | `mode: visiumhd` | [Probe set CSV](https://www.10xgenomics.com/support/spatial-gene-expression-hd/documentation/steps/probe-sets) needed to run Space Ranger. |
-| File | `transcriptome` | `mode: visiumhd` | [Reference transcriptome](https://www.10xgenomics.com/support/software/space-ranger/downloads) needed to run Space Ranger. |
 | Path | `post_processing_outdir` | **Mandatory** | Output directory root; it will contain the result folders for the run. |
 | Path | `logdir` | **Mandatory** | Directory for per-rule logs and benchmarks. |
-| Path | `geojson_path` | **Optional, recommended** | Directory containing the GeoJSONs that annotate spatial regions for each sample (see the [QuPath tutorial](https://cbib.github.io/SpaceBlocks/qupath-tutorial/)). |
+| Path | `spaceranger_processing_outdir` | Head modes | Directory where the head writes heavy intermediates such as Space Ranger outputs or SpatialData Zarr stores. |
+
+### Project input paths
+
+These paths contain metadata, configuration or pre-processed results that are ingested by the pipeline. We provide some defaults under the `config/` directory. Others are defined as placeholders `/path/to/dir/` and `/path/to/file.ext`, so make sure to configure them if needed.
+
+| Path / File | Key | Condition | Meaning |
+| --- | --- | --- | --- |
+| File | `core_samples` | **Mandatory** | Sample metadata sheet. The shipped template keeps this in `config/` as project metadata. |
 | Path | `contract_dir` | `mode: decoupled` | Directory holding the pre-existing contract h5ads to analyse. |
-| File | `per_sample_qc` | **Optional** (per-sample filters) | TSV of sample-specific QC filters. If empty, the same `analysis.*` thresholds apply to every sample (*default*). |
-| File | `snakemake_cell_markers` | **Optional** (pre-annotation) | TSV of canonical marker genes drawn on the Leiden diagnostic plots (`leiden_analysis`) to guide manual annotation. |
-| File | `gene_exploration.queries` (`config/gene_queries.tsv`) | Exploration Coreblock | Genes / gene sets to score (AUCell) and plot in the exploration block. |
-| File | `ingest_ref` | **Optional** (auto-annotation) | Annotated scRNA-seq reference h5ad for `ingest_ref`. |
+| Path | `xenium5k.xenium_dir` | `mode: xenium5k` | Directory pattern for each Xenium bundle. |
+| Path | `spatial_niches.niche_dir` | `spatial_niches` | Directory for precomputed niche TSVs when `use_precomputed` is enabled. |
+| Path | `geojson_path` | **Optional, recommended** | Directory containing the GeoJSONs that annotate spatial regions for each sample (see the [QuPath tutorial](https://cbib.github.io/SpaceBlocks/qupath-tutorial/)). |
 | Path | `precomputed_metadata_dir` | **Optional** (reproducibility) | Directory of precomputed per-sample metadata TSVs. The metadata can contain precomputed clusters and/or external annotations. |
+| File | `per_sample_qc` | **Optional** (per-sample filters) | TSV of sample-specific QC filters. If empty, the same `analysis.*` thresholds apply to every sample (*default*). |
+| File | `snakemake_cell_markers` | **Optional** (pre-annotation) | TSV of canonical marker genes drawn on the Leiden diagnostic plots (`leiden_analysis`) to guide manual annotation. If not set, default markers are used (`config/snakemake_cell_markers.tsv`) |
+| File | `gene_exploration.queries` | Exploration Coreblock | Genes / gene sets to score (AUCell) and plot in the exploration block. If not set, test gene queries are used (`config/gene_queries.tsv`). |
+| File | `cluster_annotations` | **Optional** | TSV of cluster-to-cell-type labels used during annotation. Template ships with a template of placeholder annotations (`config/cluster_annotations.tsv`). If not set, cell will be labeled `Unannotated` |
+
+### External absolute paths
+
+These are not derived from `base_dir` and must be set explicitly to the correct filesystem location.
+
+| Path / File | Key | Condition | Meaning |
+| --- | --- | --- | --- |
+| File | `spaceranger` | `mode: visiumhd` | Path to the external Space Ranger installation. |
+| File | `probe_set` | `mode: visiumhd` | [Probe set CSV](https://www.10xgenomics.com/support/spatial-gene-expression-hd/documentation/steps/probe-sets) needed to run Space Ranger. |
+| File | `transcriptome` | `mode: visiumhd` | [Reference transcriptome](https://www.10xgenomics.com/support/software/space-ranger/downloads) needed to run Space Ranger. |
+| File | `ingest_ref` | **Optional** (auto-annotation) | Annotated scRNA-seq reference h5ad for `ingest_ref`. |
+| File | `samples` | `mode: visiumhd` | Sample sheet with fastq directories, slide, and capture area per sample. |
+
+The template uses placeholder values such as `/path/to/...` for these external inputs to make it clear they must be replaced before running the workflow.
 
 `core_samples.tsv` is the technology-agnostic sample sheet used by the CoreBlocks in every use case. Visium HD additionally uses `visiumhd_samples.csv` for fastq, slide, and capture-area information.
 
@@ -153,7 +187,7 @@ samples: "config/visiumhd_samples.csv"          # fastq dirs / slide / area per 
 spaceranger: "/path/to/spaceranger"
 probe_set: "/path/to/probe_set.csv"
 transcriptome: "/path/to/refdata-gex"
-spaceranger_processing_outdir: "/path/to/sr_out"
+spaceranger_processing_outdir: "{base_dir}/sr_out"
 ```
 
 **Xenium 5K** (`mode: xenium5k`)
@@ -197,7 +231,7 @@ mode: "decoupled"
 contract_dir: "/path/to/contract_h5ads"    # one <sample>.h5ad file per sample
 ```
 
-All modes additionally set `core_samples`, `post_processing_outdir`, `logdir`, and the other required common keys in `config/config.yaml`; **`geojson_path` is optional but strongly recommended**.
+All modes additionally set `core_samples`, `post_processing_outdir`, `logdir`, and the other required common keys in `config/config.yaml`; **`geojson_path` is optional but strongly recommended** and may be left as a project-local directory or an explicit path.
 
 ## 8. Minimal example
 
@@ -205,8 +239,9 @@ All modes additionally set `core_samples`, `post_processing_outdir`, `logdir`, a
 mode: "visiumhd"
 samples: "config/visiumhd_samples.csv"
 core_samples: "config/core_samples.tsv"
-geojson_path: "/path/to/geojson"
-post_processing_outdir: "/path/to/results"
+geojson_path: "path/to/geojson"
+precomputed_metadata_dir: "/path/to/metadata_visiumhd/"
+post_processing_outdir: "{base_dir}/results"
 # ... see config/config.yaml for the full, commented template.
 ```
 

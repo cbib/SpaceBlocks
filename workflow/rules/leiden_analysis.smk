@@ -8,7 +8,9 @@ rule leiden_analysis:
     """
     input:
         adata=rules.preprocess_umap.output.adata,
-        cell_markers=config["snakemake_cell_markers"],
+        cell_markers=config.get(
+            "snakemake_cell_markers", "config/snakemake_cell_markers.tsv"
+        ),
     output:
         res_dir=directory(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{resolution}}"),
     log:
