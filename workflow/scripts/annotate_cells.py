@@ -37,6 +37,11 @@ from annotation_utils import (
     record_active_annotation_columns,
 )
 from external_metadata import optional_input_path, read_cell_metadata
+from plotting_legends import (
+    category_labels,
+    move_legend_to_axis,
+    panel_figure,
+)
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -433,12 +438,21 @@ try:
     annot_cols_present = active_annotations
     n_panels = len(annot_cols_present)
     if n_panels >= 2:
-        fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
-                                 gridspec_kw={"wspace": 0.5})
-        for ax, col in zip(axes, annot_cols_present):
+        labels_by_panel = [category_labels(adata, col) for col in annot_cols_present]
+        fig, plot_axes, legend_axes = panel_figure(
+            n_panels,
+            labels_by_panel,
+            panel_width=8,
+            plot_height=6,
+            wspace=0.18,
+        )
+        axes = plot_axes[0]
+        for ax, legend_ax, col in zip(axes, legend_axes, annot_cols_present):
+            title = col.replace("cell_type_", "")
             sc.pl.umap(adata, color=col, size=UMAP_POINT_SIZE, frameon=False,
-                       title=col.replace("cell_type_", ""), ax=ax, show=False,
-                       legend_fontsize=6, na_in_legend=False)
+                       title=title, ax=ax, show=False,
+                       legend_fontsize=12, na_in_legend=False)
+            move_legend_to_axis(ax, legend_ax, title=title)
         plt.savefig(os.path.join(plots_dir, f"UMAP_comparison_{sample_id}.png"),
                     dpi=DPI, bbox_inches="tight")
         plt.close()
@@ -446,13 +460,24 @@ try:
     # Side-by-side SPATIAL comparison (only if >1 annotation method)
     if n_panels >= 2:
         try:
-            fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 6),
-                                     gridspec_kw={"wspace": 0.5})
-            for ax, col in zip(axes, annot_cols_present):
+            labels_by_panel = [
+                category_labels(adata, col) for col in annot_cols_present
+            ]
+            fig, plot_axes, legend_axes = panel_figure(
+                n_panels,
+                labels_by_panel,
+                panel_width=8,
+                plot_height=6,
+                wspace=0.18,
+            )
+            axes = plot_axes[0]
+            for ax, legend_ax, col in zip(axes, legend_axes, annot_cols_present):
+                title = col.replace("cell_type_", "")
                 sc.pl.spatial(adata, color=col, spot_size=SPATIAL_POINT_SIZE, frameon=False,
-                              title=col.replace("cell_type_", ""),
+                              title=title,
                               library_id=library_id, ax=ax, show=False,
-                              legend_fontsize=6, na_in_legend=False)
+                              legend_fontsize=12, na_in_legend=False)
+                move_legend_to_axis(ax, legend_ax, title=title)
             plt.savefig(os.path.join(plots_dir, f"spatial_comparison_{sample_id}.png"),
                         dpi=DPI, bbox_inches="tight")
             plt.close()

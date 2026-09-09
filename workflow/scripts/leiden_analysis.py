@@ -23,6 +23,17 @@ import scanpy as sc
 from sklearn.metrics import silhouette_samples, silhouette_score
 from sklearn.preprocessing import StandardScaler
 
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from plotting_legends import (
+    category_labels,
+    grid_figure,
+    move_legend_to_axis,
+)
+
 
 log_handlers = [logging.StreamHandler(sys.stderr)]
 if hasattr(snakemake, "log"):
@@ -69,10 +80,21 @@ def read_tsv_to_dict(tsv_path):
 
 def split_umap(adata, split_by, ncol=None, nrow=None, **kwargs):
     categories = adata.obs[split_by].cat.categories
-    ncol = ncol or len(categories)
+    ncol = ncol or min(4, len(categories))
     nrow = nrow or int(np.ceil(len(categories) / ncol))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(5 * ncol, 4 * nrow))
-    axs = np.atleast_1d(axs).flatten()
+    color_key = kwargs.get("color")
+    if isinstance(color_key, (list, tuple)):
+        color_key = color_key[0] if color_key else None
+    labels = category_labels(adata, color_key)
+    fig, axes, legend_ax = grid_figure(
+        nrow,
+        ncol,
+        labels,
+        cell_width=5,
+        cell_height=4,
+        max_legend_columns=min(8, 2 * ncol),
+    )
+    axs = axes.ravel()
     for i, cat in enumerate(categories):
         sc.pl.umap(
             adata[adata.obs[split_by] == cat],
@@ -80,7 +102,12 @@ def split_umap(adata, split_by, ncol=None, nrow=None, **kwargs):
         )
     for j in range(i + 1, len(axs)):
         axs[j].set_visible(False)
-    plt.tight_layout()
+    move_legend_to_axis(
+        axs[:len(categories)],
+        legend_ax,
+        title=str(color_key).replace("_", " ").title() if color_key else None,
+        max_columns=min(8, 2 * ncol),
+    )
 
 
 try:

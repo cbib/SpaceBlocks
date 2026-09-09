@@ -35,6 +35,7 @@ from banksy_utils.refine_clusters import refine_once
 # Shared composition-barplot helpers (scripts/ is on sys.path for script: rules)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from composition_barplots import composition_pair, build_niche_palette  # noqa: E402
+from plotting_legends import draw_legend_on_axis, grid_figure  # noqa: E402
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -159,8 +160,14 @@ def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
     n = len(samples)
     ncol = min(4, n)
     nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4 * ncol, 4 * nrow),
-                             squeeze=False)
+    fig, axes, legend_ax = grid_figure(
+        nrow,
+        ncol,
+        [str(c) for c in cats],
+        cell_width=4,
+        cell_height=4,
+        max_legend_columns=min(8, 2 * ncol),
+    )
     for ax in axes.ravel():
         ax.set_axis_off()
     for i, s in enumerate(samples):
@@ -182,9 +189,14 @@ def _spatial_scatter(adata, sample_key, color_key, out_path, dpi, color_map):
         ax.set_xticks([]); ax.set_yticks([])
     handles = [plt.Line2D([0], [0], marker="o", linestyle="", markersize=5,
                           color=colour[c], label=str(c)) for c in cats]
-    fig.legend(handles=handles, loc="center left", bbox_to_anchor=(1.0, 0.5),
-               frameon=False, title="Spatial niche", fontsize=7, title_fontsize=8)
-    fig.tight_layout()
+    draw_legend_on_axis(
+        legend_ax,
+        handles,
+        [str(c) for c in cats],
+        title="Spatial niche",
+        fontsize=12,
+        max_columns=min(8, 2 * ncol),
+    )
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
@@ -198,7 +210,15 @@ def _spatial_scatter_highlight(adata, sample_key, color_key, target, out_path, d
     n = len(samples)
     ncol = min(4, n)
     nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4 * ncol, 4 * nrow), squeeze=False)
+    highlight_labels = [f"niche {target}", "other"]
+    fig, axes, legend_ax = grid_figure(
+        nrow,
+        ncol,
+        highlight_labels,
+        cell_width=4,
+        cell_height=4,
+        max_legend_columns=min(8, 2 * ncol),
+    )
     for ax in axes.ravel():
         ax.set_axis_off()
     for i, s in enumerate(samples):
@@ -226,9 +246,13 @@ def _spatial_scatter_highlight(adata, sample_key, color_key, target, out_path, d
                           color=hi_color, label=f"niche {target}"),
                plt.Line2D([0], [0], marker="o", linestyle="", markersize=5,
                           color=bg_color, label="other")]
-    fig.legend(handles=handles, loc="center left", bbox_to_anchor=(1.0, 0.5),
-               frameon=False, fontsize=7)
-    fig.tight_layout()
+    draw_legend_on_axis(
+        legend_ax,
+        handles,
+        highlight_labels,
+        fontsize=12,
+        max_columns=min(8, 2 * ncol),
+    )
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 

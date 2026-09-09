@@ -12,6 +12,7 @@ import scanpy as sc
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from PIL import Image
+from plotting_legends import legend_layout
 
 log = logging.getLogger(__name__)
 
@@ -73,24 +74,6 @@ def make_score_adata(adata, score_col):
         obs=adata.obs.drop(columns=[score_col], errors="ignore"),
         var=pd.DataFrame(index=[score_col]),
     )
-
-
-def _compact_legend(ax, title="", per_col=20, fontsize=5):
-    """Recast an axis legend into multiple narrow columns so a high niche count
-    does not blow up the panel (~per_col entries per column)."""
-    leg = ax.get_legend()
-    if leg is None:
-        return
-    handles = (leg.legend_handles if hasattr(leg, "legend_handles")
-               else getattr(leg, "legendHandles", []))
-    labels = [t.get_text() for t in leg.get_texts()]
-    if not handles:
-        return
-    ncol = max(1, (len(labels) + per_col - 1) // per_col)
-    ax.legend(handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5),
-              ncol=ncol, fontsize=fontsize, frameon=False, title=title,
-              title_fontsize=fontsize + 1, handletextpad=0.3,
-              columnspacing=0.6, labelspacing=0.25, borderaxespad=0.2)
 
 
 def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
@@ -181,8 +164,12 @@ def annotate_ct_region_dotplot(annot_key, annotation_colors, region_colors):
 
 def create_annotation_legend(annot_key, annotation_colors, region_colors,
                              out_path, dpi):
-    """Create a standalone legend image for cell type + region colour bars.
-    Legends are stacked vertically so they never overlap."""
+    """Create a temporary legend band composited beneath its dotplots.
+
+    Cell-type and region legends use dedicated rows with adaptive height, so long
+    labels cannot overlap. The caller embeds this image in the same output PNG and
+    deletes the temporary file; it is never a separate report page.
+    """
     try:
         from matplotlib.patches import Patch
 
@@ -213,29 +200,41 @@ def create_annotation_legend(annot_key, annotation_colors, region_colors,
         if not unique_cts and not unique_regs:
             return
 
-        # Two axes stacked vertically — one legend per row, no overlap
-        n_rows = (1 if unique_cts else 0) + (1 if unique_regs else 0)
-        fig_leg, axes_leg = plt.subplots(n_rows, 1, figsize=(12, 1.5 * n_rows),
-                                          squeeze=False)
-        row = 0
+        groups = []
         if unique_cts:
-            ax = axes_leg[row, 0]
-            ax.set_axis_off()
-            ct_patches = [Patch(facecolor=c, label=n) for n, c in unique_cts.items()]
-            ax.legend(handles=ct_patches, title="Cell type",
-                      loc="center", fontsize=12, title_fontsize=13,
-                      frameon=True, edgecolor="lightgray",
-                      ncol=max(1, len(unique_cts) // 4 + 1))
-            row += 1
-
+            groups.append(("Cell type", unique_cts))
         if unique_regs:
-            ax = axes_leg[row, 0]
+            groups.append(("Region", unique_regs))
+
+        layouts = [legend_layout(list(entries), preferred_rows=4)
+                   for _, entries in groups]
+        heights = [height for _, _, height in layouts]
+        fig_leg = plt.figure(figsize=(12, sum(heights)))
+        grid = fig_leg.add_gridspec(len(groups), 1, height_ratios=heights, hspace=0.15)
+        for row, ((title, entries), (labels, ncol, _)) in enumerate(
+            zip(groups, layouts)
+        ):
+            ax = fig_leg.add_subplot(grid[row, 0])
             ax.set_axis_off()
-            reg_patches = [Patch(facecolor=c, label=n) for n, c in unique_regs.items()]
-            ax.legend(handles=reg_patches, title="Region",
-                      loc="center", fontsize=12, title_fontsize=13,
-                      frameon=True, edgecolor="lightgray",
-                      ncol=max(1, len(unique_regs) // 3 + 1))
+            patches = [
+                Patch(facecolor=color, label=label)
+                for label, color in entries.items()
+            ]
+            ax.legend(
+                handles=patches,
+                labels=labels,
+                title=title,
+                loc="upper center",
+                fontsize=12,
+                title_fontsize=13,
+                frameon=True,
+                edgecolor="lightgray",
+                ncol=ncol,
+                handletextpad=0.35,
+                columnspacing=0.8,
+                labelspacing=0.35,
+                borderaxespad=0.0,
+            )
 
         fig_leg.savefig(out_path, dpi=dpi, bbox_inches="tight")
         plt.close(fig_leg)

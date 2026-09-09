@@ -189,7 +189,7 @@ Generates integrated (Harmony) and unintegrated results, with UMAPs coloured by 
 #### `sample_report`
 Assembles a compact, multi-page PDF with graphical outputs per sample, ideal to share with internal and external collaborators.
 
-Each page contains the most important data-descriptive information: cluster / annotation / region / niche UMAPs and matching spatial maps, bar plots for absolute and relative composition, and a dot plot with the top-10 expressed markers per cell type. Only annotation sources containing real labels are shown; in runs without a manual TSV annotation, the external or ingest annotation also drives cell-type composition.
+Each page contains the most important data-descriptive information: cluster / annotation / region / niche UMAPs and matching spatial maps, bar plots for absolute and relative composition, and a dot plot with the top-10 expressed markers per cell type. Only annotation sources containing real labels are shown; in runs without a manual TSV annotation, the external or ingest annotation also drives cell-type composition. Categorical legends use reserved bands below their plots, with adaptive rows and wrapped long labels, and always remain on the same PDF page as the corresponding panels.
 
 ---
 
@@ -202,12 +202,12 @@ Integrated exploration scales are standardized to ease interpretation of the res
 #### `explore_genes_integrated`
 Exploration of the integrated samples.
 
-Loads the Harmony-integrated object once and computes AUCell scores for the input gene or gene set. It then writes shared expression ranges and produces integrated UMAP/dotplot PNGs per gene or gene set.
+Loads the Harmony-integrated object once and computes AUCell scores for the input gene or gene set. It then writes shared expression ranges and produces integrated UMAP/dotplot PNGs per gene or gene set. Multi-panel categorical legends are kept in dedicated bands within each composite.
 
 #### `explore_genes_sample`
 Exploration of individual samples.
 
-Using the shared expression ranges from the integrated exploration, produces per-sample spatial composites (expression + cell type + region) and stacked dotplot composites for each query entry.
+Using the shared expression ranges from the integrated exploration, produces per-sample spatial composites (expression + cell type + region) and stacked dotplot composites for each query entry. Multi-panel categorical legends are kept in dedicated bands within each composite.
 
 ---
 

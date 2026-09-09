@@ -33,6 +33,11 @@ sys.path.insert(0, _here)
 from composition_barplots import (draw_stacked_composition, find_niche_column,
                                   build_niche_palette)
 from annotation_utils import active_annotation_columns, has_meaningful_annotation
+from plotting_legends import (
+    category_labels,
+    move_legend_to_axis,
+    panel_figure,
+)
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -128,24 +133,37 @@ def _build_page1(adata, sample_id, keys, library_id, has_regions=False):
     panels.append((niche, "Spatial niche"))
     panels = [(k, t) for k, t in panels if k]
     n = len(panels)
-    fig, axes = plt.subplots(2, n, figsize=(8 * n, 14),
-                             gridspec_kw={"wspace": 0.75, "hspace": 0.35},
-                             squeeze=False)
+    labels_by_panel = [category_labels(adata, key) for key, _ in panels]
+    fig, axes, legend_axes = panel_figure(
+        n,
+        labels_by_panel,
+        plot_rows=2,
+        panel_width=8,
+        plot_height=6,
+        wspace=0.18,
+        hspace=0.28,
+        top_margin=1.0,
+    )
     fig.suptitle(f"Sample: {sample_id}", fontsize=18, fontweight="bold", y=0.99)
     for j, (key, title) in enumerate(panels):
         try:
             sc.pl.umap(adata, color=key, size=UMAP_POINT_SIZE, frameon=False, title=title,
-                       legend_fontsize=6, na_in_legend=False,
+                       legend_fontsize=12, na_in_legend=False,
                        ax=axes[0, j], show=False)
         except Exception as e:
             log.warning("  UMAP %s failed: %s", title, e); axes[0, j].set_title(f"{title} (failed)")
         try:
             sc.pl.spatial(adata, color=key, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                           title=title, library_id=library_id,
-                          legend_fontsize=6, na_in_legend=False,
+                          legend_fontsize=12, na_in_legend=False,
                           ax=axes[1, j], show=False)
         except Exception as e:
             log.warning("  Spatial %s failed: %s", title, e); axes[1, j].set_title(f"{title} (failed)")
+        move_legend_to_axis(
+            [axes[0, j], axes[1, j]],
+            legend_axes[j],
+            title=title,
+        )
     return fig
 
 
