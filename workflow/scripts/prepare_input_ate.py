@@ -79,8 +79,21 @@ try:
     adata.obs["sample"] = sample_id
     if "cell_id" not in adata.obs.columns:
         adata.obs["cell_id"] = adata.obs_names.astype(str)
-    # cell_id must equal obs_names as strings — downstream joins key on it.
+    # Contract invariant: obs_names == obs['cell_id']. Every downstream join (external
+    # annotation, spatial niches, region mapping) keys on obs_names, but the SpatialData
+    # zarr table carries the real cell_id in a column while obs_names is a positional
+    # integer index — so the two silently diverge and those joins match nothing (all cells
+    # fall through to 'Unannotated'). Stringify cell_id and align obs_names to it here.
     adata.obs["cell_id"] = adata.obs["cell_id"].astype(str)
+    adata.obs_names = adata.obs["cell_id"].values
+    if not adata.obs_names.is_unique:
+        n_dup = int(adata.obs_names.duplicated().sum())
+        examples = adata.obs_names[adata.obs_names.duplicated(keep=False)].unique()[:5]
+        raise ValueError(
+            f"cell_id has {n_dup} duplicate value(s) (examples: {list(examples)}). "
+            "Cell identifiers must be unique; suffixing them would break external "
+            "metadata and region joins."
+        )
     log.info("AnnData: %d cells × %d genes (raw, unfiltered)", adata.n_obs, adata.n_vars)
 
     # ── 2b. Contract dtype hygiene ───────────────────────────────────────
