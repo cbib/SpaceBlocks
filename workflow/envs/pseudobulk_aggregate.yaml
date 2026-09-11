@@ -1,6 +1,7 @@
 name: pseudobulk_aggregate
 channels:
   - conda-forge
+  - bioconda
 dependencies:
   - python=3.10
   - pip

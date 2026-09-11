@@ -280,7 +280,15 @@ def run_clustering_branch(adata, branch_name, branch_dir, resolutions,
     leiden_keys = []
     for res in resolutions:
         key = f"leiden_{str(res).replace('.', '_')}"
-        sc.tl.leiden(adata, resolution=res, key_added=key, random_state=RANDOM_SEED)
+        sc.tl.leiden(
+            adata,
+            resolution=res,
+            key_added=key,
+            random_state=RANDOM_SEED,
+            flavor="igraph",
+            n_iterations=2,
+            directed=False,
+        )
         leiden_keys.append(key)
         log.info("    [%s] res=%.1f → %d clusters", branch_name, res, adata.obs[key].nunique())
 

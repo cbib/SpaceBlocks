@@ -75,6 +75,17 @@ NICHE_COLUMN      = getattr(snakemake.params, "niche_column", "")
 EXTRA_ANNOT_COLUMNS    = list(getattr(snakemake.params, "extra_annot_columns", []) or [])
 SAMPLE_COLORS     = getattr(snakemake.params, "sample_colors", {}) or {}
 INTEGRATE_KEY     = str(getattr(snakemake.params, "integrate_key", "sample") or "sample")
+RANDOM_SEED       = int(getattr(snakemake.params, "random_seed", 0))
+
+# Scanpy recommends the igraph backend with two iterations for faster Leiden
+# clustering, especially on large datasets. The igraph backend requires an
+# undirected graph.
+LEIDEN_KWARGS = {
+    "flavor": "igraph",
+    "n_iterations": 2,
+    "directed": False,
+    "random_state": RANDOM_SEED,
+}
 
 
 def _apply_design_palette(ad, col):
@@ -157,7 +168,12 @@ try:
     sc.tl.umap(adata)
 
     # Leiden on uncorrected
-    sc.tl.leiden(adata, resolution=0.5, key_added="leiden_uncorrected")
+    sc.tl.leiden(
+        adata,
+        resolution=0.5,
+        key_added="leiden_uncorrected",
+        **LEIDEN_KWARGS,
+    )
 
     log.info("Saving concatenated → %s", out_concat)
     adata.write(out_concat)
@@ -218,7 +234,12 @@ try:
 
     sc.pp.neighbors(adata_harmony, n_neighbors=N_NEIGHBORS)
     sc.tl.umap(adata_harmony)
-    sc.tl.leiden(adata_harmony, resolution=0.5, key_added="leiden_harmony")
+    sc.tl.leiden(
+        adata_harmony,
+        resolution=0.5,
+        key_added="leiden_harmony",
+        **LEIDEN_KWARGS,
+    )
 
     log.info("Saving Harmony integrated → %s", out_harmony)
     adata_harmony.write(out_harmony)
@@ -364,7 +385,12 @@ try:
         # Cluster the sketch
         sc.pp.neighbors(sketched_adata, n_neighbors=N_NEIGHBORS)
         sc.tl.umap(sketched_adata)
-        sc.tl.leiden(sketched_adata, resolution=0.5, key_added="clusters")
+        sc.tl.leiden(
+            sketched_adata,
+            resolution=0.5,
+            key_added="clusters",
+            **LEIDEN_KWARGS,
+        )
 
         # Project labels back to full dataset via ingest (in chunks)
         log.info("  Projecting sketch clusters onto full dataset …")

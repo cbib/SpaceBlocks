@@ -343,9 +343,12 @@ try:
                 "obs column is available"
             )
 
-        adata.obs["cell_type_external"] = normalize_annotation_labels(
-            external_labels
-        ).astype("category")
+        # Construct the categorical explicitly from the helper's object-backed
+        # labels.  A generic Series.astype("category") may re-infer pandas'
+        # nullable string dtype and make the h5ad unreadable by older AnnData.
+        adata.obs["cell_type_external"] = pd.Categorical(
+            normalize_annotation_labels(external_labels)
+        )
         adata.uns["external_annotation_source_column"] = ext_col
         n_external_unannotated = int(
             (adata.obs["cell_type_external"] == "Unannotated").sum()

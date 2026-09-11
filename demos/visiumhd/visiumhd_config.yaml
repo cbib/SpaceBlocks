@@ -98,13 +98,13 @@ spatial_niches:
   niche_dir: ''
   lambda: 0.8
   num_neighbours: 18
-  cluster_n_neighbours: 15
-  n_iterations: 2
+  cluster_n_neighbours: 50
+  n_iterations: -1
   max_m: 1
   nbr_weight_decay: scaled_gaussian
   use_hvg: true
   n_top_genes: 2000
-  niche_resolution: 0.3
+  niche_resolution: 0.1
   refine: false
   refine_num_neigh: 6
   refine_iterations: 1

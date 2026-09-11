@@ -28,9 +28,18 @@ def non_placeholder_annotation_mask(labels):
 
 
 def normalize_annotation_labels(labels, placeholder="Unannotated"):
-    """Strip real labels and collapse missing/placeholder values for display."""
+    """Return stripped, object-backed labels with placeholders normalized.
+
+    Pandas' nullable string dtype is useful while normalizing because it preserves
+    missing values through string operations.  Do not expose that dtype to callers,
+    though: nullable-string categories use a newer h5ad encoding that older AnnData
+    readers cannot consume.
+    """
     normalized = labels.astype("string").str.strip()
-    return normalized.where(non_placeholder_annotation_mask(labels), placeholder)
+    normalized = normalized.where(
+        non_placeholder_annotation_mask(labels), placeholder
+    )
+    return normalized.astype(object)
 
 
 def meaningful_annotation_labels(adata, column):

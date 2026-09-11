@@ -615,6 +615,34 @@ properties:
         type: string
 
         description: Directory of precomputed per-sample niche TSVs.
+      lambda:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.8
+        description: Weight of spatial-neighbour features in the BANKSY matrix.
+      num_neighbours:
+        type: integer
+        minimum: 1
+        default: 18
+        description: Number of physical neighbours used to build BANKSY features.
+      cluster_n_neighbours:
+        type: integer
+        minimum: 1
+        default: 50
+        description: Number of neighbours in the BANKSY latent-space clustering graph.
+      niche_resolution:
+        type: number
+        exclusiveMinimum: 0
+        default: 0.1
+        description: Leiden resolution for spatial-niche clustering.
+      n_iterations:
+        type: integer
+        anyOf:
+        - const: -1
+        - minimum: 1
+        default: -1
+        description: Leiden iterations; -1 runs until convergence.
   subcompartments:
     type: ["object", "null"]
     description: >-
