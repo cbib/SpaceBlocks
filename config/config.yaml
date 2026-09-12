@@ -4,10 +4,17 @@
 # ─── Run mode — which headblock builds the contract h5ad ─────────────────────
 mode: decoupled
 
+# Default working directory for CI/CD pipelines and quick testing.
+# Snakemake will change to this directory and load config/config.yaml from there,
+# overriding the default config/config.yaml in the source code (this file).
+# Comment out or remove this line for real production runs.
+#workdir: .test
+
 # ─── input/output directories ────────────────────────────────────────────────
 ## BASE DIRECTORY #############################################################
 ##
 ## You may modify 'base_dir' to point to your project results directory.
+## This is useful to keep results in a fast filesystem separate from the source code.
 ## Paths relative to base_dir can be left as is,
 ## or be overridden with absolute paths if desired.
 

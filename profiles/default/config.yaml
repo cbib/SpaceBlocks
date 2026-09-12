@@ -11,7 +11,7 @@
 # "directory: .test" is necessary for Snakemake catalog's linting
 # Switch from "directory: .test" to "directory: ." when running from the repository root,
 # or define a custom directory "directory: /path/to/your/working/directory" to run from anywhere.
-directory: .test
+#directory: .test
 executor: local
 jobs: 4
 

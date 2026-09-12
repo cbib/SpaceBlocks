@@ -14,11 +14,30 @@ import sys
 from itertools import combinations
 import pandas as pd
 from snakemake.utils import validate, min_version
+from pathlib import Path
 
 min_version("8.0")
 
 
 configfile: "config/config.yaml"
+
+
+if config.get("workdir"):
+    _workdir = config["workdir"]
+
+    workdir: _workdir
+
+    # Load new workdir config.yaml if present
+    _workdir_config = Path("config/config.yaml")
+    if _workdir_config.is_file():
+        config.clear()  # Not sure if this is neededm but seems the right thing to do
+
+        configfile: _workdir_config
+
+        print(
+            f"[config] workdir set to '{_workdir}', loading config from {_workdir_config}",
+            file=sys.stderr,
+        )
 
 
 # --- Public-data examples (mode: decoupled) -------------------------------------
