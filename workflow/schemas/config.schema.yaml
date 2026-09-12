@@ -157,10 +157,6 @@ properties:
       override the analysis.* defaults per sample, key-by-key; missing
       samples/columns fall back to config.  Empty string disables overrides.
 
-  workdir:
-    type: string
-    description: Working directory for Snakemake execution.
-
   base_dir:
     type: string
     description: >-
