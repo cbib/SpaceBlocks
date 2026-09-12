@@ -1,180 +1,61 @@
-# SpaceBlocks configuration.  Full explanations: config/README.md (or the online docs https://cbib.github.io/SpaceBlocks/configuration/).
-# Every key is validated against workflow/schemas/config.schema.yaml before the run starts.
-
-# ─── Run mode — which headblock builds the contract h5ad ─────────────────────
+# Canonical catalogue/CI fixture (mode: decoupled). Paths are relative to .test/.
 mode: decoupled
-
-# ─── input/output directories ────────────────────────────────────────────────
-## BASE DIRECTORY #############################################################
-##
-## You may modify 'base_dir' to point to your project results directory.
-## Paths relative to base_dir can be left as is,
-## or be overridden with absolute paths if desired.
-
-base_dir: SpaceBlocksProject
-
-## Paths that are not relative to base_dir and must be set explicitly below:
-# spaceranger, probe_set, transcriptome, ingest_ref
-###############################################################################
-
+base_dir: .test/test_output
 post_processing_outdir: "{base_dir}/output"
 logdir: "{base_dir}/logs"
-spaceranger_processing_outdir: "{base_dir}/spaceranger_results"
-# dir with region annotation GeoJSONs (optional, recommended)
-geojson_path: "/path/to/geojson"
-# only when using "mode: decoupled" — dir of pre-built contract h5ads
-contract_dir: ''
-
-# ─── Reproducibility & reuse   (docs → Configuration) ────────────────────────
+spaceranger_processing_outdir: "{base_dir}/sr"
+geojson_path: "{base_dir}/geojson"
+contract_dir: ".test/data"
 random_seed: 0
-precomputed_metadata_dir: "/path/to/metadata_visiumhd/"
-# reuse clusters from precomputed_metadata_dir
-use_precomputed_clusters: true
-
-# ─── Sample sheets ───────────────────────────────────────────────────────────
-core_samples: config/core_samples.tsv
-# only when using "mode: visiumhd" — fastq/slide/area per sample
-samples: config/visiumhd_samples.csv
-
-# ─── Visium HD head   (mode: visiumhd) ───────────────────────────────────────
-spaceranger: /path/to/spaceranger-4.0.1/spaceranger # external install; path to the executable
-probe_set: /path/to/Visium_Human_Transcriptome_Probe_Set_v2.1.0_GRCh38-2024-A.csv
-transcriptome: /path/to/cellranger/refdata-gex-GRCh38-2024-A
-
-# ─── Xenium 5K head   (mode: xenium5k) ───────────────────────────────────────
+use_precomputed_clusters: false
+precomputed_metadata_dir: ''
+core_samples: .test/config/core_samples.tsv
 xenium5k:
-  # xenium_dir is the directory containing the Xenium 5K samples.
-  # Make sure to keep the {sample} placeholder in the path.
-  xenium_dir: "/path/to/xenium/{sample}"
+  xenium_dir: "{base_dir}/xenium/{sample}"
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
   pixel_size_um: 0.2125
-
-# ─── Contract — Head → Core hand-off ─────────────────────────────────────────
 contract:
   sample_key: sample
   spatial_key: spatial
   require_region: false
   require_raw_counts: true
   mito_prefix:
-    - MT-
-    - mt-
-
-# ─── QC & preprocessing ──────────────────────────────────────────────────────
-# qc thresholds to screen in qc_sweep_all
-qc_sweep:
-  # use ingest_ref
-  ingest_enabled: true
-  ingest_key: cell_type_ingest
-  cell_id_key: cell_id
-  dpi: 300
-  # thresholds to screen
-  thresholds:
-    min_genes:
-      - 50
-      - 100
-      - 200
-    min_counts:
-      - 1
-      - 10
-      - 50
-    max_counts:
-      - 3000
-      - 5000
-    max_pct_mt:
-      - 10
-      - 15
-      - 20
-
-# optional: per-sample QC thresholds TSV (example at config/per_sample_qc.tsv)
+  - MT-
+  - mt-
 per_sample_qc: ''
-# default: global thresholds
 analysis:
-  # qc thresholds
   plot_dpi: 300
-  # marker sizes for UMAP embeddings and spatial maps, respectively
-  umap_point_size: 2
-  spatial_point_size: 20
   min_counts: 1
   min_cells: 3
   min_genes: 100
-  # umap
   n_neighbors: 10
   n_pcs: 30
-  # n marker genes; n DE genes in pseudobulk heatmaps
   de_n_genes: 25
-  # leiden
   resolution_scan_min: 0.6
   resolution_scan_max: 0.8
   resolution_scan_step: 0.2
   min_cells_per_type: 15
-  # integrate
   sketch_fraction: 0.25
-  # pseudobulk
   run_pseudobulk_de: true
   run_leiden_analysis: true
+  analysis_levels:
+  - by_region
+  - by_celltype_region
   min_cells_per_pseudobulk: 10
   min_replicates: 3
   min_counts_per_pseudobulk: 1000
   padj_threshold: 0.05
   lfc_threshold: 0.25
-  # Each named analysis defines one aggregation and one DE model. `cell_type` is
-  # resolved to the annotation selected by annotation_types. Multiple group_by
-  # columns form one combined comparison group; interactions are not fitted.
-  pseudobulk:
-    analyses:
-      - name: regions_all_cells
-        aggregation: by_region
-        group_by:
-          - region_annotation
-        paired_by: sample
-        exclude_levels:
-          region_annotation:
-            - Unlabeled
-            - Bubble
-        contrasts:
-          - name: tumor_vs_healthy
-            numerator:
-              region_annotation: Tumor area
-            denominator:
-              region_annotation: Healthy area
-        # Omnibus test across every sufficiently replicated, non-excluded region.
-        lrt:
-          enabled: true
-
-      - name: regions_by_celltype
-        aggregation: by_celltype_region
-        group_by:
-          - region_annotation
-        paired_by: sample
-        exclude_levels:
-          region_annotation:
-            - Unlabeled
-            - Bubble
-          cell_type:
-            - Unannotated
-        contrasts:
-          - name: tumor_vs_healthy
-            numerator:
-              region_annotation: Tumor area
-            denominator:
-              region_annotation: Healthy area
-        lrt:
-          enabled: true
-
-  # Preferred region order for QC-sweep, subcluster, and region-only pseudobulk split
-  # heatmaps, first-to-last (typically left-to-right). This does not filter pseudobulk
-  # levels; use each analysis' exclude_levels for filtering.
   region_levels:
-    - Healthy area
-    - Healthy over tumor
-    - Dysplastic area
-    - AK area
-    - AK over tumor
-    - In situ area
-    - Tumor area
-    - Invasive area
-  # Palette used when region_annotation is the single comparison variable.
+  - Healthy area
+  - Healthy over tumor
+  - Dysplastic area
+  - AK area
+  - AK over tumor
+  - In situ area
+  - Tumor area
+  - Invasive area
   region_colors:
     Healthy area: '#FDE725FF'
     Healthy over tumor: '#9FDA3AFF'
@@ -184,108 +65,73 @@ analysis:
     In situ area: '#365C8DFF'
     Tumor area: '#46337EFF'
     Invasive area: '#440154FF'
-
-# ─── Annotation ──────────────────────────────────────────────────────────────
-# (optional, recommended) predefined cell type markers, screened during leiden to ease annotation
-snakemake_cell_markers: config/snakemake_cell_markers.tsv
-# (default) cluster → cell-type TSV (fill template from generate_annotation_template)
-cluster_annotations: config/cluster_annotations.tsv
-# (optional) external labels from metadata TSVs, or from contract h5ad obs in decoupled mode
+qc_sweep:
+  ingest_enabled: false
+  ingest_key: cell_type_ingest
+  cell_id_key: cell_id
+  dpi: 300
+  thresholds:
+    min_genes:
+    - 50
+    - 100
+    - 200
+    min_counts:
+    - 1
+    - 10
+    - 50
+    max_counts:
+    - 3000
+    - 5000
+    max_pct_mt:
+    - 10
+    - 15
+    - 20
+cluster_annotations: .test/config/cluster_annotations.tsv
+snakemake_cell_markers: .test/config/snakemake_cell_markers.tsv
 external_annotation:
   enabled: false
-  column: manual_celltype  # arbitrary source name; normalized to cell_type_external
+  column: manual_celltype
   keep_unannotated: true
-ingest_ref: "/path/to/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad"  # optional annotated scRNA-seq reference (ingest_ref)
+ingest_ref: ''
 ingest_ref_label_key: 04_celltypes
 integration:
   integrate_key: sample
-# (optional) include annotations for downstream plots from core_samples.tsv
 extra_annotations:
   columns:
-    - patient
-    - batch
-
-# ─── Spatial niches   (optional) ─────────────────────────────────────────────
+  - patient
+  - batch
 spatial_niches:
   enabled: true
-  # use niche_dir precomputed .tsv
-  use_precomputed: true
-  niche_dir: "/path/to/niches_visiumhd/"
+  use_precomputed: false
+  niche_dir: ''
   lambda: 0.8
   num_neighbours: 18
   cluster_n_neighbours: 50
   n_iterations: -1
   max_m: 1
   nbr_weight_decay: scaled_gaussian
-  # (recommended) use only HVGs for niche clustering
   use_hvg: true
   n_top_genes: 2000
   niche_resolution: 0.1
-  # (optional) BANKSY refine niches
   refine: false
   refine_num_neigh: 6
   refine_iterations: 1
   refine_auto: false
   compute_umap: false
-
-# ─── Subcompartments   (optional) ────────────────────────────────────────────
 subcompartments:
-  # subcompartment name
-  Fibroblasts:
-    # exact-string match of cell type names to pool together
-    strings:
-      - Fibroblasts
-      - Fibroblasts_Macro
-      - Fibroblasts_Endothelial
-      - Fibroblasts_Keratinocytes
-      - Fibroblasts_Plasma
-    # resolution range to screen in leiden clustering
-    resolution_min: 0.6
-    resolution_max: 1.2
-    resolution_step: 0.2
   Keratinocytes:
     strings:
       - Keratinocytes
-      - Keratinocytes_Mal
-      - Keratinocytes_Basal
-      - Keratinocytes_Suprabasal
-      - Fibroblasts_Keratinocytes
     resolution_min: 0.6
-    resolution_max: 1.2
+    resolution_max: 0.8
     resolution_step: 0.2
-  MonoMacro_Tcells:
-    strings:
-      - Mono_Macro
-      - Macro_Tcells
-      - Macro_Plasma
-      - Tcells
-      - Fibroblasts_Macro
-    resolution_min: 0.6
-    resolution_max: 1.2
-    resolution_step: 0.2
-  Plasma_Bcells:
-    strings:
-      - Plasma_cells
-      - Macro_Plasma
-      - Fibroblasts_Plasma
-    resolution_min: 0.6
-    resolution_max: 1.2
-    resolution_step: 0.2
-
-# ─── Gene / signature exploration ────────────────────────────────────────────
 gene_exploration:
-  # tsv where col name is gene set name, values are genes (one or more)
-  queries: config/gene_queries.tsv
+  queries: .test/config/gene_queries.tsv
   aucell_max_rank_fraction: 0.05
   niche_column: spatial_niche
   dpi: 300
-
-# ─── Colour palettes   (docs → Configuration) ────────────────────────────────
-# region color palettes is found under analysis: region_colors
 sample_colors:
-  # extra column in core_samples.tsv
   patient:
-    # levels and HEX code; unfound levels fall back to grey
     Patient 1: '#000000'
     Patient 2: '#E69F00'
     Patient 3: '#56B4E9'
@@ -299,7 +145,6 @@ sample_colors:
     Batch 2: '#C0392B'
     Batch 3: '#7F7F7F'
 annotation_colors:
-  # levels in cluster_annotations.tsv
   cell_type_tsv:
     Keratinocytes: '#d62728'
     Keratinocytes_Basal: '#8c564b'
@@ -320,7 +165,6 @@ annotation_colors:
     Gland_cells: '#ff7f0e'
     Smooth_muscle: '#d9d9d9'
     Skeletal_muscle: '#b9b9c9'
-  # levels when external_annotation: enabled: true
   cell_type_external:
     Keratinocytes: '#d62728'
     Keratinocytes_Basal: '#8c564b'
@@ -341,8 +185,6 @@ annotation_colors:
     Gland_cells: '#ff7f0e'
     Smooth_muscle: '#d9d9d9'
     Skeletal_muscle: '#b9b9c9'
-
-# ─── Per-rule resources — mem_mb scales with the retry attempt ───────────────
 resources:
   spaceranger_count_vhd:
     mem_mb: 65536
@@ -370,10 +212,6 @@ resources:
     threads: 4
   validate_input:
     mem_mb: 32768
-    runtime: 30
-    threads: 2
-  process_geojson:
-    mem_mb: 4096
     runtime: 30
     threads: 2
   qc_sweep:
@@ -429,7 +267,7 @@ resources:
     runtime: 240
     threads: 4
   explore_genes_sample:
-    mem_mb: 16192
+    mem_mb: 32768
     runtime: 360
     threads: 4
   default:

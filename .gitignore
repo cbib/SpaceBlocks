@@ -23,7 +23,7 @@ __pycache__/
 Thumbs.db
 
 # Test outputs
-.test/output/
+.test/test_output/
 
 # Doc build
 site/
