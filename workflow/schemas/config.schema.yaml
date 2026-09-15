@@ -37,9 +37,6 @@ properties:
       xenium_dir:
         type: string
         description: "{sample} pattern to each Xenium output bundle."
-      zarr_dir:
-        type: string
-        description: Where {sample}.zarr stores are written ("" → spaceranger_processing_outdir).
       qupath_pyramid_level:
         type: integer
         minimum: 0
@@ -66,9 +63,6 @@ properties:
       atera_dir:
         type: string
         description: "{sample} pattern to each Atera outs/ bundle."
-      zarr_dir:
-        type: string
-        description: Where {sample}.zarr stores are written ("" -> spaceranger_processing_outdir).
       qupath_pyramid_level:
         type: integer
         minimum: 0
@@ -166,14 +160,14 @@ properties:
   mode:
     type: string
     enum: ["visiumhd", "xenium5k", "atera", "merscope", "decoupled"]
-    default: "visiumhd"
+    default: "decoupled"
     description: >-
       A HEAD technology name (that head builds the contract h5ads in this run) or
       "decoupled" (the core consumes pre-existing contracts from contract_dir; head
-      rules skipped; validation aborts if any core_samples sample is missing its
-      contract). Extend the enum as new heads are added (e.g. xenium5k). "atera" is
-      ALPHA support: the platform ships in H2 2026 and the public data is a preview
-      whose output format 10x state will change at commercial release.
+      rules are skipped; Snakemake reports any missing configured contracts while
+      building the DAG). Extend the enum as new heads are added (e.g. xenium5k).
+      "atera" is ALPHA support: the platform ships in H2 2026 and the public data is
+      a preview whose output format 10x state will change at commercial release.
 
   core_samples:
     type: string
