@@ -20,7 +20,11 @@ We recommend to always run snakemake with `--sdm conda`, so each rule is execute
 
 ## 2. Configure
 
-In the `config/config.yaml` pick a `mode` and fill two files:
+Create your run configuration, then pick a `mode` and fill the sample sheet:
+
+```bash
+cp config/config.yaml.template config/config.yaml
+```
 
 1. **`config/core_samples.tsv`** — one row per sample; extra columns (e.g. `patient`, `condition`) become design metadata, and can be used for downstream analyses and visualization.
 2. **`config/config.yaml`** — set `mode`, the input and output paths, and (for Visium HD) the head files. See [Configuration](configuration.md) for full details.

@@ -4,8 +4,9 @@
 usage:
   mandatory-flags:
     desc: >
-      Configure config/config.yaml and the required sample sheets before
-      execution. Space Ranger must be installed separately when required.
+      Copy config/config.yaml.template to config/config.yaml, then configure it
+      and the required sample sheets. Space Ranger must be installed separately
+      when required.
     flags: []
 
   software-stack-deployment:

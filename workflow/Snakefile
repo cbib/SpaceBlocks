@@ -59,7 +59,7 @@ XENIUM_ZARR_DIR = OUTDIR_SR
 # Atera head specifics (ALPHA — the platform ships H2 2026 and its output format is
 # still a preview; see docs/rules.md).
 ATERA = config.get("atera", {}) or {}
-ATERA_ZARR_DIR = ATERA.get("zarr_dir", "") or OUTDIR_SR
+ATERA_ZARR_DIR = OUTDIR_SR
 # The registered H&E is OPTIONAL and ships separately from the outs/ bundle. Both the
 # image and its alignment matrix are needed for the transform to be defined, so the
 # H&E QuPath rule is included only when both are configured.

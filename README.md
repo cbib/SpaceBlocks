@@ -54,7 +54,7 @@ SpaceBlocks requires [Snakemake](https://snakemake.readthedocs.io) and Conda/Mam
 If you are not familiar with Snakemake, there are three key files to configure:
 
 1. `workflow/Snakefile` — loads the config file/s (normally, at `config/config.yaml`), and has the instructions to execute the workflow. It is normally static, so you should not modify it.
-2. The `config.yaml` — defines the parameters for your workflow run (i.e. where the input and output should be found, whether to use an external reference for cell type annotation, etc.). **It needs to be configured.** The config may require other files needed for the run (in the case of SpaceBlocks, `config/core_samples.tsv`).
+2. The `config.yaml` — defines the parameters for your workflow run (i.e. where the input and output should be found, whether to use an external reference for cell type annotation, etc.). Copy `config/config.yaml.template` to `config/config.yaml`, then configure it for your project. The config may require other files needed for the run (in the case of SpaceBlocks, `config/core_samples.tsv`).
 3. The `profiles/config.yaml` — Snakemake is a workflow manager that allows parallelization in systems with job schedulers (i.e. `slurm`), or local execution. **The profile needs to be adapted to your system.** We provide a default profile that runs the `test` pipeline locally and a slurm profile we used on our HPC.
 
 The full [configuration reference](https://cbib.github.io/SpaceBlocks/configuration/) presents a detailed explanation on how to set `config.yaml`.
@@ -73,6 +73,7 @@ In short, to run the workflow:
 git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 
 # 2. Configure
+cp config/config.yaml.template config/config.yaml
 #    config/visiumhd_samples.csv   — if running mode : visiumhd
 #    config/core_samples.tsv       — one row per sample (+ any design columns)
 #    config/config.yaml            — mode: visiumhd | xenium5k | decoupled, and paths

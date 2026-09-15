@@ -13,7 +13,6 @@ precomputed_metadata_dir: 'demos/visiumhd/metadata'
 core_samples: demos/visiumhd/contracts/core_samples.tsv
 xenium5k:
   xenium_dir: /scratch/CBiB/soterino/xenium/{sample}
-  zarr_dir: ''
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
   pixel_size_um: 0.2125

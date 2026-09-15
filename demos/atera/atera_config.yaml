@@ -53,7 +53,6 @@ atera:
   # The preview ships as ONE sample, so atera_dir carries no {sample} placeholder.
   # For a real multi-sample run use a pattern, e.g. /path/to/atera/{sample}/outs.
   atera_dir: /scratch/CBiB/soterino/atera/outs
-  zarr_dir: ''                      # '' -> spaceranger_processing_outdir
   # Level 2 = 0.85 um/px. Both QuPath images (fluorescence composite and registered
   # H&E) are exported on this morphology grid, so they overlay exactly and share one
   # pixel->micron scalar. Level 3 halves the resolution and the file size.
