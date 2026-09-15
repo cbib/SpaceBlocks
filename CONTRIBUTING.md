@@ -112,8 +112,9 @@ snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
 # 3. The decoupled CoreBlock DAG builds
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
 
-# 4. Config still validates against the schema
+# 4. Catalog fixture and user template still validate against the schema
 python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration schema validation passed')"
+python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml.template')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration template schema validation passed')"
 
 # 5. Docs build cleanly (only if you touched docs/)
 # Activate the development environment
@@ -122,10 +123,11 @@ conda activate spaceblocks_dev
 mkdocs build --strict
 ```
 
-Before a catalogue release, generate the decoupled rule graph once manually:
+Before a Catalog release, run the two checks used by the Catalog:
 
 ```bash
-snakemake -s workflow/Snakefile -d .test --forceall --rulegraph --workflow-profile none > pipeline_rulegraph.dot
+snakemake --lint
+snakemake -s workflow/Snakefile -c 1 -d .test --forceall --rulegraph > pipeline_rulegraph.dot
 ```
 
 Rendering the DOT file to SVG is optional and requires Graphviz:
@@ -134,7 +136,7 @@ Rendering the DOT file to SVG is optional and requires Graphviz:
 dot -Tsvg pipeline_rulegraph.dot > images/rulegraph.svg
 ```
 
-If you modify a HeadBlock, also dry-run the affected mode using a complete platform-specific configuration and representative mock or real inputs. Changing only `mode` in the generic `config/config.yaml` is not sufficient because its input paths are placeholders. Supported modes are `visiumhd`, `xenium5k`, `atera`, `merscope`, and `decoupled`.
+If you modify a HeadBlock, also dry-run the affected mode using a complete platform-specific configuration and representative mock or real inputs. Changing only `mode` in `config/config.yaml.template` is not sufficient because its input paths are placeholders. Supported modes are `visiumhd`, `xenium5k`, `atera`, `merscope`, and `decoupled`.
 
 Quick per-file sanity checks are cheap and worth it: `python -c "import ast; ast.parse(open('file.py').read())"`
 for Python, and `yaml.safe_load` for any YAML you edit.

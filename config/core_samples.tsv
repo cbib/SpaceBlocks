@@ -1,0 +1,9 @@
+# CORE sample sheet — technology-agnostic anchor (see config.yaml: core_samples).
+# Required column: sample. Optional columns (here: condition, batch) are stamped into
+# obs by preprocess_umap and surfaced downstream via config.extra_annotations.
+# `sample` values match config/samples.csv sample_id (visiumhd head run).
+# Lines starting with '#' are ignored (no commas inside so no quoting).
+sample	condition	batch
+sample1	Control	Batch 1
+sample2	Treatment	Batch 1
+sample3	Treatment	Batch 2

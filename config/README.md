@@ -1,6 +1,6 @@
 This page explains how to fully set up the config files to run SpaceBlocks. Full documentation can be found at https://cbib.github.io/SpaceBlocks/configuration/.
 
-SpaceBlocks is configured through **`config/config.yaml`**, which contains all the parameters needed for the run, plus one or two **sample sheets**.
+Copy **`config/config.yaml.template`** to **`config/config.yaml`** before configuring a run. The template contains all parameters; the committed `config/config.yaml` is only the runnable fixture used by the Snakemake Workflow Catalog.
 
 The explanations on this page are divided by type (directory, parameter, color, and so on). In the config file, parameters are divided by Block and function.
 
@@ -124,6 +124,9 @@ sample_colors:
   patient:
     "Patient 1": "#000000"
     "Patient 2": "#E69F00"
+  condition:
+    "Control": "#0072B2"
+    "Treatment": "#D55E00"
   batch:
     "Batch 1": "#8E44AD"
 
@@ -153,7 +156,7 @@ The rest of the configuration lives in nested blocks. Files and single parameter
 
 | Section | Condition | What it configures |
 | --- | --- | --- |
-| `xenium5k` | `mode: xenium5k` | Xenium head settings: `xenium_dir`, `zarr_dir`, pyramid levels, and `pixel_size_um`. |
+| `xenium5k` | `mode: xenium5k` | Xenium head settings: `xenium_dir`, pyramid levels, and `pixel_size_um`. |
 | `atera` | `mode: atera` | Atera head settings: `atera_dir`, Zarr and pyramid options, plus optional registered H&E image, alignment, and keypoint patterns. |
 | `merscope` | `mode: merscope` | MERSCOPE head settings: `merscope_dir`, selected z-plane, embedded-image resolution, and image channels. |
 | `contract` | **Mandatory** | Semantic keys of the hand-off object: `sample_key`, `spatial_key`, `require_region`, `require_raw_counts`, `mito_prefix`. |
@@ -340,7 +343,7 @@ These files are generated during the run, and can be shared with minimum effort 
 
 ## 7. Example use case configurations
 
-The commented `config/config.yaml` is the full template. The mode-specific keys that differ are:
+The commented `config/config.yaml.template` is the full template. The mode-specific keys that differ are:
 
 **Visium HD** (`mode: visiumhd`)
 ```yaml
@@ -357,7 +360,6 @@ spaceranger_processing_outdir: "{base_dir}/sr_out"
 mode: "xenium5k"
 xenium5k:
   xenium_dir: "/path/to/xenium/{sample}"   # {sample} pattern to each bundle
-  zarr_dir: ""                             # "" → spaceranger_processing_outdir
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
   pixel_size_um: 0.2125
@@ -368,7 +370,6 @@ xenium5k:
 mode: "atera"
 atera:
   atera_dir: "/path/to/atera/{sample}/outs"
-  zarr_dir: ""
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
   pixel_size_um: 0.2125
@@ -398,15 +399,15 @@ All modes additionally set `core_samples`, `post_processing_outdir`, `logdir`, a
 ## 8. Minimal example
 
 ```yaml
-mode: "visiumhd"
-samples: "config/visiumhd_samples.csv"
+mode: "decoupled"
 core_samples: "config/core_samples.tsv"
-geojson_path: "path/to/geojson"
-precomputed_metadata_dir: "/path/to/metadata_visiumhd/"
+contract_dir: "/path/to/contract_h5ads"
+geojson_path: "/path/to/geojson"
+precomputed_metadata_dir: "/path/to/precomputed_metadata/"
 post_processing_outdir: "{base_dir}/results"
-# ... see config/config.yaml for the full, commented template.
+# ... see config/config.yaml.template for the full, commented template.
 ```
 
-Start from the commented `config/config.yaml` shipped with the workflow and adjust the paths and sample sheets to your data.
+Copy `config/config.yaml.template` to `config/config.yaml`, then adjust the paths and sample sheets to your data.
 
 You may next read the [get started](https://cbib.github.io/SpaceBlocks/getting-started/) documentation and the [public data end-to-end example runs](https://cbib.github.io/SpaceBlocks/demos/).
