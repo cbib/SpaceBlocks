@@ -285,7 +285,7 @@ fit_wald <- function(counts, meta, condition_col, paired = character(0)) {
 
 run_lrt <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
   if (!lrt_enabled) return(invisible(NULL))
-  message("    Explicit omnibus LRT …")
+  message("    Evaluating omnibus LRT eligibility …")
 
   unit_col <- if (length(paired_by)) paired_by else sample_col
   replicate_counts <- meta %>%
@@ -309,13 +309,27 @@ run_lrt <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
   }
 
   lrt_meta[[condition_col]] <- droplevels(factor(lrt_meta[[condition_col]]))
-  if (nlevels(lrt_meta[[condition_col]]) < 2) {
-    message("    LRT skipped: fewer than two non-excluded levels have sufficient replicates.")
+  eligible_levels <- levels(lrt_meta[[condition_col]])
+  n_eligible_levels <- length(eligible_levels)
+  if (n_eligible_levels < 3L) {
     lrt_dir <- file.path(out_base, "LRT")
     dir.create(lrt_dir, recursive = TRUE, showWarnings = FALSE)
-    writeLines("Insufficient replicated levels for LRT.", file.path(lrt_dir, "SKIPPED_insufficient.txt"))
+    reason <- paste0(
+      "LRT and DEGpatterns skipped for '", prefix, "': ", n_eligible_levels,
+      " eligible comparison-group level(s) remain after exclusions, replicate ",
+      "filtering, and pairing; at least 3 are required. Levels: ",
+      if (n_eligible_levels > 0L) paste(eligible_levels, collapse = ", ") else "<none>",
+      "."
+    )
+    message("    ", reason)
+    writeLines(reason, file.path(lrt_dir, "SKIPPED_insufficient.txt"))
     return(invisible(NULL))
   }
+  message(
+    "    LRT eligible comparison-group levels (", n_eligible_levels, "): ",
+    paste(eligible_levels, collapse = ", ")
+  )
+  message("    Running explicit omnibus LRT …")
 
   full_formula <- formula_for(condition_col, paired_by, covariates, TRUE)
   reduced_formula <- formula_for(condition_col, paired_by, covariates, FALSE)
