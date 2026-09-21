@@ -138,8 +138,10 @@ analysis:
               region_annotation: Tumor area
             denominator:
               region_annotation: Healthy area
-        # Omnibus test across every sufficiently replicated, non-excluded region.
-        # Note: LRT only runs when more than >= 3 levels are present after filtering by exclude_levels and min_replicates.
+        # Biomarker tests and LRT/DEGpatterns require >=3 eligible levels after
+        # exclusion, replication, and pairing filters.
+        one_vs_rest:
+          enabled: true
         lrt:
           enabled: true
 
@@ -159,7 +161,8 @@ analysis:
               region_annotation: Tumor area
             denominator:
               region_annotation: Healthy area
-        # Note: LRT only runs when more than >= 3 levels are present after filtering by exclude_levels and min_replicates.
+        one_vs_rest:
+          enabled: true
         lrt:
           enabled: true
 

@@ -258,6 +258,7 @@ def _validate_pseudobulk_analysis(spec):
         "covariates": covariates,
         "exclude_levels": dict(exclude_levels),
         "contrasts": list(spec.get("contrasts") or []),
+        "one_vs_rest": dict(spec.get("one_vs_rest") or {}),
         "lrt": dict(spec.get("lrt") or {}),
     }
 
@@ -292,6 +293,7 @@ def _legacy_pseudobulk_analyses():
             "covariates": [],
             "exclude_levels": {"region_annotation": ["Unlabeled", "Bubble"]},
             "contrasts": contrasts,
+            "one_vs_rest": {"enabled": len(REGION_LEVELS) > 2},
             "lrt": {"enabled": len(REGION_LEVELS) > 2},
         }
         for level in levels

@@ -100,12 +100,12 @@ Parameters are settings that live exclusively in `config/config.yaml` and determ
 | Parameter | Condition | Role |
 | --- | --- | --- |
 | `mode` | **Mandatory** | Which headblock builds the contract (see [section 1](#1-choose-a-mode)). |
-| `random_seed` | Reproducibility | Seed for stochastic steps (subsampling, sketching). Note that UMAP/Leiden are not fully deterministic across systems (see [section 6](#6-advanced-reproducibility-and-reusability)). |
+| `random_seed` | Reproducibility | Seed for stochastic steps, including UMAP, Leiden, subsampling, and sketching. Results may still differ across software stacks or systems (see [section 6](#6-advanced-reproducibility-and-reusability)). |
 | `use_precomputed_clusters` | **Optional** (reproducibility) | If `true`, reuse Leiden clusters/metadata from `precomputed_metadata_dir` instead of recomputing them. |
 | `ingest_ref_label_key` | `ingest_ref` reference set | Column in the `ingest_ref` reference that holds the reference cell-type labels. |
 | `integration.integrate_key` | **Mandatory** | Variable Harmony corrects over during integration (e.g. `sample`). |
 | `extra_annotations.columns` | **Optional** | `core_samples.tsv` columns to surface in downstream plots (e.g. `[patient, batch]`). All sample-sheet columns are carried into `obs` and can be used by pseudobulk models whether or not they are plotted. |
-| `analysis.pseudobulk.analyses` | Pseudobulk | Named aggregation/model specifications containing the comparison variables, explicit contrasts, exclusions, optional pairing/covariates, and optional LRT. |
+| `analysis.pseudobulk.analyses` | Pseudobulk | Named aggregation/model specifications containing the comparison variables, explicit contrasts, exclusions, optional pairing/covariates, one-vs-rest biomarkers, and optional LRT. |
 | `analysis.umap_point_size` | **Optional** | Marker size for ordinary UMAP embedding plots (default: `2`). Highlight and split UMAPs remain at least size `10`. |
 | `analysis.spatial_point_size` | **Optional** | Marker size for spatial maps (default: `20`). This is independent of the UMAP marker size; coordinate-only spatial-niche maps are scaled proportionally. |
 
@@ -171,6 +171,24 @@ The rest of the configuration lives in nested blocks. Files and single parameter
 !!! note
     A few one-key blocks are documented elsewhere for readability: `integration` (`integrate_key`) and `extra_annotations` (`columns`) are parameters in [section 3](#3-parameters); `cluster_annotations` is a file in [section 2](#2-paths-files-and-sample-sheets); and the colour blocks (`sample_colors`, `annotation_colors`, `analysis.region_colors`) are in [section 4](#4-color-scale-customization).
 
+### Spatial niches
+
+`spatial_niches` runs BANKSY jointly across the preprocessed samples. Its two neighbour
+parameters act at different stages and do not need to match:
+
+| Key | Default | Meaning |
+| --- | ---: | --- |
+| `lambda` | `0.8` | Weight of spatial-neighbour features in the BANKSY matrix. |
+| `num_neighbours` | `18` | Physical neighbours used to construct BANKSY features. |
+| `cluster_n_neighbours` | `50` | Neighbours in the separate Harmony-corrected BANKSY PCA graph used for clustering. |
+| `niche_resolution` | `0.1` | Leiden resolution controlling niche granularity. |
+| `n_iterations` | `-1` | Leiden iterations; `-1` runs until convergence and may take longer on very large datasets. |
+
+The BANKSY matrix is dense and grows with the number of cells and selected genes. For large
+datasets, set `use_hvg: true` (as in the shipped configs) and tune `n_top_genes` when memory
+is limiting. Set `use_precomputed: true` with `niche_dir` to reuse complete per-sample
+`niche_<sample>.tsv` assignments.
+
 ### Pseudobulk experimental designs
 
 Pseudobulk analyses are configured under `analysis.pseudobulk.analyses`. Each entry
@@ -230,7 +248,7 @@ analysis:
 The numerator determines the positive log2-fold-change direction. Levels not named
 in a pairwise contrast can remain in the fitted model and help dispersion estimation.
 Use `exclude_levels` only for values that should be removed from the analysis entirely.
-The exclusions are also applied to the LRT.
+The exclusions are also applied to one-vs-rest tests and the LRT.
 
 In this example, P1–P6 are six independent biological samples: no individual
 contributes to both phenotypes, so `paired_by` must be omitted. The batch covariate is
@@ -277,6 +295,8 @@ as in tumour and healthy regions from the same section:
     - name: tumor_vs_healthy
       numerator: {region_annotation: Tumor area}
       denominator: {region_annotation: Healthy area}
+  one_vs_rest:
+    enabled: true
   lrt:
     enabled: true
 ```
@@ -312,11 +332,23 @@ Thus, use `paired_by: sample` for multiple region levels from the same spatial s
 `paired_by: patient` for separate samples matched by patient, and omit `paired_by` for
 independent Cancer-versus-Normal samples.
 
-When `lrt.enabled` is true, SpaceBlocks runs an omnibus test across every non-excluded
-level with sufficient replication. With `paired_by`, the full model includes the paired
-unit term and the reduced model removes only the comparison group. DEGpatterns is run
-when the LRT finds enough significant genes; no order or trend direction is imposed by
-the configuration.
+When `lrt.enabled` is true, SpaceBlocks runs an omnibus test only when at least three
+eligible comparison-group levels remain after exclusions, replicate filtering, and pairing.
+With `paired_by`, the full model includes the paired unit term and the reduced model removes
+only the comparison group. With fewer than three eligible levels, LRT and DEGpatterns are
+skipped for that subgroup or cell type; the reason is written to the pseudobulk rule log and
+`LRT/SKIPPED_insufficient.txt`. Configured pairwise contrasts still run. When the LRT does
+run and finds enough significant genes, DEGpatterns groups their expression profiles; no
+order or trend direction is imposed by the configuration.
+
+When `one_vs_rest.enabled` is true, SpaceBlocks also tests each eligible level against
+all other eligible levels combined. It uses the same exclusions, replicate threshold,
+covariates, and pairing as the named analysis, and requires at least three eligible levels.
+Results are written under `one_vs_rest/`, including a TSV, volcano plot, and heatmaps for
+each level. `unique_markers.tsv` contains genes significantly upregulated for one level but
+not for any other one-vs-rest comparison; the accompanying barplot and heatmap summarize
+these level-specific biomarkers. This is independent of the omnibus LRT and configured
+pairwise contrasts.
 
 ## 6. Advanced: Reproducibility and reusability
 
@@ -338,6 +370,11 @@ SpaceBlocks allows you to input:
   `keep_unannotated: true`, a mixture of real labels and `Unannotated` remains an
   active annotation and both are shown in overview and composition plots. Only a
   column containing no real labels is omitted from annotation plots and reports.
+  With `keep_unannotated: false`, preprocessing retains only cells with a real
+  external label and skips the ordinary QC thresholds because the external annotation
+  defines the analysed cell set. External annotation becomes the default downstream
+  annotation, so a manual `cluster_annotations` mapping is not required unless
+  `tsv_annotation` is also requested explicitly.
 
 These files are generated during the run, and can be shared with minimum effort to reproduce downstream results from raw data.
 

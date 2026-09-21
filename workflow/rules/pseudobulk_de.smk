@@ -1,5 +1,5 @@
 rule pseudobulk_de:
-    """Explicit pairwise Wald contrasts and optional omnibus LRT with R/DESeq2."""
+    """Explicit Wald contrasts, one-vs-rest biomarkers, and optional LRT with DESeq2."""
     input:
         agg_dir=rules.pseudobulk_aggregate.output.agg_dir,
     output:
@@ -36,6 +36,9 @@ rule pseudobulk_de:
         ),
         contrast_denominators=lambda wc: pseudobulk_contrast_param(
             wc.analysis_name, "denominator"
+        ),
+        one_vs_rest_enabled=lambda wc: bool(
+            pseudobulk_analysis(wc.analysis_name)["one_vs_rest"].get("enabled", False)
         ),
         lrt_enabled=lambda wc: bool(
             pseudobulk_analysis(wc.analysis_name)["lrt"].get("enabled", False)

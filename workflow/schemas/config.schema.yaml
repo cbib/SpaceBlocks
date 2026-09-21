@@ -357,7 +357,8 @@ properties:
         description: >-
           Named pseudobulk aggregations and DE models. Each analysis defines how
           cells are pooled, which sample metadata form the comparison group,
-          exclusions, explicit Wald contrasts, and an optional omnibus LRT.
+          exclusions, explicit Wald contrasts, optional one-vs-rest biomarkers,
+          and an optional omnibus LRT.
         required: [analyses]
         properties:
           analyses:
@@ -407,7 +408,8 @@ properties:
                       type: string
                   description: >-
                     Column -> levels removed before aggregation. The same exclusion
-                    applies to explicit Wald contrasts and the optional LRT.
+                    applies to explicit Wald contrasts, one-vs-rest tests, and the
+                    optional LRT.
                 contrasts:
                   type: array
                   default: []
@@ -427,6 +429,18 @@ properties:
                         type: object
                         additionalProperties:
                           type: string
+                one_vs_rest:
+                  type: object
+                  additionalProperties: false
+                  default: {}
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                      description: >-
+                        Test each comparison-group level against all other eligible
+                        levels when at least three levels remain. Uses configured
+                        covariates and pairing and reports level-specific biomarkers.
                 lrt:
                   type: object
                   additionalProperties: false
@@ -436,8 +450,9 @@ properties:
                       type: boolean
                       default: false
                       description: >-
-                        Run an omnibus LRT across all sufficiently replicated levels
-                        remaining after exclude_levels.
+                        Run an omnibus LRT only when at least three eligible levels remain
+                        after exclusions, replicate filtering, and pairing. Otherwise LRT
+                        and DEGpatterns are skipped while pairwise contrasts still run.
       plot_dpi:
         type: integer
         minimum: 1

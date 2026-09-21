@@ -1,5 +1,5 @@
 ################################################################################
-## pseudobulk_de.R – explicit DESeq2 Wald contrasts and optional omnibus LRT
+## pseudobulk_de.R – explicit DESeq2 contrasts, one-vs-rest biomarkers, and LRT
 ################################################################################
 
 # Redirect logs before parsing parameters so early failures are captured.
@@ -41,6 +41,7 @@ covariates <- as.character(snakemake@params[["covariates"]])
 contrast_names <- as.character(snakemake@params[["contrast_names"]])
 contrast_numerators <- as.character(snakemake@params[["contrast_numerators"]])
 contrast_denominators <- as.character(snakemake@params[["contrast_denominators"]])
+one_vs_rest_enabled <- isTRUE(as.logical(snakemake@params[["one_vs_rest_enabled"]]))
 lrt_enabled <- isTRUE(as.logical(snakemake@params[["lrt_enabled"]]))
 paired_by <- paired_by[nzchar(paired_by)]
 covariates <- covariates[nzchar(covariates)]
@@ -88,6 +89,7 @@ message("  group_by: [", paste(group_by_columns, collapse = ", "), "]")
 message("  paired_by: ", ifelse(length(paired_by), paired_by, "<none>"))
 message("  covariates: [", paste(covariates, collapse = ", "), "]")
 message("  contrasts: [", paste(contrast_names, collapse = ", "), "]")
+message("  one-vs-rest: ", one_vs_rest_enabled)
 message("  LRT: ", lrt_enabled)
 dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -265,21 +267,51 @@ write_de_heatmap <- function(results_df, vsd, meta, condition_col, contrast_name
 }
 
 
-fit_wald <- function(counts, meta, condition_col, paired = character(0)) {
+fit_wald <- function(counts, meta, condition_col, paired = character(0), transform = TRUE) {
   design_formula <- formula_for(condition_col, paired, covariates, TRUE)
   assert_full_rank(meta, design_formula, "Wald")
   counts_t <- t(counts)
   counts_t <- counts_t[, rownames(meta), drop = FALSE]
   dds <- DESeqDataSetFromMatrix(countData = counts_t, colData = meta, design = design_formula)
   dds <- DESeq(dds, test = "Wald")
-  vsd <- tryCatch(
-    vst(dds, blind = FALSE),
-    error = function(e) {
-      message("    vst failed, using normTransform: ", conditionMessage(e))
-      normTransform(dds)
-    }
-  )
+  vsd <- NULL
+  if (transform) {
+    vsd <- tryCatch(
+      vst(dds, blind = FALSE),
+      error = function(e) {
+        message("    vst failed, using normTransform: ", conditionMessage(e))
+        normTransform(dds)
+      }
+    )
+  }
   list(dds = dds, vsd = vsd)
+}
+
+
+eligible_multilevel_data <- function(counts, meta, condition_col, sample_col) {
+  unit_col <- if (length(paired_by)) paired_by else sample_col
+  replicate_counts <- meta %>%
+    mutate(.unit = as.character(.data[[unit_col]])) %>%
+    group_by(.data[[condition_col]]) %>%
+    summarise(n = n_distinct(.unit), .groups = "drop")
+  valid <- as.character(replicate_counts[[condition_col]][replicate_counts$n >= min_replicates])
+  eligible_meta <- meta[as.character(meta[[condition_col]]) %in% valid, , drop = FALSE]
+  eligible_counts <- counts[rownames(eligible_meta), , drop = FALSE]
+  eligible_meta[[condition_col]] <- droplevels(factor(eligible_meta[[condition_col]]))
+
+  if (length(paired_by)) {
+    informative <- eligible_meta %>%
+      mutate(.row = rownames(eligible_meta)) %>%
+      group_by(.data[[paired_by]]) %>%
+      filter(n_distinct(.data[[condition_col]]) >= 2) %>%
+      pull(.row)
+    eligible_meta <- eligible_meta[informative, , drop = FALSE]
+    eligible_counts <- eligible_counts[informative, , drop = FALSE]
+    eligible_meta[[paired_by]] <- droplevels(factor(eligible_meta[[paired_by]]))
+  }
+
+  eligible_meta[[condition_col]] <- droplevels(factor(eligible_meta[[condition_col]]))
+  list(counts = eligible_counts, meta = eligible_meta)
 }
 
 
@@ -287,28 +319,9 @@ run_lrt <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
   if (!lrt_enabled) return(invisible(NULL))
   message("    Evaluating omnibus LRT eligibility …")
 
-  unit_col <- if (length(paired_by)) paired_by else sample_col
-  replicate_counts <- meta %>%
-    mutate(.unit = as.character(.data[[unit_col]])) %>%
-    group_by(.data[[condition_col]]) %>%
-    summarise(n = n_distinct(.unit), .groups = "drop")
-  valid <- as.character(replicate_counts[[condition_col]][replicate_counts$n >= min_replicates])
-  lrt_meta <- meta[as.character(meta[[condition_col]]) %in% valid, , drop = FALSE]
-  lrt_counts <- counts[rownames(lrt_meta), , drop = FALSE]
-  lrt_meta[[condition_col]] <- droplevels(factor(lrt_meta[[condition_col]]))
-
-  if (length(paired_by)) {
-    informative <- lrt_meta %>%
-      mutate(.row = rownames(lrt_meta)) %>%
-      group_by(.data[[paired_by]]) %>%
-      filter(n_distinct(.data[[condition_col]]) >= 2) %>%
-      pull(.row)
-    lrt_meta <- lrt_meta[informative, , drop = FALSE]
-    lrt_counts <- lrt_counts[informative, , drop = FALSE]
-    lrt_meta[[paired_by]] <- droplevels(factor(lrt_meta[[paired_by]]))
-  }
-
-  lrt_meta[[condition_col]] <- droplevels(factor(lrt_meta[[condition_col]]))
+  eligible <- eligible_multilevel_data(counts, meta, condition_col, sample_col)
+  lrt_counts <- eligible$counts
+  lrt_meta <- eligible$meta
   eligible_levels <- levels(lrt_meta[[condition_col]])
   n_eligible_levels <- length(eligible_levels)
   if (n_eligible_levels < 3L) {
@@ -393,6 +406,200 @@ run_lrt <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
 }
 
 
+write_unique_marker_outputs <- function(ovr_results, vsd, meta, condition_col, out_dir) {
+  levels_tested <- names(ovr_results)
+  up_gene_sets <- lapply(ovr_results, function(result_df) {
+    result_df %>%
+      filter(padj < padj_thr & log2FoldChange > lfc_thr) %>%
+      pull(gene)
+  })
+
+  unique_markers <- setNames(lapply(levels_tested, function(level) {
+    other_genes <- unique(unlist(up_gene_sets[setdiff(levels_tested, level)]))
+    ovr_results[[level]] %>%
+      filter(gene %in% setdiff(up_gene_sets[[level]], other_genes)) %>%
+      arrange(desc(log2FoldChange))
+  }), levels_tested)
+
+  marker_counts <- tibble(
+    level = factor(levels_tested, levels = levels_tested),
+    n_markers = vapply(unique_markers, nrow, integer(1))
+  )
+  barplot <- ggplot(marker_counts, aes(x = level, y = n_markers, fill = level)) +
+    geom_col(show.legend = FALSE) +
+    geom_text(aes(label = n_markers), vjust = -0.3, size = 3) +
+    labs(title = "Unique upregulated markers per level", x = NULL,
+         y = "Number of unique markers") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  ggsave(
+    file.path(out_dir, "unique_markers_barplot.png"), barplot,
+    width = max(6, length(levels_tested) * 1.2), height = 5, dpi = res_dpi
+  )
+
+  nonempty <- unique_markers[vapply(unique_markers, nrow, integer(1)) > 0]
+  if (length(nonempty) == 0) {
+    message("    No unique one-vs-rest markers passed the configured thresholds.")
+    return(invisible(NULL))
+  }
+
+  all_markers <- bind_rows(nonempty, .id = "level") %>%
+    arrange(factor(level, levels = levels_tested), desc(log2FoldChange))
+  write.table(all_markers, file.path(out_dir, "unique_markers.tsv"),
+              sep = "\t", quote = FALSE, row.names = FALSE)
+
+  max_length <- max(vapply(unique_markers, nrow, integer(1)))
+  markers_by_level <- as.data.frame(lapply(unique_markers, function(result_df) {
+    c(result_df$gene, rep("", max_length - nrow(result_df)))
+  }), check.names = FALSE)
+  write.table(markers_by_level, file.path(out_dir, "unique_markers_by_level.tsv"),
+              sep = "\t", quote = FALSE, row.names = FALSE)
+
+  gene_level <- unlist(lapply(names(nonempty), function(level) {
+    setNames(rep(level, nrow(nonempty[[level]])), nonempty[[level]]$gene)
+  }))
+  genes <- names(gene_level)
+  genes <- genes[genes %in% rownames(assay(vsd))]
+  if (length(genes) < 2) return(invisible(NULL))
+
+  matrix_scaled <- t(scale(t(assay(vsd)[genes, , drop = FALSE])))
+  finite <- apply(matrix_scaled, 1, function(values) all(is.finite(values)))
+  matrix_scaled <- matrix_scaled[finite, , drop = FALSE]
+  if (nrow(matrix_scaled) < 2) return(invisible(NULL))
+
+  condition <- heatmap_condition_factor(meta[[condition_col]])
+  column_order <- order(condition)
+  matrix_scaled <- matrix_scaled[, column_order, drop = FALSE]
+  meta_ordered <- meta[column_order, , drop = FALSE]
+  row_split <- factor(
+    gene_level[rownames(matrix_scaled)],
+    levels = levels_tested
+  )
+  annotation <- build_top_annotation(meta_ordered, condition_col)
+  color_function <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
+  n_rows <- nrow(matrix_scaled)
+  n_columns <- ncol(matrix_scaled)
+  body_mm <- max(n_rows * 3, 40)
+  device_height <- min(round((body_mm / 25.4 + 3) * res_dpi), 30000)
+  if (device_height == 30000) body_mm <- (30000 / res_dpi - 3) * 25.4
+
+  heatmap <- Heatmap(
+    matrix_scaled, name = "Z-score", col = color_function,
+    top_annotation = annotation, height = grid::unit(body_mm, "mm"),
+    row_split = row_split, cluster_row_slices = FALSE,
+    cluster_columns = FALSE, cluster_rows = TRUE,
+    show_row_names = n_rows <= 1500, show_column_names = TRUE,
+    row_names_gp = grid::gpar(fontsize = ifelse(n_rows > 400, 3, 5)),
+    column_names_gp = grid::gpar(fontsize = 7),
+    row_title_gp = grid::gpar(fontsize = 8),
+    column_title = "Unique markers per level (all genes)"
+  )
+  png(
+    file.path(out_dir, "unique_markers_heatmap.png"),
+    width = round(max(900, n_columns * 55) * px_scale),
+    height = device_height, res = res_dpi
+  )
+  draw(heatmap, merge_legend = TRUE)
+  dev.off()
+}
+
+
+run_one_vs_rest <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
+  if (!one_vs_rest_enabled) return(invisible(NULL))
+  message("    Evaluating one-vs-rest eligibility …")
+
+  ovr_dir <- file.path(out_base, "one_vs_rest")
+  dir.create(ovr_dir, recursive = TRUE, showWarnings = FALSE)
+  eligible <- eligible_multilevel_data(counts, meta, condition_col, sample_col)
+  eligible_counts <- eligible$counts
+  eligible_meta <- eligible$meta
+  eligible_levels <- levels(eligible_meta[[condition_col]])
+  if (length(eligible_levels) < 3L) {
+    reason <- paste0(
+      "One-vs-rest skipped for '", prefix, "': ", length(eligible_levels),
+      " eligible comparison-group level(s) remain after exclusions, replicate ",
+      "filtering, and pairing; at least 3 are required. Levels: ",
+      if (length(eligible_levels)) paste(eligible_levels, collapse = ", ") else "<none>",
+      "."
+    )
+    message("    ", reason)
+    writeLines(reason, file.path(ovr_dir, "SKIPPED_insufficient.txt"))
+    return(invisible(NULL))
+  }
+  message("    One-vs-rest levels: ", paste(eligible_levels, collapse = ", "))
+
+  # A common multilevel transformation keeps all heatmaps directly comparable.
+  heatmap_fit <- fit_wald(
+    eligible_counts, eligible_meta, condition_col, paired_by, transform = TRUE
+  )
+  ovr_results <- list()
+
+  for (focal in eligible_levels) {
+    message("      ", focal, " vs rest")
+    tryCatch({
+      focal_meta <- eligible_meta
+      focal_counts <- eligible_counts
+      if (length(paired_by)) {
+        informative <- focal_meta %>%
+          mutate(.row = rownames(focal_meta)) %>%
+          group_by(.data[[paired_by]]) %>%
+          filter(
+            any(as.character(.data[[condition_col]]) == focal) &
+              any(as.character(.data[[condition_col]]) != focal)
+          ) %>%
+          pull(.row)
+        focal_meta <- focal_meta[informative, , drop = FALSE]
+        focal_counts <- focal_counts[informative, , drop = FALSE]
+        focal_meta[[paired_by]] <- droplevels(factor(focal_meta[[paired_by]]))
+        n_pairs <- n_distinct(focal_meta[[paired_by]])
+        if (n_pairs < min_replicates) {
+          stop("only ", n_pairs, " informative pairs; need ", min_replicates)
+        }
+      }
+
+      focal_meta[["ovr_group"]] <- factor(
+        ifelse(as.character(focal_meta[[condition_col]]) == focal, "focal", "rest"),
+        levels = c("rest", "focal")
+      )
+      fit <- fit_wald(
+        focal_counts, focal_meta, "ovr_group", paired_by, transform = FALSE
+      )
+      result <- results(
+        fit$dds, contrast = c("ovr_group", "focal", "rest"), alpha = padj_thr
+      )
+      result_df <- as.data.frame(result) %>%
+        rownames_to_column("gene") %>%
+        arrange(desc(log2FoldChange))
+      output_name <- paste0(safe_name(focal), "_vs_rest")
+      write.table(result_df, file.path(ovr_dir, paste0(output_name, ".tsv")),
+                  sep = "\t", quote = FALSE, row.names = FALSE)
+      write_volcano(result_df, paste0(focal, " vs rest"), prefix, ovr_dir)
+      write_de_heatmap(
+        result_df, heatmap_fit$vsd, eligible_meta, condition_col,
+        output_name, ovr_dir
+      )
+      ovr_results[[focal]] <- result_df
+    }, error = function(e) {
+      message("      One-vs-rest test skipped for '", focal, "': ", conditionMessage(e))
+    })
+  }
+
+  if (length(ovr_results) != length(eligible_levels)) {
+    reason <- paste0(
+      "Unique-marker summaries skipped: only ", length(ovr_results), " of ",
+      length(eligible_levels), " one-vs-rest tests completed."
+    )
+    message("    ", reason)
+    writeLines(reason, file.path(ovr_dir, "SKIPPED_unique_markers_incomplete.txt"))
+    return(invisible(ovr_results))
+  }
+  write_unique_marker_outputs(
+    ovr_results, heatmap_fit$vsd, eligible_meta, condition_col, ovr_dir
+  )
+  invisible(ovr_results)
+}
+
+
 run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
   counts_file <- file.path(agg_dir, "matrices", paste0("counts_", prefix, ".tsv"))
   metadata_file <- file.path(agg_dir, "metadata", paste0("metadata_", prefix, ".tsv"))
@@ -454,6 +661,15 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
       lrt_dir <- file.path(out_base, "LRT")
       dir.create(lrt_dir, recursive = TRUE, showWarnings = FALSE)
       writeLines(conditionMessage(e), file.path(lrt_dir, "ERROR.txt"))
+    }
+  )
+  tryCatch(
+    run_one_vs_rest(counts, meta, condition_col, sample_col, prefix, out_base),
+    error = function(e) {
+      message("    One-vs-rest failed: ", conditionMessage(e))
+      ovr_dir <- file.path(out_base, "one_vs_rest")
+      dir.create(ovr_dir, recursive = TRUE, showWarnings = FALSE)
+      writeLines(conditionMessage(e), file.path(ovr_dir, "ERROR.txt"))
     }
   )
 
