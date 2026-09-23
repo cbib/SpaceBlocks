@@ -37,6 +37,9 @@ lfc_thr <- as.numeric(snakemake@params[["lfc_threshold"]])
 res_dpi <- as.integer(snakemake@params[["dpi"]])
 group_by_columns <- as.character(snakemake@params[["group_by_columns"]])
 paired_by <- as.character(snakemake@params[["paired_by"]])
+allow_repeated_unpaired <- isTRUE(
+  as.logical(snakemake@params[["allow_repeated_unpaired"]])
+)
 covariates <- as.character(snakemake@params[["covariates"]])
 contrast_names <- as.character(snakemake@params[["contrast_names"]])
 contrast_numerators <- as.character(snakemake@params[["contrast_numerators"]])
@@ -51,6 +54,11 @@ condition_level_order <- tryCatch(
 )
 condition_level_order <- unique(condition_level_order[nzchar(condition_level_order)])
 px_scale <- res_dpi / 150
+heatmap_font_size <- 8
+min_heatmap_width_in <- 10
+min_heatmap_height_in <- 6
+heatmap_side_space_in <- 4
+heatmap_padding <- grid::unit(c(2, 2, 2, 10), "mm")
 
 if (!(length(contrast_names) == length(contrast_numerators) &&
       length(contrast_names) == length(contrast_denominators))) {
@@ -87,6 +95,7 @@ extra_palettes <- tryCatch({
 message("  analysis: ", analysis_name)
 message("  group_by: [", paste(group_by_columns, collapse = ", "), "]")
 message("  paired_by: ", ifelse(length(paired_by), paired_by, "<none>"))
+message("  allow repeated unpaired: ", allow_repeated_unpaired)
 message("  covariates: [", paste(covariates, collapse = ", "), "]")
 message("  contrasts: [", paste(contrast_names, collapse = ", "), "]")
 message("  one-vs-rest: ", one_vs_rest_enabled)
@@ -105,6 +114,27 @@ heatmap_condition_factor <- function(values) {
   observed <- unique(as.character(values))
   preferred <- condition_level_order[condition_level_order %in% observed]
   factor(as.character(values), levels = unique(c(preferred, observed)))
+}
+
+
+group_annotation_label <- function() {
+  paste0("Group (", paste(group_by_columns, collapse = " + "), ")")
+}
+
+
+heatmap_device_width <- function(n_columns, width_per_column = 55) {
+  max(
+    round(min_heatmap_width_in * res_dpi),
+    round(n_columns * width_per_column * px_scale + heatmap_side_space_in * res_dpi)
+  )
+}
+
+
+heatmap_device_height <- function(body_mm, extra_height_in = 3) {
+  max(
+    round(min_heatmap_height_in * res_dpi),
+    round((body_mm / 25.4 + extra_height_in) * res_dpi)
+  )
 }
 
 
@@ -132,13 +162,15 @@ assert_full_rank <- function(meta, design_formula, label) {
 
 
 build_top_annotation <- function(meta, condition_col) {
-  annotation_args <- list(Group = as.character(meta[[condition_col]]))
+  group_label <- group_annotation_label()
+  group_values <- heatmap_condition_factor(meta[[condition_col]])
+  annotation_args <- setNames(list(group_values), group_label)
   annotation_colors <- list()
-  present_groups <- unique(as.character(meta[[condition_col]]))
+  present_groups <- levels(group_values)
   available <- group_colors[names(group_colors) %in% present_groups]
-  if (length(available) > 0) annotation_colors[["Group"]] <- available
+  if (length(available) > 0) annotation_colors[[group_label]] <- available
 
-  for (column in extra_annot_columns) {
+  for (column in setdiff(extra_annot_columns, group_by_columns)) {
     if (column %in% colnames(meta)) {
       values <- as.character(meta[[column]])
       annotation_args[[column]] <- values
@@ -153,6 +185,17 @@ build_top_annotation <- function(meta, condition_col) {
     }
   }
   if (length(annotation_colors) > 0) annotation_args[["col"]] <- annotation_colors
+  annotation_args[["annotation_name_gp"]] <- grid::gpar(fontsize = heatmap_font_size)
+  annotation_args[["annotation_legend_param"]] <- lapply(
+    names(annotation_colors),
+    function(name) list(
+      title_gp = grid::gpar(fontsize = heatmap_font_size),
+      labels_gp = grid::gpar(fontsize = heatmap_font_size)
+    )
+  ) |> setNames(names(annotation_colors))
+  # The legend already names each track; hiding row labels avoids collisions
+  # with right-side legends on short heatmaps.
+  annotation_args[["show_annotation_name"]] <- FALSE
   annotation_args[["show_legend"]] <- TRUE
   do.call(HeatmapAnnotation, annotation_args)
 }
@@ -175,7 +218,12 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, contrast_name
   n_col <- ncol(mat_ordered)
   body_mm <- max(n_row * 5, 40)
   body_height <- grid::unit(body_mm, "mm")
-  device_height <- round((body_mm / 25.4 + 2.6) * res_dpi)
+  device_height <- heatmap_device_height(body_mm)
+  device_width <- heatmap_device_width(n_col)
+  legend_settings <- list(
+    title_gp = grid::gpar(fontsize = heatmap_font_size),
+    labels_gp = grid::gpar(fontsize = heatmap_font_size)
+  )
 
   tryCatch({
     heatmap <- Heatmap(
@@ -184,14 +232,18 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, contrast_name
       cluster_columns = TRUE, cluster_rows = TRUE,
       show_row_names = TRUE, show_column_names = TRUE,
       row_names_gp = grid::gpar(fontsize = 7), column_names_gp = grid::gpar(fontsize = 7),
-      column_title = paste0("Top DE genes — ", contrast_name)
+      column_title = paste0("Top DE genes — ", contrast_name),
+      heatmap_legend_param = legend_settings
     )
     png(
       file.path(out_dir, paste0("heatmap_unsplit_", safe_name(contrast_name), ".png")),
-      width = round(max(800, n_col * 50) * px_scale),
+      width = device_width,
       height = device_height, res = res_dpi
     )
-    draw(heatmap, merge_legend = TRUE)
+    draw(
+      heatmap, merge_legend = TRUE, adjust_annotation_extension = TRUE,
+      padding = heatmap_padding
+    )
     dev.off()
   }, error = function(e) message("      Unsplit heatmap failed: ", conditionMessage(e)))
 
@@ -203,14 +255,18 @@ draw_complex_heatmaps <- function(mat_scaled, meta, condition_col, contrast_name
       cluster_column_slices = FALSE, cluster_rows = TRUE,
       show_row_names = TRUE, show_column_names = TRUE,
       row_names_gp = grid::gpar(fontsize = 7), column_names_gp = grid::gpar(fontsize = 7),
-      column_title = paste0("Top DE genes — ", contrast_name, " (split)")
+      column_title = paste0("Top DE genes — ", contrast_name, " (split)"),
+      heatmap_legend_param = legend_settings
     )
     png(
       file.path(out_dir, paste0("heatmap_split_", safe_name(contrast_name), ".png")),
-      width = round(max(900, n_col * 55) * px_scale),
+      width = device_width,
       height = device_height, res = res_dpi
     )
-    draw(heatmap, merge_legend = TRUE)
+    draw(
+      heatmap, merge_legend = TRUE, adjust_annotation_extension = TRUE,
+      padding = heatmap_padding
+    )
     dev.off()
   }, error = function(e) message("      Split heatmap failed: ", conditionMessage(e)))
 }
@@ -297,7 +353,9 @@ eligible_multilevel_data <- function(counts, meta, condition_col, sample_col) {
   valid <- as.character(replicate_counts[[condition_col]][replicate_counts$n >= min_replicates])
   eligible_meta <- meta[as.character(meta[[condition_col]]) %in% valid, , drop = FALSE]
   eligible_counts <- counts[rownames(eligible_meta), , drop = FALSE]
-  eligible_meta[[condition_col]] <- droplevels(factor(eligible_meta[[condition_col]]))
+  eligible_meta[[condition_col]] <- droplevels(
+    heatmap_condition_factor(eligible_meta[[condition_col]])
+  )
 
   if (length(paired_by)) {
     informative <- eligible_meta %>%
@@ -310,7 +368,9 @@ eligible_multilevel_data <- function(counts, meta, condition_col, sample_col) {
     eligible_meta[[paired_by]] <- droplevels(factor(eligible_meta[[paired_by]]))
   }
 
-  eligible_meta[[condition_col]] <- droplevels(factor(eligible_meta[[condition_col]]))
+  eligible_meta[[condition_col]] <- droplevels(
+    heatmap_condition_factor(eligible_meta[[condition_col]])
+  )
   list(counts = eligible_counts, meta = eligible_meta)
 }
 
@@ -380,6 +440,7 @@ run_lrt <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
       old_levels <- sort(unique(normalized$cluster))
       remap <- setNames(seq_along(old_levels), as.character(old_levels))
       normalized$cluster <- as.integer(remap[as.character(normalized$cluster)])
+      normalized[[condition_col]] <- heatmap_condition_factor(normalized[[condition_col]])
       cluster_df <- clusters$df
       cluster_df$cluster <- as.integer(remap[as.character(cluster_df$cluster)])
       cluster_df <- cluster_df %>% arrange(cluster, genes)
@@ -387,9 +448,20 @@ run_lrt <- function(counts, meta, condition_col, sample_col, prefix, out_base) {
       plot <- DEGreport::degPlotCluster(
         normalized, time = condition_col, color = condition_col, points = TRUE
       ) +
+        ggplot2::geom_smooth(
+          mapping = ggplot2::aes(
+            x = .data[[condition_col]], y = value, group = 1
+          ),
+          method = "loess", color = "black", se = FALSE, linewidth = 1.2
+        ) +
+        labs(
+          color = group_annotation_label(), fill = group_annotation_label()
+        ) +
         theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
       if (length(group_colors) > 0) {
-        plot <- plot + scale_color_manual(values = group_colors)
+        plot <- plot +
+          scale_color_manual(values = group_colors, name = group_annotation_label()) +
+          scale_fill_manual(values = group_colors, name = group_annotation_label())
       }
       ggsave(file.path(lrt_dir, "DEGpatterns_groups.png"), plot = plot,
              width = 14, height = 10, dpi = max(res_dpi, 500L))
@@ -475,31 +547,42 @@ write_unique_marker_outputs <- function(ovr_results, vsd, meta, condition_col, o
     gene_level[rownames(matrix_scaled)],
     levels = levels_tested
   )
+  column_split <- droplevels(condition[column_order])
   annotation <- build_top_annotation(meta_ordered, condition_col)
   color_function <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red"))
   n_rows <- nrow(matrix_scaled)
   n_columns <- ncol(matrix_scaled)
   body_mm <- max(n_rows * 3, 40)
-  device_height <- min(round((body_mm / 25.4 + 3) * res_dpi), 30000)
+  device_height <- min(heatmap_device_height(body_mm), 30000)
   if (device_height == 30000) body_mm <- (30000 / res_dpi - 3) * 25.4
+  device_width <- heatmap_device_width(n_columns)
 
   heatmap <- Heatmap(
     matrix_scaled, name = "Z-score", col = color_function,
     top_annotation = annotation, height = grid::unit(body_mm, "mm"),
     row_split = row_split, cluster_row_slices = FALSE,
+    row_title_rot = 0, row_gap = grid::unit(3, "mm"),
+    column_split = column_split, cluster_column_slices = FALSE,
     cluster_columns = FALSE, cluster_rows = TRUE,
     show_row_names = n_rows <= 1500, show_column_names = TRUE,
     row_names_gp = grid::gpar(fontsize = ifelse(n_rows > 400, 3, 5)),
     column_names_gp = grid::gpar(fontsize = 7),
-    row_title_gp = grid::gpar(fontsize = 8),
-    column_title = "Unique markers per level (all genes)"
+    row_title_gp = grid::gpar(fontsize = heatmap_font_size),
+    column_title = "Unique markers per level (all genes)",
+    heatmap_legend_param = list(
+      title_gp = grid::gpar(fontsize = heatmap_font_size),
+      labels_gp = grid::gpar(fontsize = heatmap_font_size)
+    )
   )
   png(
     file.path(out_dir, "unique_markers_heatmap.png"),
-    width = round(max(900, n_columns * 55) * px_scale),
+    width = device_width,
     height = device_height, res = res_dpi
   )
-  draw(heatmap, merge_legend = TRUE)
+  draw(
+    heatmap, merge_legend = TRUE, adjust_annotation_extension = TRUE,
+    padding = heatmap_padding
+  )
   dev.off()
 }
 
@@ -620,7 +703,7 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
   complete <- complete.cases(meta[, required, drop = FALSE])
   counts <- counts[complete, , drop = FALSE]
   meta <- meta[complete, , drop = FALSE]
-  meta[[condition_col]] <- factor(meta[[condition_col]])
+  meta[[condition_col]] <- heatmap_condition_factor(meta[[condition_col]])
   for (column in unique(c(paired_by, covariates))) meta[[column]] <- factor(meta[[column]])
 
   unit_col <- if (length(paired_by)) paired_by else sample_col
@@ -640,10 +723,20 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
       function(values) length(unique(values))
     )
     if (any(groups_per_sample > 1)) {
-      stop(
-        "At least one sample contributes multiple comparison levels. Configure paired_by: ",
-        sample_col, " for a paired design."
+      if (!allow_repeated_unpaired) {
+        stop(
+          "At least one sample contributes multiple comparison levels. Configure paired_by: ",
+          sample_col, " for a paired design, or explicitly set ",
+          "allow_repeated_unpaired: true to treat repeated pseudobulks as independent."
+        )
+      }
+      assumption <- paste0(
+        "WARNING: allow_repeated_unpaired is enabled. Multiple pseudobulks from the same ",
+        "sample are treated as independent observations; within-sample correlation is ",
+        "ignored and standard errors may be underestimated."
       )
+      message("    ", assumption)
+      writeLines(assumption, file.path(out_base, "WARNING_repeated_unpaired.txt"))
     }
   }
 
@@ -687,7 +780,9 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
       summarise(n = n_distinct(.sample), .groups = "drop")
     valid <- as.character(replicate_counts[[condition_col]][replicate_counts$n >= min_replicates])
     shared_meta <- meta[as.character(meta[[condition_col]]) %in% valid, , drop = FALSE]
-    shared_meta[[condition_col]] <- droplevels(factor(shared_meta[[condition_col]]))
+    shared_meta[[condition_col]] <- droplevels(
+      heatmap_condition_factor(shared_meta[[condition_col]])
+    )
     if (nlevels(shared_meta[[condition_col]]) >= 2) {
       shared_counts <- counts[rownames(shared_meta), , drop = FALSE]
       shared_fit <- fit_wald(shared_counts, shared_meta, condition_col)
@@ -703,14 +798,18 @@ run_de_for_prefix <- function(prefix, condition_col, sample_col, out_base) {
     tryCatch({
       if (length(paired_by)) {
         pair_meta <- meta[as.character(meta[[condition_col]]) %in% c(numerator, denominator), , drop = FALSE]
-        pair_meta[[condition_col]] <- droplevels(factor(pair_meta[[condition_col]]))
+        pair_meta[[condition_col]] <- droplevels(
+          heatmap_condition_factor(pair_meta[[condition_col]])
+        )
         complete_units <- pair_meta %>%
           mutate(.row = rownames(pair_meta)) %>%
           group_by(.data[[paired_by]]) %>%
           filter(all(c(numerator, denominator) %in% as.character(.data[[condition_col]]))) %>%
           pull(.row)
         pair_meta <- pair_meta[complete_units, , drop = FALSE]
-        pair_meta[[condition_col]] <- droplevels(factor(pair_meta[[condition_col]]))
+        pair_meta[[condition_col]] <- droplevels(
+          heatmap_condition_factor(pair_meta[[condition_col]])
+        )
         pair_meta[[paired_by]] <- droplevels(factor(pair_meta[[paired_by]]))
         n_replicates <- n_distinct(pair_meta[[paired_by]])
         if (n_replicates < min_replicates) {

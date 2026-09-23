@@ -29,6 +29,9 @@ rule pseudobulk_de:
         dpi=ANALYSIS.get("plot_dpi", 300),
         group_by_columns=lambda wc: pseudobulk_analysis(wc.analysis_name)["group_by"],
         paired_by=lambda wc: pseudobulk_analysis(wc.analysis_name)["paired_by"],
+        allow_repeated_unpaired=lambda wc: pseudobulk_analysis(wc.analysis_name)[
+            "allow_repeated_unpaired"
+        ],
         covariates=lambda wc: pseudobulk_analysis(wc.analysis_name)["covariates"],
         contrast_names=lambda wc: pseudobulk_contrast_param(wc.analysis_name, "names"),
         contrast_numerators=lambda wc: pseudobulk_contrast_param(

@@ -385,12 +385,33 @@ properties:
                   description: >-
                     One or more obs/core_samples columns whose values define the
                     comparison groups. Multiple columns form a combined group.
+                condition_order:
+                  type: array
+                  uniqueItems: true
+                  default: []
+                  items:
+                    type: string
+                    minLength: 1
+                  description: >-
+                    Preferred first-to-last order of comparison-group labels in
+                    heatmaps, one-vs-rest outputs, and LRT/DEGpatterns plots.
+                    Unlisted observed levels are appended after configured levels.
+                    For multiple group_by columns, use the combined labels shown in
+                    the output metadata (for example, "condition=A | batch=B").
                 paired_by:
                   type: string
                   default: ""
                   description: >-
                     Optional matched-unit column, normally sample for comparisons
                     between regions from the same sample. Empty means unpaired.
+                allow_repeated_unpaired:
+                  type: boolean
+                  default: false
+                  description: >-
+                    Explicitly allow an unpaired analysis when one sample contributes
+                    multiple comparison levels. This treats repeated sample-level
+                    pseudobulks as independent and may underestimate standard errors.
+                    Cannot be combined with paired_by.
                 covariates:
                   type: array
                   uniqueItems: true

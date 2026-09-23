@@ -169,10 +169,34 @@ def _validate_pseudobulk_analysis(spec):
             f"[config error] pseudobulk analysis '{name}' repeats a group_by column."
         )
 
+    condition_order = list(spec.get("condition_order") or [])
+    if any(not isinstance(level, str) or not level for level in condition_order):
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}'.condition_order must "
+            "contain only non-empty strings."
+        )
+    if len(condition_order) != len(set(condition_order)):
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}'.condition_order repeats "
+            "a comparison-group label."
+        )
+
     paired_by = spec.get("paired_by", "") or ""
     if not isinstance(paired_by, str):
         sys.exit(
             f"[config error] pseudobulk analysis '{name}'.paired_by must be a string."
+        )
+
+    allow_repeated_unpaired = spec.get("allow_repeated_unpaired", False)
+    if not isinstance(allow_repeated_unpaired, bool):
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}'.allow_repeated_unpaired "
+            "must be a boolean."
+        )
+    if paired_by and allow_repeated_unpaired:
+        sys.exit(
+            f"[config error] pseudobulk analysis '{name}' cannot set both "
+            "paired_by and allow_repeated_unpaired: true."
         )
 
     covariates = list(spec.get("covariates") or [])
@@ -254,7 +278,9 @@ def _validate_pseudobulk_analysis(spec):
         "name": name,
         "aggregation": aggregation,
         "group_by": group_by,
+        "condition_order": condition_order,
         "paired_by": paired_by,
+        "allow_repeated_unpaired": allow_repeated_unpaired,
         "covariates": covariates,
         "exclude_levels": dict(exclude_levels),
         "contrasts": list(spec.get("contrasts") or []),
@@ -335,8 +361,10 @@ def pseudobulk_group_palette(analysis_name):
 
 
 def pseudobulk_condition_order(analysis_name):
-    """Preferred heatmap order for a region-only comparison."""
+    """Preferred condition order, with region_levels as a legacy fallback."""
     spec = pseudobulk_analysis(analysis_name)
+    if spec["condition_order"]:
+        return [str(level) for level in spec["condition_order"]]
     if spec["group_by"] == ["region_annotation"]:
         return [str(level) for level in REGION_LEVELS]
     return []
