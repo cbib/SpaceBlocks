@@ -34,6 +34,7 @@ from composition_barplots import (
 )
 from annotation_utils import (
     has_meaningful_annotation,
+    ordered_annotation_columns,
     record_active_annotation_columns,
 )
 
@@ -67,6 +68,9 @@ annotated_paths = [str(p) for p in snakemake.input.annotated]
 sample_ids      = list(snakemake.params.sample_ids)
 N_NEIGHBORS     = int(snakemake.params.n_neighbors)
 SKETCH_FRAC     = float(snakemake.params.sketch_fraction)
+PRIMARY_ANNOTATION_COLUMN = str(
+    getattr(snakemake.params, "primary_annotation_column", "") or ""
+)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
@@ -124,6 +128,37 @@ def _niche_umap(ad, title, out_path):
     except Exception as e:
         log.warning("  niche UMAP failed (%s): %s", out_path, e)
 
+
+def _annotation_umaps(ad, stage, annotation_columns, primary_column):
+    """Plot every active annotation and keep the legacy primary output name."""
+    stage_title = "Harmony" if stage == "harmony" else "Uncorrected"
+    for column in annotation_columns:
+        if not has_meaningful_annotation(ad, column):
+            continue
+        label = column.removeprefix("cell_type_")
+        try:
+            sc.pl.umap(
+                ad,
+                color=[column],
+                size=UMAP_POINT_SIZE,
+                frameon=False,
+                title=f"{stage_title} – by cell type ({label})",
+            )
+            plt.savefig(
+                os.path.join(output_dir, f"UMAP_{stage}_by_{label}.png"),
+                dpi=DPI,
+                bbox_inches="tight",
+            )
+            if column == primary_column:
+                plt.savefig(
+                    os.path.join(output_dir, f"UMAP_{stage}_by_celltype.png"),
+                    dpi=DPI,
+                    bbox_inches="tight",
+                )
+            plt.close()
+        except Exception as e:
+            log.warning("  annotation UMAP (%s, %s) failed: %s", stage, column, e)
+
 out_concat     = str(snakemake.output.concatenated)
 out_harmony    = str(snakemake.output.harmony)
 out_sketched   = str(snakemake.output.sketched)
@@ -149,8 +184,17 @@ try:
     log.info("Concatenating …")
     adata = sc.concat(adatas, join="inner", label="sample_batch", keys=sample_ids)
     log.info("  Concatenated: %d cells, %d genes", adata.n_obs, adata.n_vars)
-    active_annotations = record_active_annotation_columns(adata)
+    record_active_annotation_columns(
+        adata,
+        preferred=PRIMARY_ANNOTATION_COLUMN,
+    )
+    active_annotations = ordered_annotation_columns(
+        adata,
+        preferred=PRIMARY_ANNOTATION_COLUMN,
+    )
+    primary_annotation = active_annotations[0] if active_annotations else None
     log.info("  Active annotation columns: %s", active_annotations or "none")
+    log.info("  Primary annotation column: %s", primary_annotation or "none")
 
     # Carry over raw_counts if available
     if "raw_counts" in adatas[0].layers:
@@ -194,12 +238,12 @@ try:
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
-    if has_meaningful_annotation(adata, "cell_type_tsv"):
-        sc.pl.umap(adata, color=["cell_type_tsv"], size=UMAP_POINT_SIZE, frameon=False,
-                   title="Uncorrected – by cell type (TSV)")
-        plt.savefig(os.path.join(output_dir, "UMAP_uncorrected_by_celltype.png"),
-                    dpi=DPI, bbox_inches="tight")
-        plt.close()
+    _annotation_umaps(
+        adata,
+        "uncorrected",
+        active_annotations,
+        primary_annotation,
+    )
 
     # Uncorrected UMAPs by each design column (grey for palette-less values)
     for _dc in EXTRA_ANNOT_COLUMNS:
@@ -256,12 +300,12 @@ try:
                 dpi=DPI, bbox_inches="tight")
     plt.close()
 
-    if has_meaningful_annotation(adata_harmony, "cell_type_tsv"):
-        sc.pl.umap(adata_harmony, color=["cell_type_tsv"], size=UMAP_POINT_SIZE, frameon=False,
-                   title="Harmony – by cell type (TSV)")
-        plt.savefig(os.path.join(output_dir, "UMAP_harmony_by_celltype.png"),
-                    dpi=DPI, bbox_inches="tight")
-        plt.close()
+    _annotation_umaps(
+        adata_harmony,
+        "harmony",
+        active_annotations,
+        primary_annotation,
+    )
 
     # Harmony UMAPs by each design column (grey for palette-less values)
     for _dc in EXTRA_ANNOT_COLUMNS:

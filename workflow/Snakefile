@@ -205,7 +205,6 @@ _ANNOT_TYPE_TO_COL = {
     "tsv_annotation": "cell_type_tsv",
     "external_annotation": "cell_type_external",
     "ingest_annotation": "cell_type_ingest",
-    "refined_annotation": "cell_type_refined",
 }
 DEFAULT_ANNOT_COL = _ANNOT_TYPE_TO_COL.get(PRIMARY_ANNOT_TYPE, "cell_type_tsv")
 ANNOT_TYPES = list(config.get("annotation_types") or [PRIMARY_ANNOT_TYPE])

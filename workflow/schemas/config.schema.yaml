@@ -503,6 +503,7 @@ properties:
     type: array
     items:
       type: string
+      enum: ["tsv_annotation", "external_annotation", "ingest_annotation"]
     description: >-
       Annotation types analysed downstream (neighbourhood, pseudobulk). Defaults to
       ["tsv_annotation"] when omitted.

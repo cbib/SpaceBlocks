@@ -2,9 +2,9 @@ rule sample_report:
     """
     Generate a multi-page PDF report with separate pages per sample.
 
-    Each page contains: (1) UMAP (clusters + annotation), spatial plot
-    (clusters + annotation), (2-3) barplots with cell proportions per region, cluster and niche,
-    and (4) a dotplot with the top markers per cell type.
+    Each sample contains UMAP/spatial panels for every available annotation,
+    plus niche/region summaries, primary-annotation composition, and a marker
+    dotplot. External annotation is prioritised over ingest when configured.
     """
     input:
         annotated=expand(rules.annotate_cells.output.adata_annot, sample=SAMPLE_IDS),
@@ -23,6 +23,7 @@ rule sample_report:
         runtime=get_resource("sample_report", "runtime"),
     params:
         sample_ids=SAMPLE_IDS,
+        primary_annotation_column=DEFAULT_ANNOT_COL,
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),

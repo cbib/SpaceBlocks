@@ -34,6 +34,7 @@ sys.path.insert(0, _here)
 from composition_barplots import composition_pair, find_niche_column
 from annotation_utils import (
     normalize_annotation_labels,
+    ordered_annotation_columns,
     record_active_annotation_columns,
 )
 from external_metadata import optional_input_path, read_cell_metadata
@@ -185,6 +186,9 @@ MIN_CELLS_PER_TYPE  = int(snakemake.params.min_cells_per_type)
 DE_N_GENES          = int(snakemake.params.de_n_genes)
 USE_PRECOMPUTED     = bool(snakemake.params.use_precomputed)
 EXT_ANNOT_CFG       = snakemake.params.external_annotation
+PRIMARY_ANNOTATION_COLUMN = str(
+    getattr(snakemake.params, "primary_annotation_column", "") or ""
+)
 ANNOTATION_COLORS   = snakemake.params.annotation_colors
 REGION_COLORS       = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
@@ -396,8 +400,17 @@ try:
     # ── 3. Plots ─────────────────────────────────────────────────────────
     log.info("Generating annotation plots …")
 
-    active_annotations = record_active_annotation_columns(adata)
+    record_active_annotation_columns(
+        adata,
+        preferred=PRIMARY_ANNOTATION_COLUMN,
+    )
+    active_annotations = ordered_annotation_columns(
+        adata,
+        preferred=PRIMARY_ANNOTATION_COLUMN,
+    )
+    primary_annotation = active_annotations[0] if active_annotations else None
     log.info("Active annotation columns: %s", active_annotations or "none")
+    log.info("Primary annotation column: %s", primary_annotation or "none")
     if (
         isinstance(EXT_ANNOT_CFG, dict)
         and EXT_ANNOT_CFG.get("enabled", False)
@@ -429,7 +442,6 @@ try:
         "cell_type_tsv": "tsv",
         "cell_type_ingest": "ingest",
         "cell_type_external": "external",
-        "cell_type_refined": "refined",
     }
     for annot_col in active_annotations:
         generate_annotation_plots(

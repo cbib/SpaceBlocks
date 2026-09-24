@@ -1,9 +1,11 @@
 """
 sample_report.py – Multi-page PDF report, one page per sample
 ================================================================
-Each page contains:
-  Row 1:  UMAP (clusters) | UMAP (annotation) | Spatial (clusters) | Spatial (annotation)
-  Row 2:  Dotplot (cell type markers)          | Barplot (cell proportions by region)
+Each sample contains:
+  - UMAP and spatial panels for clusters, every available annotation, regions,
+    and niches.
+  - A composition page for the primary annotation.
+  - A marker dotplot using the primary annotation (external when configured).
 
 Memory is bounded by loading one sample at a time.
 """
@@ -32,7 +34,10 @@ except NameError:                      # very old Snakemake
 sys.path.insert(0, _here)
 from composition_barplots import (draw_stacked_composition, find_niche_column,
                                   build_niche_palette)
-from annotation_utils import active_annotation_columns, has_meaningful_annotation
+from annotation_utils import (
+    has_meaningful_annotation,
+    ordered_annotation_columns,
+)
 from plotting_legends import (
     category_labels,
     move_legend_to_axis,
@@ -109,25 +114,35 @@ def apply_region_palette(adata, region_colors):
         ]
 
 
-def _pick_keys(adata, niche_column=None):
-    """Return (manual_leiden, tsv, auto, niche) obs keys (any may be None)."""
+ANNOTATION_TITLES = {
+    "cell_type_external": "External annotation",
+    "cell_type_tsv": "TSV annotation",
+    "cell_type_ingest": "Ingest annotation",
+}
+
+
+def _pick_keys(adata, niche_column=None, preferred_annotation=None):
+    """Return the cluster key, all annotations in precedence order, and niche key."""
     manual = adata.uns.get("annotation_leiden_key")
     if manual not in adata.obs.columns:
         leiden_cols = sorted(c for c in adata.obs.columns if c.startswith("leiden_"))
         manual = leiden_cols[0] if leiden_cols else None
-    active = set(active_annotation_columns(adata))
-    tsv = "cell_type_tsv" if "cell_type_tsv" in active else None
-    auto = next((c for c in ["cell_type_ingest", "cell_type_external"]
-                 if c in active), None)
+    annotations = ordered_annotation_columns(
+        adata,
+        preferred=preferred_annotation,
+    )
     niche = find_niche_column(adata, niche_column)
-    return manual, tsv, auto, niche
+    return manual, annotations, niche
 
 
 def _build_page1(adata, sample_id, keys, library_id, has_regions=False):
-    """Row 1 = UMAPs, Row 2 = spatial, for clusters / tsv / auto / region / niche."""
-    manual, tsv, auto, niche = keys
-    panels = [(manual, "Clusters"), (tsv, "TSV annotation"),
-              (auto, "Auto annotation")]
+    """Row 1 = UMAPs and row 2 = spatial for every available annotation."""
+    manual, annotations, niche = keys
+    panels = [(manual, "Clusters")]
+    panels.extend(
+        (column, ANNOTATION_TITLES.get(column, column))
+        for column in annotations
+    )
     if has_regions:                       # region annotation UMAP + spatial
         panels.append(("region_annotation", "Region"))
     panels.append((niche, "Spatial niche"))
@@ -198,10 +213,7 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
     • A horizontal marker dotplot (genes on X) with a compact vertical colour
       bar and an accurately-sized dot-size legend.
     """
-    manual, tsv, auto, niche = keys
-    composition_key = tsv or auto
-    cmap = (annotation_colors.get(composition_key, {})
-            if (composition_key and isinstance(annotation_colors, dict)) else {})
+    _manual, annotations, niche = keys
     figs = []
 
     # Group the composition by region/niche when available; only fall back to
@@ -214,11 +226,18 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
     if not bases:
         bases.append((sample_col, "Sample"))
 
+    composition_key = annotations[0] if annotations else None
     if composition_key:
+        cmap = (annotation_colors.get(composition_key, {})
+                if isinstance(annotation_colors, dict) else {})
         try:
             ncol = 2 * len(bases)
             figb = plt.figure(figsize=(6.5 * ncol, 5.5))
-            figb.suptitle(f"Sample: {sample_id} — composition",
+            annotation_title = ANNOTATION_TITLES.get(
+                composition_key,
+                composition_key,
+            )
+            figb.suptitle(f"Sample: {sample_id} — {annotation_title} composition",
                           fontsize=16, fontweight="bold", y=1.02)
             gs = gridspec.GridSpec(1, ncol, figure=figb, wspace=0.5)
             for i, (gkey, glabel) in enumerate(bases):
@@ -273,16 +292,11 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
             log.warning("  niche-by-region barplot failed: %s", e)
 
     # ── Horizontal marker dotplot (genes on X), native scanpy legend column ──
-    # Drive the dotplot off whichever annotation actually carries labels: the manual TSV
-    # mapping when present, else the auto/external annotation (e.g. vendor cell calls) —
-    # so external-only runs still get a meaningful top-markers-per-cell-type dotplot.
-    _marker_labels = {"cell_type_tsv": "TSV cell type",
-                      "cell_type_external": "cell type (external)",
-                      "cell_type_ingest": "cell type (ingest)"}
-    marker_key = next(
-        (k for k in (tsv, auto)
-         if k and has_meaningful_annotation(adata, k, min_labels=2)),
-        None)
+    # Composition and markers use only the primary annotation. Other available
+    # annotations remain visible in the UMAP/spatial overview above.
+    marker_key = composition_key
+    if not has_meaningful_annotation(adata, marker_key, min_labels=2):
+        marker_key = None
     genes = _top_markers_by(adata, marker_key, n=10) if marker_key else []
     if genes and marker_key:
         try:
@@ -293,7 +307,7 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
                 swap_axes=False,                          # genes on X → horizontal
                 figsize=(max(9, n_g * 0.34), max(3.0, n_grp * 0.45)),
                 title=f"Sample: {sample_id} — top-10 markers per "
-                      f"{_marker_labels.get(marker_key, marker_key)}",
+                      f"{ANNOTATION_TITLES.get(marker_key, marker_key)}",
                 return_fig=True)
             dp.legend(width=1.2)                          # compact, vertical colourbar
             dp.make_figure()
@@ -323,6 +337,9 @@ def _build_page2(adata, sample_id, keys, annotation_colors, sample_col,
 # ── Parameters ───────────────────────────────────────────────────────────────
 annotated_paths   = [str(p) for p in snakemake.input.annotated]
 sample_ids        = list(snakemake.params.sample_ids)
+PRIMARY_ANNOTATION_COLUMN = str(
+    getattr(snakemake.params, "primary_annotation_column", "") or ""
+)
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 DPI          = int(getattr(snakemake.params, "dpi", 300))
@@ -351,7 +368,10 @@ try:
                     library_id = list(adata.uns["spatial"].keys())[0]
 
                 # palettes
-                for obs_key in active_annotation_columns(adata):
+                for obs_key in ordered_annotation_columns(
+                    adata,
+                    preferred=PRIMARY_ANNOTATION_COLUMN,
+                ):
                     apply_palette(adata, obs_key, ANNOTATION_COLORS)
                 apply_region_palette(adata, REGION_COLORS)
 
@@ -361,11 +381,15 @@ try:
                     adata.obs["sample"] = sample_id
                     sample_col = "sample"
 
-                keys = _pick_keys(adata, NICHE_COLUMN)
+                keys = _pick_keys(
+                    adata,
+                    NICHE_COLUMN,
+                    preferred_annotation=PRIMARY_ANNOTATION_COLUMN,
+                )
 
                 # Order spatial-niche categories numerically (like clusters), so the
                 # page-1 legends/colours read 0,1,2,…,10 rather than lexicographically.
-                niche_key = keys[3]
+                niche_key = keys[2]
                 if niche_key and niche_key in adata.obs.columns:
                     _nv = adata.obs[niche_key].astype(str)
                     try:

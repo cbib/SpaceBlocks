@@ -10,11 +10,16 @@ from __future__ import annotations
 
 
 ACTIVE_ANNOTATION_COLUMNS_KEY = "active_annotation_columns"
+PRIMARY_ANNOTATION_COLUMN_KEY = "primary_annotation_column"
 CANONICAL_ANNOTATION_COLUMNS = (
     "cell_type_tsv",
     "cell_type_ingest",
     "cell_type_external",
-    "cell_type_refined",
+)
+PRIMARY_ANNOTATION_PRIORITY = (
+    "cell_type_external",
+    "cell_type_tsv",
+    "cell_type_ingest",
 )
 _PLACEHOLDER_LABELS = {
     "", "<na>", "n/a", "na", "nan", "none", "null", "unannotated",
@@ -61,7 +66,19 @@ def has_meaningful_annotation(adata, column, min_labels=1):
     return len(meaningful_annotation_labels(adata, column)) >= min_labels
 
 
-def record_active_annotation_columns(adata, candidates=CANONICAL_ANNOTATION_COLUMNS):
+def _select_primary_annotation(active, preferred=None, recorded=None):
+    """Choose one primary column while retaining every active annotation."""
+    for column in (preferred, recorded, *PRIMARY_ANNOTATION_PRIORITY):
+        if column and column in active:
+            return column
+    return active[0] if active else None
+
+
+def record_active_annotation_columns(
+    adata,
+    candidates=CANONICAL_ANNOTATION_COLUMNS,
+    preferred=None,
+):
     """Store and return canonical annotation columns carrying at least one real label.
 
     Placeholder labels are ignored for this availability decision only. Thus, a
@@ -70,6 +87,11 @@ def record_active_annotation_columns(adata, candidates=CANONICAL_ANNOTATION_COLU
     """
     active = [column for column in candidates if has_meaningful_annotation(adata, column)]
     adata.uns[ACTIVE_ANNOTATION_COLUMNS_KEY] = active
+    primary = _select_primary_annotation(active, preferred=preferred)
+    if primary:
+        adata.uns[PRIMARY_ANNOTATION_COLUMN_KEY] = primary
+    else:
+        adata.uns.pop(PRIMARY_ANNOTATION_COLUMN_KEY, None)
     return active
 
 
@@ -100,3 +122,37 @@ def active_annotation_columns(adata, candidates=CANONICAL_ANNOTATION_COLUMNS):
         for column in candidates
         if column in recorded and has_meaningful_annotation(adata, column)
     ]
+
+
+def primary_annotation_column(
+    adata,
+    preferred=None,
+    candidates=CANONICAL_ANNOTATION_COLUMNS,
+):
+    """Return the preferred meaningful annotation, external first by default."""
+    active = active_annotation_columns(adata, candidates=candidates)
+    recorded = adata.uns.get(PRIMARY_ANNOTATION_COLUMN_KEY)
+    if recorded is not None:
+        recorded = str(recorded)
+    return _select_primary_annotation(
+        active,
+        preferred=preferred,
+        recorded=recorded,
+    )
+
+
+def ordered_annotation_columns(
+    adata,
+    preferred=None,
+    candidates=CANONICAL_ANNOTATION_COLUMNS,
+):
+    """Return all meaningful annotations with the primary column first."""
+    active = active_annotation_columns(adata, candidates=candidates)
+    primary = primary_annotation_column(
+        adata,
+        preferred=preferred,
+        candidates=candidates,
+    )
+    if not primary:
+        return active
+    return [primary, *[column for column in active if column != primary]]

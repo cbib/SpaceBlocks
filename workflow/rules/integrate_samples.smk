@@ -29,6 +29,7 @@ rule integrate_samples:
         n_neighbors=ANALYSIS.get("n_neighbors", 10),
         sketch_fraction=ANALYSIS.get("sketch_fraction", 0.25),
         random_seed=RANDOM_SEED,
+        primary_annotation_column=DEFAULT_ANNOT_COL,
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),

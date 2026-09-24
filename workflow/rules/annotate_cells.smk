@@ -29,6 +29,7 @@ rule annotate_cells:
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         use_precomputed=USE_PRECOMPUTED,
         external_annotation=config.get("external_annotation", {}),
+        primary_annotation_column=DEFAULT_ANNOT_COL,
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),

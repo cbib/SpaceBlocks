@@ -12,7 +12,7 @@ rule pseudobulk_de:
     benchmark:
         f"{LOGDIR}/benchmarks/pseudobulk_de/{{annot_type}}_{{analysis_name}}.tsv"
     wildcard_constraints:
-        annot_type="tsv_annotation|external_annotation|ingest_annotation|refined_annotation",
+        annot_type="tsv_annotation|external_annotation|ingest_annotation",
         analysis_name="[A-Za-z0-9_-]+",
     conda:
         "../envs/pseudobulk_de.yaml"
