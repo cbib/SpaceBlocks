@@ -182,7 +182,6 @@ def generate_annotation_plots(adata, annot_key, label, plots_dir, sample_id,
 
 # ── Parameters ───────────────────────────────────────────────────────────────
 sample_id           = snakemake.params.sample_id
-MIN_CELLS_PER_TYPE  = int(snakemake.params.min_cells_per_type)
 DE_N_GENES          = int(snakemake.params.de_n_genes)
 USE_PRECOMPUTED     = bool(snakemake.params.use_precomputed)
 EXT_ANNOT_CFG       = snakemake.params.external_annotation
@@ -208,7 +207,6 @@ plots_dir      = str(snakemake.output.plots_dir)
 try:
     log.info("=" * 70)
     log.info("Annotating sample: %s", sample_id)
-    log.info("  Min cells per type:     %d", MIN_CELLS_PER_TYPE)
     log.info("=" * 70)
 
     os.makedirs(plots_dir, exist_ok=True)

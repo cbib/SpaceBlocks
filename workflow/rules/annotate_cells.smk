@@ -25,7 +25,6 @@ rule annotate_cells:
         runtime=get_resource("annotate_cells", "runtime"),
     params:
         sample_id=lambda wc: wc.sample,
-        min_cells_per_type=ANALYSIS.get("min_cells_per_type", 15),
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         use_precomputed=USE_PRECOMPUTED,
         external_annotation=config.get("external_annotation", {}),
