@@ -44,7 +44,7 @@ results_dir = str(snakemake.output.results_dir)
 
 ANNOT_COL_MAP = {
     "tsv_annotation": "cell_type_tsv",
-    "refined_annotation": "cell_type_refined",
+    "ingest_annotation": "cell_type_ingest",
     "external_annotation": "cell_type_external",
 }
 

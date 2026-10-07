@@ -21,6 +21,13 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from plotting_legends import grid_figure, move_legend_to_axis
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stderr)]
 if hasattr(snakemake, "log"):
@@ -46,6 +53,7 @@ try:
     ref_label_key  = str(getattr(snakemake.params, "ref_label_key", "cell_type"))
     region_colors  = dict(getattr(snakemake.params, "region_colors", {}) or {})
     region_levels  = list(getattr(snakemake.params, "region_levels", []) or [])
+    spatial_point_size = float(getattr(snakemake.params, "spatial_point_size", 20))
 
     out = snakemake.output
     out_dir = os.path.dirname(str(out.violins_png))
@@ -96,7 +104,7 @@ try:
     # (cell centroids are far smaller than the scalefactor-derived Visium spot size,
     # so without it the dots render invisibly and only the tissue image shows); add
     # library_id to draw the dots over the embedded image when one is present.
-    spatial_kw = {"spot_size": 20}
+    spatial_kw = {"spot_size": spatial_point_size}
     if isinstance(adata.uns.get("spatial"), dict) and adata.uns["spatial"]:
         spatial_kw["library_id"] = list(adata.uns["spatial"].keys())[0]
     has_coords = "spatial" in adata.obsm
@@ -201,9 +209,20 @@ try:
 
         nrows = 2 if ingest_vals is not None else 1
         ncols = 1 + len(ths)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5.6 * ncols, 5.0 * nrows),
-                                 squeeze=False,
-                                 gridspec_kw={"wspace": 0.6, "hspace": 0.35})
+        legend_labels = list(ingest_palette)
+        if ths:
+            legend_labels.append("removed")
+        fig, axes, legend_ax = grid_figure(
+            nrows,
+            ncols,
+            legend_labels,
+            cell_width=5.6,
+            cell_height=5.0,
+            wspace=0.18,
+            hspace=0.3,
+            top_margin=0.6,
+            max_legend_columns=min(8, 2 * ncols),
+        )
 
         def draw(ax, color, title, **extra):
             try:
@@ -220,7 +239,7 @@ try:
             adata.uns["_qc_colors"] = [ingest_palette[c]
                                        for c in adata.obs["_qc"].cat.categories]
             draw(axes[r][0], "_qc", "all cells (ingest)",
-                 legend_fontsize=5, na_in_legend=False)
+                 legend_fontsize=12, na_in_legend=False)
             for j, t in enumerate(ths):
                 mask = (vals < t) if op == "below" else (vals > t)
                 title = f"{label} {t}\n{int(mask.sum()):,} removed"
@@ -233,7 +252,7 @@ try:
                 adata.obs["_qc"] = pd.Categorical(tmp, categories=cats)
                 adata.uns["_qc_colors"] = [ingest_palette[c] for c in cats]
                 draw(axes[r][j + 1], "_qc", title, na_color="#e8e8e8",
-                     na_in_legend=False, legend_fontsize=5)
+                     na_in_legend=False, legend_fontsize=12)
             r += 1
 
         draw(axes[r][0], None, "all cells")
@@ -248,6 +267,14 @@ try:
                 categories=["removed"])
             adata.uns["_qc_colors"] = ["#e41a1c"]
             draw(axes[r][j + 1], "_qc", title, na_color="#e8e8e8", na_in_legend=False)
+
+        move_legend_to_axis(
+            axes.ravel(),
+            legend_ax,
+            title="Cell status / ingest cell type",
+            fontsize=12,
+            max_columns=min(8, 2 * ncols),
+        )
 
         if "_qc" in adata.obs:
             del adata.obs["_qc"]

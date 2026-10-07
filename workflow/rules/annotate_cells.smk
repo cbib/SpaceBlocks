@@ -6,6 +6,7 @@ rule annotate_cells:
     input:
         adata=_annotate_input_adata,
         metadata=rules.preprocess_umap.output.metadata,
+        external_metadata=_external_metadata_input,
         cluster_annotations=config.get("cluster_annotations", "") or [],
         spatial_niche=_annotate_niche_input,
     output:
@@ -24,14 +25,15 @@ rule annotate_cells:
         runtime=get_resource("annotate_cells", "runtime"),
     params:
         sample_id=lambda wc: wc.sample,
-        min_cells_per_type=ANALYSIS.get("min_cells_per_type", 15),
         de_n_genes=ANALYSIS.get("de_n_genes", 10),
         use_precomputed=USE_PRECOMPUTED,
         external_annotation=config.get("external_annotation", {}),
-        precomputed_metadata_dir=config.get("precomputed_metadata_dir", ""),
+        primary_annotation_column=DEFAULT_ANNOT_COL,
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
         dpi=ANALYSIS.get("plot_dpi", 300),
+        umap_point_size=ANALYSIS.get("umap_point_size", 2),
+        spatial_point_size=ANALYSIS.get("spatial_point_size", 20),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
     script:
         "../scripts/annotate_cells.py"

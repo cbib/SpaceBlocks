@@ -3,7 +3,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Invoke with:  snakemake --profile profiles/slurm
 # Set as default for a shell session with:  export SNAKEMAKE_PROFILE=profiles/slurm
-
+#
 executor: slurm
 jobs: 30
 

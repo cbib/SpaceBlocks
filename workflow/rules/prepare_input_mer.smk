@@ -8,6 +8,8 @@ rule prepare_input_mer:
     input:
         qupath_meta=rules.generate_qupath_mer.output.qupath_meta,  # px<->µm mapping + p0
         background=rules.generate_qupath_mer.output.background,  # grey contract image
+        geojson=lambda wc: _find_geojson(wc.sample) or [],
+        geojson_validation=lambda wc: _geojson_validation_report(wc.sample),
     output:
         h5ad=config["contract"]["unfiltered_h5ad"],
     log:

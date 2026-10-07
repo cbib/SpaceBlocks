@@ -1,0 +1,158 @@
+"""Shared helpers for deciding which cell-type annotations are meaningful.
+
+The names below are SpaceBlocks' canonical ``adata.obs`` columns. In particular,
+``external_annotation.column`` may name any column in the source metadata TSV;
+``annotate_cells.py`` copies that source column to ``cell_type_external`` before
+these helpers are called.
+"""
+
+from __future__ import annotations
+
+
+ACTIVE_ANNOTATION_COLUMNS_KEY = "active_annotation_columns"
+PRIMARY_ANNOTATION_COLUMN_KEY = "primary_annotation_column"
+CANONICAL_ANNOTATION_COLUMNS = (
+    "cell_type_tsv",
+    "cell_type_ingest",
+    "cell_type_external",
+)
+PRIMARY_ANNOTATION_PRIORITY = (
+    "cell_type_external",
+    "cell_type_tsv",
+    "cell_type_ingest",
+)
+_PLACEHOLDER_LABELS = {
+    "", "<na>", "n/a", "na", "nan", "none", "null", "unannotated",
+}
+
+
+def non_placeholder_annotation_mask(labels):
+    """Return a boolean mask selecting real labels from a pandas Series."""
+    normalized = labels.astype("string").str.strip().str.casefold()
+    return labels.notna() & ~normalized.isin(_PLACEHOLDER_LABELS)
+
+
+def normalize_annotation_labels(labels, placeholder="Unannotated"):
+    """Return stripped, object-backed labels with placeholders normalized.
+
+    Pandas' nullable string dtype is useful while normalizing because it preserves
+    missing values through string operations.  Do not expose that dtype to callers,
+    though: nullable-string categories use a newer h5ad encoding that older AnnData
+    readers cannot consume.
+    """
+    normalized = labels.astype("string").str.strip()
+    normalized = normalized.where(
+        non_placeholder_annotation_mask(labels), placeholder
+    )
+    return normalized.astype(object)
+
+
+def meaningful_annotation_labels(adata, column):
+    """Return distinct, non-placeholder labels from an ``obs`` column."""
+    if not column or column not in adata.obs.columns:
+        return []
+    labels = adata.obs[column]
+    return (
+        labels[non_placeholder_annotation_mask(labels)]
+        .astype(str)
+        .str.strip()
+        .unique()
+        .tolist()
+    )
+
+
+def has_meaningful_annotation(adata, column, min_labels=1):
+    """Whether ``column`` contains at least ``min_labels`` real labels."""
+    return len(meaningful_annotation_labels(adata, column)) >= min_labels
+
+
+def _select_primary_annotation(active, preferred=None, recorded=None):
+    """Choose one primary column while retaining every active annotation."""
+    for column in (preferred, recorded, *PRIMARY_ANNOTATION_PRIORITY):
+        if column and column in active:
+            return column
+    return active[0] if active else None
+
+
+def record_active_annotation_columns(
+    adata,
+    candidates=CANONICAL_ANNOTATION_COLUMNS,
+    preferred=None,
+):
+    """Store and return canonical annotation columns carrying at least one real label.
+
+    Placeholder labels are ignored for this availability decision only. Thus, a
+    column containing both ``Unannotated`` and real cell types remains active and
+    retains its unannotated cells in downstream plots.
+    """
+    active = [column for column in candidates if has_meaningful_annotation(adata, column)]
+    adata.uns[ACTIVE_ANNOTATION_COLUMNS_KEY] = active
+    primary = _select_primary_annotation(active, preferred=preferred)
+    if primary:
+        adata.uns[PRIMARY_ANNOTATION_COLUMN_KEY] = primary
+    else:
+        adata.uns.pop(PRIMARY_ANNOTATION_COLUMN_KEY, None)
+    return active
+
+
+def active_annotation_columns(adata, candidates=CANONICAL_ANNOTATION_COLUMNS):
+    """Return usable annotation columns, with a fallback for older h5ad files.
+
+    New outputs record the active columns explicitly. Objects written before that
+    metadata existed are inspected semantically, so an all-``Unannotated`` column
+    never becomes a report panel merely because it is present in ``obs``.
+    """
+    candidates = list(candidates)
+    if ACTIVE_ANNOTATION_COLUMNS_KEY not in adata.uns:
+        return [
+            column
+            for column in candidates
+            if has_meaningful_annotation(adata, column)
+        ]
+
+    recorded = adata.uns[ACTIVE_ANNOTATION_COLUMNS_KEY]
+    if recorded is None:
+        recorded = []
+    elif isinstance(recorded, str):
+        recorded = [recorded]
+    else:
+        recorded = [str(column) for column in recorded]
+    return [
+        column
+        for column in candidates
+        if column in recorded and has_meaningful_annotation(adata, column)
+    ]
+
+
+def primary_annotation_column(
+    adata,
+    preferred=None,
+    candidates=CANONICAL_ANNOTATION_COLUMNS,
+):
+    """Return the preferred meaningful annotation, external first by default."""
+    active = active_annotation_columns(adata, candidates=candidates)
+    recorded = adata.uns.get(PRIMARY_ANNOTATION_COLUMN_KEY)
+    if recorded is not None:
+        recorded = str(recorded)
+    return _select_primary_annotation(
+        active,
+        preferred=preferred,
+        recorded=recorded,
+    )
+
+
+def ordered_annotation_columns(
+    adata,
+    preferred=None,
+    candidates=CANONICAL_ANNOTATION_COLUMNS,
+):
+    """Return all meaningful annotations with the primary column first."""
+    active = active_annotation_columns(adata, candidates=candidates)
+    primary = primary_annotation_column(
+        adata,
+        preferred=preferred,
+        candidates=candidates,
+    )
+    if not primary:
+        return active
+    return [primary, *[column for column in active if column != primary]]

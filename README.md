@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/img/spaceblocks_logo.svg" alt="SpaceBlocks" width="640">
+  <img src="docs/img/spaceblocks_logo.svg" alt="SpaceBlocks" width="570">
 </p>
 <p align="center">
   <a href="https://cbib.github.io/SpaceBlocks/"><img src="https://img.shields.io/badge/docs-online-blue" alt="Documentation"></a>
@@ -16,9 +16,9 @@
 
 ## Streamlined, reproducible, spatial transcriptomics analyses with Snakemake
 
-SpaceBlocks is a technology-agnostic Snakemake workflow for **semi-automated analysis of single-cell-resolution spatial transcriptomics (ST)**.
+SpaceBlocks is a technology-agnostic Snakemake workflow for **expert-supervised cohort-level analysis of single cell resolution spatial transcriptomics (ST)**.
 
-It supports scalable and reproducible quality control, clustering, annotation, integration, differential expression, and spatial neighbourhood or niche analysis.
+It supports scalable and reproducible quality control, clustering, annotation, integration, differential expression, and spatial neighbourhood and niche analysis.
 
 Its modular architecture supports both public and in-house ST datasets while remaining maintainable and extensible.
 
@@ -31,21 +31,31 @@ Its modular architecture supports both public and in-house ST datasets while rem
 
 ## Overview
 
-The workflow is divided into (optional) technology-specific **HeadBlocks** and common **CoreBlocks** that streamline pre-, post-processing, and informative exploration of results.
+The workflow is divided into (optional) technology-specific **HeadBlocks** and common **CoreBlocks** that streamline preprocessing, postprocessing, and informative exploration of results.
 
-<p align="center"><img src="images/main.png" alt="SpaceBlocks workflow overview"><figcaption>Workflow overview and partial output from Xenium 5K demo example.</figcaption><width="700"></p>
+<br/>
 
-A full SpaceBlocks run takes three inputs:
+<p align="center">
+  <img src="images/main.png"
+       alt="SpaceBlocks workflow overview"
+       width="700">
+</p>
+
+> **Overview of the SpaceBlocks workflow**. **(a)** Snakevision tubemap scheme showcasing the workflow rules, coloured by technology and processing step. The AnnData contract validation entry point and user-supervised steps are displayed in **bold font**. **(b)** Schematic representation of the outputs produced by the CoreBlocks subworkflow and main design features of the pipeline. **(c)** Runtime benchmarking across Visium HD, Xenium 5K and MERSCOPE datasets. β denotes the fitted scaling exponent; doubling the cell count multiplies the estimated wall-clock time by 2^β. **(d)** SpaceBlocks processing of the multiple sclerosis MERSCOPE dataset from Feng et al. (2025). Left, BANKSY niches annotated in the publication, shown on a UMAP. Right, the number of unique domain-specific upregulated genes identified by one-vs-rest Wald tests (Benjamini–Hochberg adjusted p-value < 0.05 and |log2FC| > 0.25).
+
+<br/>
+
+SpaceBlocks consumes ST data and can additionally use region and cell-type annotations:
 
 1. **ST formatted AnnData objects**. Either generated from the HeadBlocks, or manually formatted as a standardized h5ad AnnData object. For brevity, **we refer to each of these objects as THE CONTRACT**. Their structure (count matrix, spatial coordinates and optional region annotations) is validated (`validate_input`) before downstream analyses.
 
-2. **Region annotations**. Provided in GeoJSON format.
+2. **Region annotations (optional)**. Provided as GeoJSON files in HeadBlock modes, or already
+   stored in `obs["region_annotation"]` in a decoupled contract.
 
-3. **Cell type annotations**. Automatically generated through externally annotated references (`ingest`), manually annotating clusters (default) or providing externally generated annotations.
+3. **Cell type annotations**. Automatically transferred from a reference (`ingest`),
+   manually assigned from clusters (default), or supplied as external labels.
 
-The only mandatory input for SpaceBlocks is the actual ST data (1).
-
-SpaceBlocks provides tools to ease region annotation via QuPath (ideal if collaborating with pathologists) and cell type annotation (either manual, semi-automatic or external).
+SpaceBlocks provides tools to ease region annotation via QuPath (ideal if collaborating with pathologists) and cell type annotation (either manual, ingested or external).
 
 ## Quickstart
 
@@ -54,15 +64,15 @@ SpaceBlocks requires [Snakemake](https://snakemake.readthedocs.io) and Conda/Mam
 If you are not familiar with Snakemake, there are three key files to configure:
 
 1. `workflow/Snakefile` — loads the config file/s (normally, at `config/config.yaml`), and has the instructions to execute the workflow. It is normally static, so you should not modify it.
-2. The `config.yaml` — defines the parameters for your workflow run (i.e. where the input and output should be found, whether to use an external reference for cell type annotation, etc.). **It needs to be configured.** The config may require other files needed for the run (in the case of SpaceBlocks, `config/core_samples.tsv`).
-3. The `profiles/config.yaml` — Snakemake is a workflow manager that allows parallelization in systems with job schedulers (i.e. `slurm`), or local execution. **The profile needs to be adapted to your system.** We provide a default profile that runs locally and a slurm profile we used on our HPC.
+2. The `config.yaml` — defines the parameters for your workflow run (i.e. where the input and output should be found, whether to use an external reference for cell type annotation, etc.). Copy `config/config.yaml.template` to `config/config.yaml`, then configure it for your project. The config may require other files needed for the run (in the case of SpaceBlocks, `config/core_samples.tsv`).
+3. The `profiles/<profile>/config.yaml` — Snakemake is a workflow manager that allows parallelization in systems with job schedulers (i.e. `Slurm`), or local execution. **The profile needs to be adapted to your system.** We provide a default profile that runs the `test` pipeline locally and a slurm profile we used on our HPC.
 
 The full [configuration reference](https://cbib.github.io/SpaceBlocks/configuration/) presents a detailed explanation on how to set `config.yaml`.
 
 We recommend reading the [configuration reference](https://cbib.github.io/SpaceBlocks/configuration/) first, and then starting with the tutorial on [how to streamline a full run](https://cbib.github.io/SpaceBlocks/getting-started), and an [example with public data](https://cbib.github.io/SpaceBlocks/demos/).
 
 > [!TIP]
-> Any run can be fully reproduced end-to-end only with the experimental design and cell type annotations.
+> Once the input data is available, a run can be reproduced from its configuration, sample sheet, and any manual or external annotations.
 >
 > Color palettes for sample metadata, cell type annotations and spatial niches are fully customizable from `config/config.yaml`.
 
@@ -72,23 +82,27 @@ In short, to run the workflow:
 # 1. Get the workflow  (or: snakedeploy deploy-workflow cbib/SpaceBlocks spaceblocks --tag <version>)
 git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 
-# 2. Configure
+# 2. Configure the config/config.yaml and the Snakemake profile in profiles/
+cp config/config.yaml.template config/config.yaml
 #    config/visiumhd_samples.csv   — if running mode : visiumhd
 #    config/core_samples.tsv       — one row per sample (+ any design columns)
-#    config/config.yaml            — mode: visiumhd | xenium5k | decoupled, and paths
-#    profiles/**/config.yaml        — profiles/default provides an example for slurm
+#    config/config.yaml            — mode: visiumhd | xenium5k | atera | merscope | decoupled
+#    profiles/**/config.yaml       — local and Slurm execution examples
 #
 #    Note: Invoke profile manually (e.g. --profile profiles/default) or
 #          set environment variable (e.g. export SNAKEMAKE_PROFILE=profiles/default )
 
-# 3. Check the plan
+# 3. Dry-run your SpaceBlocks configuration
 snakemake -n --sdm conda
 
-# 4. Make the QuPath images, annotate regions in QuPath, then run the core
-snakemake qupath_images qc_sweep  --sdm conda   # → annotate, export GeoJSON to config["geojson_path"] + sweep QC thresholds
-snakemake run_preprocessing       --sdm conda   # validate → QC/normalise → cluster
-snakemake run_postprocessing      --sdm conda   # annotate → integrate → DE → reports + subclusters
-snakemake run_exploration         --sdm conda   # explore genes (integrated and per sample)
+# 4. Make the QuPath images (only when using the HeadBlocks)
+snakemake qupath_images       --sdm conda
+# 5. Annotate regions in QuPath and screen the QCs
+snakemake  qc_sweep_all       --sdm conda    # sweep QC thresholds
+# 6. Commit the QCs and run the CoreBlocks
+snakemake run_preprocessing   --sdm conda    # validate → QC/normalise → cluster
+snakemake run_postprocessing  --sdm conda    # annotate → integrate → DE → reports + subclusters
+snakemake run_exploration     --sdm conda    # explore genes (integrated and per sample)
 ```
 
 ## Documentation
@@ -118,4 +132,4 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the arc
 
 ## License
 
-Released under the MIT License — see [LICENSE](LICENSE).
+Released under the MIT License — see [LICENSE](LICENSE.md).

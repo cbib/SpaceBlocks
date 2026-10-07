@@ -23,6 +23,14 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
+try:
+    _here = os.path.dirname(os.path.abspath(__file__))
+except NameError:                      # very old Snakemake
+    _here = os.getcwd()
+sys.path.insert(0, _here)
+from annotation_utils import non_placeholder_annotation_mask
+from external_metadata import optional_input_path, read_cell_metadata
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_handlers = [logging.StreamHandler(sys.stderr)]
 if hasattr(snakemake, "log"):
@@ -50,8 +58,8 @@ RES_SCAN_MAX   = float(snakemake.params.resolution_scan_max)
 RES_SCAN_STEP  = float(snakemake.params.resolution_scan_step)
 RANDOM_SEED    = int(snakemake.params.random_seed)
 USE_PRECOMPUTED = bool(snakemake.params.use_precomputed)
-PRECOMPUTED_DIR = str(snakemake.params.precomputed_metadata_dir)
 REGION_COLORS   = snakemake.params.region_colors
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 # Mitochondrial gene prefixes. Honour contract.mito_prefix when the rule passes it,
 # else default to human + mouse. The old hardcoded "MT-" silently disabled the
 # max_pct_mt filter on mouse ("mt-") data, even though the config advertises the key.
@@ -63,7 +71,8 @@ EXTERNAL_ENABLED = bool(getattr(snakemake.params, "external_enabled", False))
 EXTERNAL_COLUMN  = str(getattr(snakemake.params, "external_column", "") or "")
 KEEP_UNANNOTATED = bool(getattr(snakemake.params, "keep_unannotated", True))
 _ext_meta_in     = getattr(snakemake.input, "external_meta", None)
-EXTERNAL_MASK    = bool(EXTERNAL_ENABLED and not KEEP_UNANNOTATED and _ext_meta_in)
+_precomputed_meta_in = getattr(snakemake.input, "precomputed_meta", None)
+EXTERNAL_MASK    = bool(EXTERNAL_ENABLED and not KEEP_UNANNOTATED)
 
 out_adata      = str(snakemake.output.adata)
 out_metadata   = str(snakemake.output.metadata)
@@ -192,25 +201,38 @@ try:
         # and SKIP the pipeline QC thresholds (the user's external labels ARE the QC
         # decision). Genes expressed in no kept cell are dropped (data hygiene, not a
         # cell-QC threshold, so PCA/normalisation stay well-behaved).
-        ext_path = str(_ext_meta_in if isinstance(_ext_meta_in, str) else _ext_meta_in[0])
-        _saved = pd.read_csv(ext_path, sep="\t", index_col=0, comment="#")
-        if EXTERNAL_COLUMN not in _saved.columns:
-            raise ValueError(f"external_annotation column '{EXTERNAL_COLUMN}' not in {ext_path}")
-        _lab = _saved[EXTERNAL_COLUMN].dropna().astype(str).str.strip()
-        _annot_bc = set(_lab[(_lab != "") & (_lab.str.lower() != "nan")
-                             & (_lab.str.lower() != "unannotated")].index.astype(str))
+        if _ext_meta_in:
+            ext_path = optional_input_path(_ext_meta_in)
+            _saved = read_cell_metadata(
+                ext_path, required_columns=(EXTERNAL_COLUMN,)
+            )
+            _lab = _saved[EXTERNAL_COLUMN]
+            external_source = ext_path
+        elif EXTERNAL_COLUMN in adata.obs.columns:
+            _lab = adata.obs[EXTERNAL_COLUMN]
+            external_source = f"contract h5ad obs['{EXTERNAL_COLUMN}']"
+        else:
+            raise ValueError(
+                f"external_annotation column '{EXTERNAL_COLUMN}' is absent from "
+                "the contract h5ad obs and no external metadata TSV was supplied"
+            )
+        _annot_bc = set(
+            _lab[non_placeholder_annotation_mask(_lab)].index.astype(str)
+        )
         _keep = adata.obs_names.astype(str).isin(_annot_bc)
         adata = adata[_keep].copy()
         sc.pp.filter_genes(adata, min_cells=1)
         THRESHOLDS_SOURCE = "external_annotation (keep_unannotated=false; pipeline QC skipped)"
         MIN_COUNTS = MAX_COUNTS = MIN_GENES = MIN_CELLS = MAX_PCT_MT = None
-        log.info("External-driven cell set for %s: kept %d / %d cells (%d externally "
-                 "annotated); pipeline QC thresholds SKIPPED.",
-                 sample_id, adata.n_obs, n_cells_before, len(_annot_bc))
+        log.info("External-driven cell set for %s from %s: kept %d / %d cells "
+                 "(%d externally annotated); pipeline QC thresholds SKIPPED.",
+                 sample_id, external_source, adata.n_obs, n_cells_before,
+                 len(_annot_bc))
         if adata.n_obs == 0:
             raise ValueError(
                 f"No externally-annotated cells matched the contract barcodes for "
-                f"'{sample_id}'. Check that {ext_path} barcodes match adata.obs_names.")
+                f"'{sample_id}'. Check that {external_source} contains real labels "
+                "whose barcodes match adata.obs_names.")
     else:
         log.info("QC (source: %s): min_counts=%s min_cells=%s min_genes=%s "
                  "max_counts=%s max_pct_mt=%s", THRESHOLDS_SOURCE,
@@ -244,7 +266,7 @@ try:
         # the scalefactor-derived Visium spot size, so without this the dots render
         # invisibly and only the tissue image shows); add library_id to draw them
         # over the embedded image when one is present.
-        spatial_kw = {"spot_size": 20}
+        spatial_kw = {"spot_size": SPATIAL_POINT_SIZE}
         if isinstance(adata.uns.get("spatial"), dict) and adata.uns["spatial"]:
             spatial_kw["library_id"] = list(adata.uns["spatial"].keys())[0]
         sc.pl.spatial(adata, color="region_annotation", title="Annotated Regions",
@@ -279,8 +301,7 @@ try:
             log.info("  res=%.1f → %d clusters", res, adata.obs[key].nunique())
 
     if USE_PRECOMPUTED:
-        ext_meta = (os.path.join(PRECOMPUTED_DIR, f"metadata_{sample_id}.tsv")
-                    if PRECOMPUTED_DIR else "")
+        ext_meta = optional_input_path(_precomputed_meta_in)
         if ext_meta and os.path.isfile(ext_meta):
             meta_source = ext_meta
             log.info("Reloading precomputed clusters from EXTERNAL: %s", meta_source)
@@ -292,11 +313,7 @@ try:
             log.warning("use_precomputed is true but no metadata file found. Computing fresh.")
 
         if meta_source:
-            saved_meta = pd.read_csv(meta_source, sep="\t", index_col=0, comment="#")
-            # obs_names are strings; an all-numeric cell-id index (e.g. Xenium) is inferred as
-            # int by read_csv and would misalign on reindex -> force str (as the external path
-            # above does) so the saved clusters line up with the current cells.
-            saved_meta.index = saved_meta.index.astype(str)
+            saved_meta = read_cell_metadata(meta_source)
             saved_res = [c for c in saved_meta.columns if c.startswith("leiden_")]
             for key in leiden_keys:
                 if key not in saved_meta.columns:

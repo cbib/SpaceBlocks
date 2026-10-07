@@ -3,6 +3,8 @@ rule prepare_input_vhd:
     input:
         sr_done=f"{OUTDIR_SR}/{{sample}}/.done",
         hires_png=rules.generate_qupath_vhd.output.qupath_image,
+        geojson=lambda wc: _find_geojson(wc.sample) or [],
+        geojson_validation=lambda wc: _geojson_validation_report(wc.sample),
     output:
         h5ad=config["contract"]["unfiltered_h5ad"],
     log:

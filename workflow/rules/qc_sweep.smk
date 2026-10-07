@@ -42,5 +42,6 @@ rule qc_sweep:
         ref_label_key=config.get("ingest_ref_label_key", "cell_type"),
         region_colors=config.get("analysis", {}).get("region_colors", {}),
         region_levels=config.get("analysis", {}).get("region_levels", []),
+        spatial_point_size=config.get("analysis", {}).get("spatial_point_size", 20),
     script:
         "../scripts/qc_sweep.py"

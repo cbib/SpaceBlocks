@@ -10,8 +10,12 @@ dependencies:
   # Formatting and linting tools
   - pre_commit
   - bioconda::snakefmt
+  - conda-forge::go-shfmt
 
   # Documentation tools
   - mkdocs
   - pymdown-extensions
   - mkdocs-material
+
+  # Graphviz (for dot)
+  - graphviz

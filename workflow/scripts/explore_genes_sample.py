@@ -33,7 +33,12 @@ from composition_barplots import find_niche_column, build_niche_palette
 from explore_genes_common import (
     read_tsv_to_dict, classify_entries, apply_annotation_palette, apply_region_palette,
     make_score_adata, annotate_ct_region_dotplot, create_annotation_legend,
-    composite_vertical, _compact_legend,
+    composite_vertical,
+)
+from plotting_legends import (
+    category_labels,
+    move_legend_to_axis,
+    panel_figure,
 )
 
 # Large cell type × region dotplots can exceed PIL's default pixel limit
@@ -72,13 +77,26 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
     multi-column legend so a high niche count does not distort the composite."""
     has_niche = bool(niche_col and niche_col in adata.obs.columns)
     n_panels = 2 + (1 if has_regions else 0) + (1 if has_niche else 0)
-    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7),
-                              gridspec_kw={"wspace": 0.5})
+    panel_keys = [None, annot_key]
+    if has_regions:
+        panel_keys.append("region_annotation")
+    if has_niche:
+        panel_keys.append(niche_col)
+    labels_by_panel = [category_labels(adata, key) for key in panel_keys]
+    fig, plot_axes, legend_axes = panel_figure(
+        n_panels,
+        labels_by_panel,
+        panel_width=8,
+        plot_height=6,
+        wspace=0.18,
+        top_margin=0.8,
+    )
+    axes = plot_axes[0]
     fig.suptitle(sample_id, fontsize=16, fontweight="bold", y=1.02)
 
     # (1) Expression / AUCell
     try:
-        sc.pl.spatial(adata, color=color_col, spot_size=20, frameon=False,
+        sc.pl.spatial(adata, color=color_col, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                       vmin=vmin, vmax=vmax, cmap="viridis",
                       title=title, library_id=library_id,
                       ax=axes[0], show=False)
@@ -88,10 +106,11 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
 
     # (2) Cell type
     try:
-        sc.pl.spatial(adata, color=annot_key, spot_size=20, frameon=False,
+        sc.pl.spatial(adata, color=annot_key, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                       title="Cell types", library_id=library_id,
-                      legend_fontsize=6, na_in_legend=False,
+                      legend_fontsize=12, na_in_legend=False,
                       ax=axes[1], show=False)
+        move_legend_to_axis(axes[1], legend_axes[1], title="Cell types")
     except Exception as e:
         log.warning("    Spatial celltype failed: %s", e)
         axes[1].set_title("Cell types (failed)")
@@ -100,11 +119,12 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
     # (3) Region
     if has_regions:
         try:
-            sc.pl.spatial(adata, color="region_annotation", spot_size=20,
+            sc.pl.spatial(adata, color="region_annotation", spot_size=SPATIAL_POINT_SIZE,
                           frameon=False, title="Regions",
                           library_id=library_id,
-                          legend_fontsize=6, na_in_legend=False,
+                          legend_fontsize=12, na_in_legend=False,
                           ax=axes[idx], show=False)
+            move_legend_to_axis(axes[idx], legend_axes[idx], title="Regions")
         except Exception as e:
             log.warning("    Spatial region failed: %s", e)
             axes[idx].set_title("Regions (failed)")
@@ -120,11 +140,13 @@ def generate_spatial_composite(adata, color_col, annot_key, has_regions,
             if niche_palette:
                 adata.uns[f"{niche_col}_colors"] = [
                     niche_palette.get(str(c), "#cccccc") for c in cats]
-            sc.pl.spatial(adata, color=niche_col, spot_size=20, frameon=False,
+            sc.pl.spatial(adata, color=niche_col, spot_size=SPATIAL_POINT_SIZE, frameon=False,
                           title="Spatial niches", library_id=library_id,
-                          legend_fontsize=5, na_in_legend=False,
+                          legend_fontsize=12, na_in_legend=False,
                           ax=axes[idx], show=False)
-            _compact_legend(axes[idx], title="Niche")
+            move_legend_to_axis(
+                axes[idx], legend_axes[idx], title="Spatial niches", fontsize=12
+            )
         except Exception as e:
             log.warning("    Spatial niche failed: %s", e)
             axes[idx].set_title("Spatial niches (failed)")
@@ -197,8 +219,9 @@ def generate_dotplot_composite(adata, var_names, annot_key, has_regions,
             plt.savefig(tmp, dpi=dpi, bbox_inches="tight")
             tmp_files.append(tmp)
 
-            # Standalone annotation legend (before plt.close so gcf() can
-            # still read the dotplot's ytick labels)
+            # Temporary annotation-legend band (before plt.close so gcf() can
+            # still read the dotplot's ytick labels). It is composited into the
+            # same output PNG below and then deleted.
             if annotation_colors or region_colors:
                 tmp_leg = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
                 create_annotation_legend(annot_key,
@@ -235,6 +258,7 @@ sample_id         = str(snakemake.params.sample_id)
 ANNOT_KEY         = str(snakemake.params.annot_key)
 AUCELL_FRACTION   = float(snakemake.params.aucell_fraction)
 DPI               = int(snakemake.params.dpi)
+SPATIAL_POINT_SIZE = float(getattr(snakemake.params, "spatial_point_size", 20))
 ANNOTATION_COLORS = snakemake.params.annotation_colors
 REGION_COLORS     = snakemake.params.region_colors
 NICHE_COLUMN      = str(getattr(snakemake.params, "niche_column", "") or "")

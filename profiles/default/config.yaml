@@ -3,7 +3,6 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Invoke with:  snakemake --profile profiles/default
 # Set as default for a shell session with:  export SNAKEMAKE_PROFILE=profiles/default
-
 executor: local
 jobs: 4
 

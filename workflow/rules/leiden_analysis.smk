@@ -8,7 +8,9 @@ rule leiden_analysis:
     """
     input:
         adata=rules.preprocess_umap.output.adata,
-        cell_markers=config["snakemake_cell_markers"],
+        cell_markers=config.get(
+            "snakemake_cell_markers", "config/snakemake_cell_markers.tsv"
+        ),
     output:
         res_dir=directory(f"{SAMPLES_DIR}/{{sample}}/leiden_resolution_{{resolution}}"),
     log:
@@ -31,5 +33,7 @@ rule leiden_analysis:
         resolution_scan_step=ANALYSIS.get("resolution_scan_step", 0.1),
         annotation_colors=config.get("annotation_colors", {}),
         region_colors=ANALYSIS.get("region_colors", {}),
+        umap_point_size=ANALYSIS.get("umap_point_size", 2),
+        spatial_point_size=ANALYSIS.get("spatial_point_size", 20),
     script:
         "../scripts/leiden_analysis.py"

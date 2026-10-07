@@ -1,6 +1,7 @@
 name: visiumhd
 channels:
   - conda-forge
+  - bioconda
 
 dependencies:
   - python=3.10
@@ -9,6 +10,7 @@ dependencies:
   - anndata>=0.10
   - scanpy>=1.10
   - harmonypy==0.0.10
+  - python-igraph>=0.10
   - leidenalg>=0.8
   - squidpy>=1.4
 

@@ -46,6 +46,7 @@ rule subcluster:
         region_colors=ANALYSIS.get("region_colors", {}),
         region_levels=REGION_LEVELS,
         dpi=ANALYSIS.get("plot_dpi", 300),
+        umap_point_size=ANALYSIS.get("umap_point_size", 2),
         niche_column=GENE_EXPLORATION.get("niche_column", ""),
         extra_annot_columns=EXTRA_ANNOT_COLUMNS,
         sample_colors=SAMPLE_COLORS,

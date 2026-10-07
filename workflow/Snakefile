@@ -7,12 +7,15 @@ postprocessing → exploration). Rules are split across rules/*.smk and included
 directly below; helper functions live in rules/common.smk.
 """
 
+import glob
 import os
+import re
 import sys
+from itertools import combinations
 import pandas as pd
 from snakemake.utils import validate, min_version
 
-min_version("8.0")
+min_version("9.13")
 
 
 configfile: "config/config.yaml"
@@ -26,11 +29,16 @@ configfile: "config/config.yaml"
 # configfile: "demos/atera/atera_config.yaml"        # alpha: Atera HeadBlock test
 # configfile: "demos/merscope/merscope_config.yaml"
 
-validate(config, schema="schemas/config.schema.yaml")
-
 
 # Helper functions
 include: "rules/common.smk"
+
+
+# Expand config paths recursively
+config = _expand_base_dir(config)
+
+# Validate config against schema after path expansion
+validate(config, schema="schemas/config.schema.yaml")
 
 
 # ── Globals ──────────────────────────────────────────────────────────────────
@@ -46,12 +54,12 @@ RANDOM_SEED = config.get("random_seed", 42)
 
 # Xenium 5K head specifics
 XENIUM5K = config.get("xenium5k", {}) or {}
-XENIUM_ZARR_DIR = XENIUM5K.get("zarr_dir", "") or OUTDIR_SR
+XENIUM_ZARR_DIR = OUTDIR_SR
 
 # Atera head specifics (ALPHA — the platform ships H2 2026 and its output format is
 # still a preview; see docs/rules.md).
 ATERA = config.get("atera", {}) or {}
-ATERA_ZARR_DIR = ATERA.get("zarr_dir", "") or OUTDIR_SR
+ATERA_ZARR_DIR = OUTDIR_SR
 # The registered H&E is OPTIONAL and ships separately from the outs/ bundle. Both the
 # image and its alignment matrix are needed for the transform to be defined, so the
 # H&E QuPath rule is included only when both are configured.
@@ -132,6 +140,17 @@ if CORE_SAMPLES is None:
         )
     SAMPLE_IDS = list(SAMPLES.keys())
 
+# Optional per-sample region GeoJSON (ROI-based analysis). Presence is optional per
+# sample; a geojson-like file that matches neither accepted name is a fatal config
+# error (see _find_geojson).
+SAMPLES_WITH_GEOJSON = [s for s in SAMPLE_IDS if _find_geojson(s) is not None]
+for _s in SAMPLE_IDS:
+    if _s not in SAMPLES_WITH_GEOJSON:
+        print(
+            f"[process_geojson] No GeoJSON found for sample '{_s}' — "
+            "no ROI-based analysis will be performed for this sample."
+        )
+
 # Optional per-column colour palettes (sample + design columns) for downstream visualization
 SAMPLE_COLORS = config.get("sample_colors", {}) or {}
 
@@ -186,19 +205,41 @@ _ANNOT_TYPE_TO_COL = {
     "tsv_annotation": "cell_type_tsv",
     "external_annotation": "cell_type_external",
     "ingest_annotation": "cell_type_ingest",
-    "refined_annotation": "cell_type_refined",
 }
 DEFAULT_ANNOT_COL = _ANNOT_TYPE_TO_COL.get(PRIMARY_ANNOT_TYPE, "cell_type_tsv")
 ANNOT_TYPES = list(config.get("annotation_types") or [PRIMARY_ANNOT_TYPE])
 
-ANALYSIS_LEVELS = ANALYSIS.get("analysis_levels", ["by_region", "by_celltype_region"])
+_PSEUDOBULK_AGGREGATIONS = {
+    "all_cells",
+    "by_celltype",
+    "by_region",
+    "by_celltype_region",
+}
+
+
+PSEUDOBULK = ANALYSIS.get("pseudobulk", {}) or {}
+_configured_pseudobulk_analyses = PSEUDOBULK.get("analyses")
+if _configured_pseudobulk_analyses:
+    PSEUDOBULK_ANALYSES = [
+        _validate_pseudobulk_analysis(spec) for spec in _configured_pseudobulk_analyses
+    ]
+else:
+    PSEUDOBULK_ANALYSES = [
+        _validate_pseudobulk_analysis(spec) for spec in _legacy_pseudobulk_analyses()
+    ]
+
+PSEUDOBULK_ANALYSIS_BY_NAME = {spec["name"]: spec for spec in PSEUDOBULK_ANALYSES}
+if len(PSEUDOBULK_ANALYSIS_BY_NAME) != len(PSEUDOBULK_ANALYSES):
+    sys.exit("[config error] analysis.pseudobulk analysis names must be unique.")
+PSEUDOBULK_ANALYSIS_NAMES = list(PSEUDOBULK_ANALYSIS_BY_NAME)
 
 # Pseudobulk DESeq2 DE is OPTIONAL and on by default
 RUN_DE = bool(ANALYSIS.get("run_pseudobulk_de", False))
 
 RUN_LEIDEN_ANALYSIS = bool(ANALYSIS.get("run_leiden_analysis", True))
 
-# External annotation: fail fast if enabled but the column is not present in every sample's metadata
+# External annotation: validate metadata headers now, or decoupled h5ad obs per sample
+# in validate_input when no external metadata directory is configured.
 check_external_annotation()
 
 # Consistency: analysing the external annotation downstream requires it to be produced.
@@ -256,6 +297,7 @@ elif MODE == "merscope":
 include: "rules/validate_input.smk"
 include: "rules/qc_sweep.smk"
 include: "rules/preprocess_umap.smk"
+include: "rules/process_geojson.smk"
 include: "rules/leiden_analysis.smk"
 include: "rules/generate_annotation_template.smk"
 include: "rules/ingest_ref.smk"
@@ -311,6 +353,7 @@ rule run_preprocessing:
         expand(rules.preprocess_umap.output.adata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.metadata, sample=SAMPLE_IDS),
         expand(rules.preprocess_umap.output.report, sample=SAMPLE_IDS),
+        expand(rules.process_geojson.output.report, sample=SAMPLES_WITH_GEOJSON),
         *QUPATH_IMAGES,
         *(
             expand(
@@ -338,7 +381,7 @@ rule run_postprocessing:
             expand(
                 rules.pseudobulk_de.output.results_dir,
                 annot_type=ANNOT_TYPES,
-                analysis_level=ANALYSIS_LEVELS,
+                analysis_name=PSEUDOBULK_ANALYSIS_NAMES,
             )
             if RUN_DE
             else []

@@ -7,13 +7,15 @@ This page shows how to run SpaceBlocks end-to-end on **public data** for each su
 
 ## Technical notes
 
-To keep the tutorials simple and lightweight, we use 1 sample from a public dataset and divide it into **3 artificial samples, keeping only 500 highly-variable genes (HVGs)**.
+To keep the Visium HD and Xenium 5K tutorials simple and lightweight, we use 1 sample from a public dataset and divide it into **3 artificial samples, keeping only 500 highly-variable genes (HVGs)**. Atera and MERSCOPE examples consume publicly available raw data.
 
 We provide default `config` files, pre-annotated regions (GeoJSON files), clusters and cluster-to-cell type equivalences for the example public datasets to ensure reproducibility.
 
 The exact environment versions used during the generation of these tutorials can be found under `demos/lock.envs`.
 
-Each of the examples below can run under 8Gb of RAM and 4 cores in <40 min under our `slurm` HPC system:
+The small decoupled Visium HD and Xenium 5K examples run under 8 GB of RAM and four cores
+in under 40 minutes on our Slurm system. The full HeadBlock examples have platform- and
+dataset-dependent requirements:
 
 ```
 Our HPC specifications
@@ -27,7 +29,7 @@ Our HPC specifications
 1 TB RAM
 ```
 
-## Visium HD uncoupled mode example (mouse brain)
+## Visium HD decoupled mode example (mouse brain)
 
 SpaceBlocks is built to analyse single-cell resolution Spatial Transcriptomics data, so Visium HD data needs to be preprocessed via [bin2cell](https://github.com/Teichlab/bin2cell), [ENACT](https://github.com/Sanofi-Public/enact-pipeline) or, as in the Visium HD HeadBlock, Space Ranger >= v4.0.1 (internally implementing StarDist segmentation).
 
@@ -63,7 +65,7 @@ python format_visiumhd.py            # -> contracts/<sample>.h5ad + core_samples
 
 We provide `demo_vhd.geojson` for this dataset, as an example QuPath export on the hires image (see [QuPath annotation tutorial](qupath-tutorial.md)).
 
-## Xenium 5K uncoupled mode example (human melanoma)
+## Xenium 5K decoupled mode example (human melanoma)
 
 You may download the Xenium dataset from the [10x Genomics web](https://www.10xgenomics.com/datasets/xenium-prime-ffpe-human-skin), or via terminal using curl or wget.
 
@@ -103,14 +105,14 @@ Importantly, **`format_xenium.py` embeds a greyscale composite of the `morpholog
 Unlike the two examples above, this one runs a HeadBlock rather than `mode: decoupled`: the contract h5ad is built by `prepare_input_ate` from the raw bundle, so it exercises the whole head chain. The [dataset](https://www.10xgenomics.com/datasets/atera-wta-ffpe-human-breast-cancer) is 18,028 genes over 170,057 cells (CC BY 4.0).
 
 !!! note "Atera demo dataset size and SpaceBlocks mode"
-    This demo runs in `mode: atera` and the size of the dataset is ~190GB.
+    This demo runs in `mode: atera` and the size of the dataset is ~190GB, and the total space used after running SpaceBlocks is close to 300GB.
 
 ```bash
 # at the workflow dir, build the environment
 cd SpaceBlocks/
 conda env create --file=workflow/envs/atera.yaml
 conda activate atera
-# download into a scratch dir with ~120 GB free: the bundle alone is ~55 GB zipped
+# download into a scratch dir with ~300 GB free: the bundle alone is ~55 GB zipped
 mkdir -p /path/to/atera && cd /path/to/atera
 BASE=https://s3-us-west-2.amazonaws.com/10x.files/samples/atera/dev/WTA_Preview_FFPE_Breast_Cancer
 curl -O $BASE/WTA_Preview_FFPE_Breast_Cancer_outs.zip
@@ -142,21 +144,19 @@ snakemake run_postprocessing --sdm conda
 
 The helper also prints the `annotation_colors` block using 10x's own display colours, already pasted into the shipped config.
 
-The usual SpaceBlocks route — a human mapping Leiden clusters to cell types in `cluster_annotations.tsv` is to be implemented post-alpha. Note that `leiden_analysis` stays **on** to showcase 10x Genomics marker table `demos/atera/snakemake_cell_markers.tsv`, which is the supplemental `gene_groups.csv` pivoted to one column per group.
-
 Region annotation is optional here (the demo annotates cells from 10x's own calls). If you do want regions, `qupath_images` exports two annotatable TIFFs per sample, and `prepare_input_ate` reads whichever GeoJSON you export **named after the image stem** (`{sample}_<image>.geojson`), preferring them in this order:
 
 - `{sample}_he_background.tiff` — the registered H&E resampled onto the morphology grid (also the embedded contract background). **Recommended**: it sits on the cells' coordinate grid, so regions map back with a single scalar (no affine). Export as `{sample}_he_background.geojson`.
 - `{sample}_morphology.tiff` — the fluorescence composite (the fallback when no H&E is configured). Export as `{sample}_morphology.geojson`.
 
-Importantly, the registered H&E is not the raw whole-slide scan, which covers a second tissue section that Atera never imaged.
+Importantly, the registered H&E is not the raw whole-slide scan, which covers a second tissue section.
 
 The bundle holds a single sample, so `run_postprocessing` is not meaningful/complete here because integration, pseudobulk DE and composition comparisons all need replicates. The shipped config therefore trims those options; see `demos/xenium5k/xenium5k_config.yaml` for a config that exercises them.
 
 ## MERSCOPE HeadBlock example (mouse brain)
 
 Like the Atera demo, the MERSCOPE demo runs its HeadBlock the contract h5ad is built by `prepare_input_mer` straight from a raw Vizgen region, so it exercises the whole MERSCOPE head chain (`generate_qupath_mer` → `prepare_input_mer`). The
-head reads the two Vizgen cell CSVs directly and reuses the `5k.yaml` environment (no intermediate zarr, no new environment).
+head reads the two Vizgen cell CSVs directly and reuses the `xenium5k.yaml` environment (no intermediate zarr, no new environment).
 
 !!! note "MERSCOPE demo dataset size and SpaceBlocks mode"
     This demo runs in `mode: merscope` and the size of the dataset is ~25GB.
@@ -214,7 +214,9 @@ The shipped config holds a **single** region, so postprocessing (integration, ps
 
 ## Configure and run the examples
 
-A ready-to-run config ships next to each example: `demos/xenium5k/xenium5k_config.yaml`, `demos/visiumhd/visiumhd_config.yaml`, `demos/atera/atera_config.yaml` and `demos/merscope/merscope_config.yaml`. Optionally, you may use an external reference for the `ingest` rule, we provide external links to set in the example config files.
+A config ships next to each example: `demos/xenium5k/xenium5k_config.yaml`, `demos/visiumhd/visiumhd_config.yaml`, `demos/atera/atera_config.yaml` and `demos/merscope/merscope_config.yaml`. Note that configs paths need to be adapted with the ones in your specific system before reproducing the examples.
+
+Optionally, you may use an external reference for the `ingest` rule, we provide external links to set in the example config files.
 
 To use one, comment the default `configfile:` line in `workflow/Snakefile` and uncomment the matching example line (all are already present):
 
@@ -242,7 +244,7 @@ snakemake run_postprocessing             --sdm conda   # integration + DE across
 
 The shipped `demos/xenium5k/xenium5k_config.yaml` is set up to demonstrate the optional rules too:
 
-- **Subcompartment re-clustering.** `subcompartments` groups cell type labels and re-clusters them (`subcluster` rule, included in `run_posprocessing`).
+- **Subcompartment re-clustering.** `subcompartments` groups cell type labels and re-clusters them (`subcluster` rule, included in `run_postprocessing`).
 - **Gene / signature exploration.** `gene_queries_demo.tsv` holds a small gene set and a gene to showcase the `run_exploration` CoreBlock capabilities.
 - **Automatic annotation (optional).** `ingest_ref` and `ingest_ref_label_key` are empty by default, they allow the use of external references for automatic annotation (which may guide manual annotation). We provide examples in the config files to test this feature during `qc_sweep_all` (showing which assigned cell types are removed during QC) and `run_preprocessing`. Automatic annotation will also be shown in the `sample_report.pdf` during `run_postprocessing`.
 
@@ -274,8 +276,12 @@ where each `<sample>` is a row in `config/core_samples.tsv`. The sample names in
 mode: "decoupled"
 contract_dir: "demos/visiumhd/contracts"   # holds <sample>.h5ad
 core_samples: "demos/visiumhd/contracts/core_samples.tsv"
-# plus post_processing_outdir, logdir, geojson_path (see Configuration)
+# plus post_processing_outdir and logdir (see Configuration)
 ```
 
-Region annotation in decoupled mode is baked into the contract (as `region_annotation`) when you
-build it — there is no `qupath_images` target and no GeoJSON join later.
+Region annotation in decoupled mode is baked into the contract (as `region_annotation`) when you build it.
+
+External cell-type labels may likewise be stored as an `obs` column in each contract. Set
+`external_annotation.enabled: true` and point `external_annotation.column` at that column; a
+separate `precomputed_metadata_dir` is optional for this decoupled-only input path. Contract
+`obs_names` remain the join key, and validation checks that the configured labels are present.

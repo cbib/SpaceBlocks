@@ -27,7 +27,7 @@ concurrency:
 jobs:
   lint-and-dryrun:
     # Fast smoke test: lints the workflow and builds the full DAG on a tiny synthetic
-    # decoupled dataset (.tests/integration). No Conda envs or Space Ranger needed — a
+    # decoupled dataset (.test). No Conda envs or Space Ranger needed — a
     # dry-run validates the graph and (via the Snakefile) the config against the schema.
     runs-on: ubuntu-latest
     steps:
@@ -41,5 +41,7 @@ jobs:
         # (or an example config pointing at generated paths) cannot break CI.
       - name: Lint workflow
         run: snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
+      - name: Catalogue rule graph
+        run: snakemake -s workflow/Snakefile -c 1 -d .test --forceall --rulegraph > /dev/null
       - name: Dry-run (decoupled smoke test)
         run: snakemake -s workflow/Snakefile -d .test --dry-run --workflow-profile none

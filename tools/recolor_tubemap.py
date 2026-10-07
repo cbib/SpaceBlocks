@@ -30,6 +30,7 @@ UNKNOWN = "#777777"
 CORE_PHASE = {
     # Preprocessing
     "validate_input": "pre",
+    "process_geojson": "pre",
     "qc_sweep": "pre",
     "qc_sweep_all": "pre",
     "preprocess_umap": "pre",

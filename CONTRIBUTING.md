@@ -20,16 +20,19 @@ The practical consequence: **to support a new platform you write a new HeadBlock
 ## Repository layout
 
 ```
+.test/                tiny synthetic decoupled fixture for CI
+config/               config.yaml, README.md (config reference), sample sheets
+demos/                public-data worked examples
+docs/                 the MkDocs site
+images/               rulegraph and main image
+profiles/             Snakemake profile configuration
+tools/                scripts to extract external annotations and color the repo images/
 workflow/
 ├── Snakefile         globals, mode selection, named targets
 ├── rules/*.smk       one file per rule (+ common.smk for shared helpers)
 ├── scripts/*.py,*.R  rule implementations
 ├── envs/*.yaml       one Conda env per rule group (+ *_linux-64.lock)
 └── schemas/*.yaml    config + sample-sheet validation
-config/               config.yaml, README.md (config reference), sample sheets
-docs/                 the MkDocs site
-.test/                tiny synthetic decoupled fixture for CI
-reproduction/         public-data worked examples
 ```
 
 ## Development setup
@@ -41,9 +44,9 @@ standards.
 ```bash
 git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 # Install the development environment
-conda create -f workflow/envs/dev.yaml
+conda env create -f workflow/envs/dev.yaml
 conda activate spaceblocks_dev
-snakemake -n --sdm conda      # dry-run: builds the DAG, validates the config, provisions envs
+snakemake -n --sdm conda      # dry-run: builds the DAG and validates the config
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none  # decoupled smoke test
 ```
 
@@ -73,7 +76,7 @@ These are load-bearing, and most past bugs we experienced during development cam
 - **Rules pass params explicitly.** A `.smk` rule reads from `config` and passes values through
   `params:`; the script reads `snakemake.params`, **never `config` directly**. After any change,
   cross-check that every param name matches between the `.smk` and its script.
-- **Resources scale with retries.** Don't   hardcode resources in a rule. Every compute rule draws `mem_mb`/`runtime`/`threads` from
+- **Resources scale with retries.** Don't hardcode resources in a rule. Every compute rule draws `mem_mb`/`runtime`/`threads` from
   `config["resources"]` (with a `default`), and `mem_mb` grows with the attempt number.
 - **The contract convention.** `obs["cell_id"]` must equal `obs_names` (as strings); downstream
   joins key on it. Head-produced contracts live at `SAMPLES_DIR/{sample}/{sample}_unfiltered.h5ad`
@@ -99,30 +102,35 @@ changes. See the `xenium5k` head as a reference implementation.
 
 ## Validating a change
 
-Run the applicable checks locally before pushing. The first two mirror CI and use the committed
-`mode: decoupled` fixture under `.test/`:
+Run the applicable checks locally before pushing. The lint and dry-run commands mirror CI and use
+the committed `mode: decoupled` fixture under `.test/`:
 
 ```bash
-# 1. Workflow parses + lints (against the committed test fixture)
-snakemake -s workflow/Snakefile -d .test --lint
+# 1. Formatting and file-hygiene hooks pass
+pre-commit run --all-files
 
-# 2. The decoupled CoreBlock DAG builds
+# 2. Workflow parses + lints (against the committed test fixture)
+snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
+
+# 3. The decoupled CoreBlock DAG builds
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none
 
-# 3. Config still validates against the schema
+# 4. Catalog fixture and user template still validate against the schema
 python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration schema validation passed')"
+python -c "import yaml,jsonschema; jsonschema.validate(yaml.safe_load(open('config/config.yaml.template')), yaml.safe_load(open('workflow/schemas/config.schema.yaml'))); print('Configuration template schema validation passed')"
 
-# 4. Docs build cleanly (only if you touched docs/)
+# 5. Docs build cleanly (only if you touched docs/)
 # Activate the development environment
 conda activate spaceblocks_dev
 # Build the docs
 mkdocs build --strict
 ```
 
-Before a catalogue release, generate the decoupled rule graph once manually:
+Before a Catalog release, run the two checks used by the Catalog:
 
 ```bash
-snakemake -s workflow/Snakefile -d .test --forceall --rulegraph --workflow-profile none > pipeline_rulegraph.dot
+snakemake --lint
+snakemake -s workflow/Snakefile -c 1 -d .test --forceall --rulegraph > pipeline_rulegraph.dot
 ```
 
 Rendering the DOT file to SVG is optional and requires Graphviz:
@@ -131,7 +139,7 @@ Rendering the DOT file to SVG is optional and requires Graphviz:
 dot -Tsvg pipeline_rulegraph.dot > images/rulegraph.svg
 ```
 
-If you modify a HeadBlock, also dry-run the affected mode using a complete platform-specific configuration and representative mock or real inputs. Changing only `mode` in the generic `config/config.yaml` is not sufficient because its input paths are placeholders. Supported modes are `visiumhd`, `xenium5k`, `atera`, `merscope`, and `decoupled`.
+If you modify a HeadBlock, also dry-run the affected mode using a complete platform-specific configuration and representative mock or real inputs. Changing only `mode` in `config/config.yaml.template` is not sufficient because its input paths are placeholders. Supported modes are `visiumhd`, `xenium5k`, `atera`, `merscope`, and `decoupled`.
 
 Quick per-file sanity checks are cheap and worth it: `python -c "import ast; ast.parse(open('file.py').read())"`
 for Python, and `yaml.safe_load` for any YAML you edit.
@@ -155,7 +163,7 @@ Two workflows run on every PR and must pass:
 
 ## Submitting a pull request
 
-1. Branch from `main`, keep the change focused, and make sure the validation commands above pass.
+1. Branch from `dev`, keep the change focused, and make sure the validation commands above pass.
 2. Write a clear PR description: what changed and why. If behaviour changed, update the affected
    page under `docs/`.
 3. For bug fixes, a one-line note of the root cause in the PR helps reviewers.

@@ -2,7 +2,7 @@
 
 **A Snakemake workflow for single-cell-resolution spatial transcriptomics.**
 
-This site documents SpaceBlocks, a technology-agnostic Snakemake workflow to **semi-automatically analyse single-cell-resolution spatial transcriptomics (ST).**
+This site documents SpaceBlocks, a technology-agnostic Snakemake workflow for **expert-supervised cohort-level analysis of single cell resolution spatial transcriptomics (ST).**
 
 **New here?** Start taking a look at the **[configuration](configuration.md)**, follow with **[get started](getting-started.md)** for a complete run and check the [examples with public data](demos.md).
 

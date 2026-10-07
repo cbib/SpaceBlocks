@@ -1,6 +1,7 @@
 name: spatial_niches
 channels:
   - conda-forge
+  - bioconda
 dependencies:
   - python=3.10
 
