@@ -15,7 +15,7 @@ from itertools import combinations
 import pandas as pd
 from snakemake.utils import validate, min_version
 
-min_version("8.0")
+min_version("9.13")
 
 
 configfile: "config/config.yaml"

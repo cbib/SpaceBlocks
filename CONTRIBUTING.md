@@ -20,16 +20,19 @@ The practical consequence: **to support a new platform you write a new HeadBlock
 ## Repository layout
 
 ```
+.test/                tiny synthetic decoupled fixture for CI
+config/               config.yaml, README.md (config reference), sample sheets
+demos/                public-data worked examples
+docs/                 the MkDocs site
+images/               rulegraph and main image
+profiles/             Snakemake profile configuration
+tools/                scripts to extract external annotations and color the repo images/
 workflow/
 ├── Snakefile         globals, mode selection, named targets
 ├── rules/*.smk       one file per rule (+ common.smk for shared helpers)
 ├── scripts/*.py,*.R  rule implementations
 ├── envs/*.yaml       one Conda env per rule group (+ *_linux-64.lock)
 └── schemas/*.yaml    config + sample-sheet validation
-config/               config.yaml, README.md (config reference), sample sheets
-docs/                 the MkDocs site
-.test/                tiny synthetic decoupled fixture for CI
-reproduction/         public-data worked examples
 ```
 
 ## Development setup
@@ -43,7 +46,7 @@ git clone https://github.com/cbib/SpaceBlocks && cd SpaceBlocks
 # Install the development environment
 conda env create -f workflow/envs/dev.yaml
 conda activate spaceblocks_dev
-snakemake -n --sdm conda      # dry-run: builds the DAG, validates the config, provisions envs
+snakemake -n --sdm conda      # dry-run: builds the DAG and validates the config
 snakemake -s workflow/Snakefile -d .test -n --workflow-profile none  # decoupled smoke test
 ```
 
@@ -73,7 +76,7 @@ These are load-bearing, and most past bugs we experienced during development cam
 - **Rules pass params explicitly.** A `.smk` rule reads from `config` and passes values through
   `params:`; the script reads `snakemake.params`, **never `config` directly**. After any change,
   cross-check that every param name matches between the `.smk` and its script.
-- **Resources scale with retries.** Don't   hardcode resources in a rule. Every compute rule draws `mem_mb`/`runtime`/`threads` from
+- **Resources scale with retries.** Don't hardcode resources in a rule. Every compute rule draws `mem_mb`/`runtime`/`threads` from
   `config["resources"]` (with a `default`), and `mem_mb` grows with the attempt number.
 - **The contract convention.** `obs["cell_id"]` must equal `obs_names` (as strings); downstream
   joins key on it. Head-produced contracts live at `SAMPLES_DIR/{sample}/{sample}_unfiltered.h5ad`
@@ -160,7 +163,7 @@ Two workflows run on every PR and must pass:
 
 ## Submitting a pull request
 
-1. Branch from `main`, keep the change focused, and make sure the validation commands above pass.
+1. Branch from `dev`, keep the change focused, and make sure the validation commands above pass.
 2. Write a clear PR description: what changed and why. If behaviour changed, update the affected
    page under `docs/`.
 3. For bug fixes, a one-line note of the root cause in the PR helps reviewers.
