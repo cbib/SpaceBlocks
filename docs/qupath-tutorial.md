@@ -1,8 +1,8 @@
 # QuPath region annotation
 
-SpaceBlocks lets you overlay manual **region annotations** (tumour, healthy, necrosis, …) onto your samples. You draw them once in [QuPath](https://qupath.github.io/), export them as GeoJSON, and the pipeline folds them into `obs["region_annotation"]`.
+SpaceBlocks lets you overlay manual **region annotations** (tumour, healthy, necrosis, …) onto your samples. In HeadBlock modes, you draw them in [QuPath](https://qupath.github.io/), export them as GeoJSON, and the pipeline folds them into `obs["region_annotation"]`. In decoupled mode, the column must already be part of the contract.
 
-This is an **optional but recommended step** because it unlocks the region-aware analyses (neighbourhood, per-region co-occurrence, region-level pseudobulk). Without it, every cell will be `Unlabeled`.
+This is an **optional but recommended step** because it unlocks the region-aware analyses (neighbourhood, per-region co-occurrence, region-level pseudobulk). Without `region_annotation`, every cell will be `Unlabeled` and those analyses are skipped.
 
 Choosing QuPath means anatomopathologists and researchers without bioinformatics skills can annotate the histology directly, while the annotations stay easy to fold back into the AnnData objects.
 
@@ -12,8 +12,8 @@ Choosing QuPath means anatomopathologists and researchers without bioinformatics
 
 | Mode | How to obtain the image |
 | --- | --- |
-| `visiumhd` / `xenium5k` (a Headblock runs) | `snakemake qupath_images` writes one image per sample under `Samples/{sample}/QuPath_image/` (a Hi-Res PNG for Visium HD, a morphology TIFF for Xenium 5K). |
-| `decoupled` (no Headblock) | There is no `qupath_images` target — the image is instead **embedded in the contract h5ad** you provided (`uns["spatial"]`). Annotate the regions when you build the contract externally (see [Preparing inputs for decoupled mode](demos.md#preparing-inputs-for-decoupled-mode)). |
+| `visiumhd` / `xenium5k` / `atera` / `merscope` | `snakemake qupath_images` writes the available annotation image(s) under `Samples/{sample}/QuPath_image/`. |
+| `decoupled` (no Headblock) | There is no `qupath_images` target. Annotate the source image externally and add the labels while building the contract; embedding that image in `uns["spatial"]` is optional. See [Preparing inputs for decoupled mode](demos.md#preparing-inputs-for-decoupled-mode). |
 
 ## 2. Annotate in QuPath
 
@@ -23,7 +23,7 @@ Choosing QuPath means anatomopathologists and researchers without bioinformatics
 4. Right-click the polygon → *Set classification* → choose the region label.
 5. Repeat until the slide is fully annotated.
 6. **Select all annotations** → *File* → *Export objects as GeoJSON* → *Export as feature collection*.
-7. Save the file following the naming convention below, into the folder referenced by `config["geojson_path"]`.
+7. In a HeadBlock mode, save the file following the naming convention below into the folder referenced by `config["geojson_path"]`.
 
 <table align="center">
   <tr>
@@ -44,6 +44,12 @@ Choosing QuPath means anatomopathologists and researchers without bioinformatics
 | --- | --- |
 | Visium HD | `{sample}_tissue_hires_image.geojson` |
 | Xenium 5K | `{sample}_morphology.geojson` |
+| MERSCOPE | `{sample}_morphology.geojson` |
+| Atera morphology | `{sample}_morphology.geojson` |
+| Atera registered H&E background | `{sample}_he_background.geojson` |
+
+`mode: decoupled` has no workflow-side GeoJSON naming convention or join. Add the resulting
+labels to `obs["region_annotation"]` while constructing the contract.
 
 The region labels you set as classifications become the values of `obs["region_annotation"]`; list
 them (and their colours) under `analysis.region_levels` / `analysis.region_colors` in

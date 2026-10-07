@@ -17,6 +17,14 @@ The pipeline provisions one conda environment per rule group (run with `--use-co
 | `envs/xenium5k.yaml` | xenium5k and merscope HeadBlocks | `>=` lower bounds |
 | `envs/atera.yaml` | atera HeadBlocks (alpha) | pinned `spatialdata-io >=0.7,<0.8` |
 
+All environment YAMLs declare `conda-forge` followed by `bioconda`. The Visium HD/Core
+environment and the dedicated BANKSY environment include `python-igraph`; integration,
+spatial-niche clustering, and subclustering use that backend for Leiden.
+
+Changing an environment YAML changes its Snakemake environment hash. The next run therefore
+creates a new managed environment automatically. If you created a named environment manually,
+update or recreate it from the current YAML.
+
 
 `>=` bounds are reproducible enough for day-to-day use but not for archival reproducibility (a future solver may pick newer, potentially breaking versions). For a publication release, we recommend to generate and share the **exact** locks from the environments you actually tested, as below.
 

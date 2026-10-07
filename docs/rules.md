@@ -25,6 +25,14 @@ consume pre-existing contract h5ads directly.
     launching the rest of the run. The contract builders (`prepare_input_*`) pick those
     GeoJSONs up automatically (and fall back to `Unlabeled` regions if none are present).
 
+### Shared region validation
+
+#### `process_geojson` *(optional)*
+Validates each discovered region GeoJSON before a HeadBlock joins it to the contract. Empty
+files, missing QuPath classifications, and unusable geometries fail early; the source GeoJSON
+is never modified. This rule does not run in `mode: decoupled`, where region labels must
+already be present in the contract.
+
 ### Visium HD
 
 Included only when `mode: visiumhd`. Produces the standardized contract h5ad.
@@ -91,7 +99,7 @@ Reads the `morphology_focus` channels from the zarr at a configurable pyramid le
 Analogous to `generate_qupath_x5k`, and sharing its name-aware channel colouring. This is the **default annotation image** and is always produced. The GeoJSON files follow the naming convention `{sample}_morphology.geojson` (read from `config["geojson_path"]`).
 
 #### Atera: `generate_qupath_he_ate` *(optional)*
-Included only when `atera.he_image` and `atera.he_alignment` are both set. Reads the registered H&E at a configurable pyramid level (the full-resolution image is tens of GB and never enters the zarr) and writes a second QuPath TIFF, so regions may be drawn on histology instead of fluorescence. GeoJSONs from this image follow the naming convention `{sample}_he.geojson`.
+Included only when `atera.he_image` and `atera.he_alignment` are both set. Reads the registered H&E at a configurable pyramid level (the full-resolution image is tens of GB and never enters the zarr) and writes a second QuPath TIFF, so regions may be drawn on histology instead of fluorescence. GeoJSONs from this image follow the naming convention `{sample}_he_background.geojson`.
 It also composes the QuPath-pixel → micron transform from the 10x 3×3 alignment matrix and stores it in the scale-factor JSON, and resamples the H&E onto the morphology pixel grid to produce the contract background image. That resampling is required: `sc.pl.spatial` positions cells with a single scalar factor and no rotation, while the H&E and morphology frames differ by roughly 90°.
 
 !!! tip "Supply the keypoints file"
@@ -99,7 +107,7 @@ It also composes the QuPath-pixel → micron transform from the 10x 3×3 alignme
 
 #### Atera: `prepare_input_ate`
 Takes the zarr and the QuPath GeoJSON, and writes the **unfiltered contract h5ad** for the CoreBlocks. Analogous to `prepare_input_x5k`.
-It accepts a GeoJSON drawn on *either* annotation image, preferring `{sample}_he.geojson` when both exist and applying the matching transform. The embedded background likewise prefers the registered H&E, which is more informative histologically, and falls back to the channel-agnostic greyscale morphology composite whenever no H&E is configured.
+It accepts a GeoJSON drawn on *either* annotation image, preferring `{sample}_he_background.geojson` when both exist and applying the matching transform. The embedded background likewise prefers the registered H&E, which is more informative histologically, and falls back to the channel-agnostic greyscale morphology composite whenever no H&E is configured.
 
 ---
 
@@ -116,19 +124,19 @@ The first CoreBlock includes rules from data preparation to clustering.
 #### `validate_input`
 The **most important rule** of the pipeline: performs contract-format validation.
 
-Confirms that the contract for each sample in `config/core_samples.tsv` is well-formed (loads as AnnData; >0 cells/genes; non-negative integer raw counts; finite `obsm["spatial"]`; `sample` in obs; unique names; well-formed `uns["spatial"]` if present).
+Confirms that the contract for each sample in `config/core_samples.tsv` is well-formed (loads as AnnData; >0 cells/genes; non-negative integer raw counts; finite `obsm["spatial"]`; `sample` in obs; unique names; well-formed `uns["spatial"]` if present). When external annotation is enabled, it also validates the configured source column and its barcode overlap with `obs_names`.
 It supports two modes: requiring region annotations (hard) or not (soft). Hard failures prevent the DAG from advancing. Soft issues (missing region annotation, no mito genes, no image) are logged into `validation/input_validation.json` and are not fatal.
 
 #### `qc_sweep` *(optional; target `qc_sweep_all`)*
 Optional rule that provides diagnostic information about QC before committing to downstream analyses. It never filters, clusters, or writes an h5ad.
 The output shows *where on the tissue* each candidate QC threshold would remove cells, before any filter is committed.
 It includes joint scatter, violin, and spatial **plots** plus a **summary TSV** showing how the cut-offs would affect each sample.
-Automatic annotation from an externally annotated dataset (see `ingest_ref`) is optional, shown side-by-side with the spatial output.
+Automatic `scanpy.ingest` annotation from an externally annotated dataset (see `ingest_ref`) is optional, shown side-by-side with the spatial output.
 
 #### `preprocess_umap`
 The **core preprocessing step**, technology-agnostic.
 
-Reads the validated contract, applies QC filters (shared or per sample) — or, with external annotation, masks to the externally-annotated cells; normalises + log1p (keeping a raw-counts layer), runs PCA → neighbours → UMAP → multi-resolution Leiden, and stamps core-sheet metadata into `obs`.
+Reads the validated contract, applies QC filters (shared or per sample), normalises + log1p (keeping a raw-counts layer), runs PCA → neighbours → UMAP → multi-resolution Leiden, and stamps core-sheet metadata into `obs`. When external annotation is enabled with `keep_unannotated: false`, it instead keeps externally labelled cells and skips the ordinary QC thresholds because those labels define the cell set.
 Writes `adata_{sample}.h5ad`, `metadata_{sample}.tsv`, and a per-sample `{sample}_report.tsv` (cells before/after, per-feature min/max, applied cut-offs).
 
 #### `leiden_analysis`
@@ -145,6 +153,10 @@ Automatic annotation via `scanpy.ingest()` from an annotated scRNA-seq reference
 
 #### `spatial_niches` *(optional)*
 Runs BANKSY across concatenated samples to identify shared spatial niches.
+The default uses 18 physical neighbours to build BANKSY features, then a separate
+50-neighbour graph in Harmony-corrected BANKSY PCA space. Leiden uses igraph at resolution
+0.1 until convergence. These controls remain configurable under `spatial_niches` because
+larger datasets may require different memory, runtime, or niche granularity.
 Produces per-sample niche TSVs (barcode → niche), a concatenated h5ad, and spatial plots for each niche.
 
 ---
@@ -156,11 +168,12 @@ This second CoreBlock includes rules from sample annotation to integration and d
 #### `annotate_cells`
 Adds cell-type annotations from a manually curated TSV (cluster → cell type), or from an external annotation TSV (barcode → cell type).
 Writes `adata_{sample}_annotated.h5ad` plus annotation plots and composition barplots. The output records which annotation columns contain real labels; placeholder-only columns such as an all-`Unannotated` `cell_type_tsv` are retained for compatibility but are not treated as available annotations. The external source column configured by `external_annotation.column` may have any name and is copied to the canonical `cell_type_external` column. It can come from `metadata_{sample}.tsv` or, in decoupled mode without external metadata, directly from the contract h5ad's `obs`. When `keep_unannotated: true`, mixed real and `Unannotated` labels remain active and the unannotated cells are retained in overview and composition plots.
+A manual `cluster_annotations` TSV is therefore not required for an external-only run.
 
 #### `integrate_samples`
-Concatenates all annotated samples, runs Harmony batch correction on the specified variable (`integration.integrate_key`), geosketch subsampling, and composition barplots.
+Concatenates all annotated samples, runs Harmony batch correction on the specified variable (`integration.integrate_key`), geosketch subsampling, and composition barplots. It uses seeded, undirected igraph Leiden with two iterations for the uncorrected, Harmony, and sketch-derived clusters.
 
-Writes `concatenated.h5ad`, `harmony_integrated.h5ad`, and `sketched.h5ad`. This is the input to pseudobulk, subclustering (CoreBlock 2), and gene exploration (CoreBlock 3).
+Writes `concatenated.h5ad`, `harmony_integrated.h5ad`, and `sketched.h5ad`. The latter contains the full dataset after sketch-derived cluster labels are projected back with `ingest`; it is not only the sketch subset. These objects feed pseudobulk, subclustering (CoreBlock 2), and gene exploration (CoreBlock 3).
 
 #### `pseudobulk_aggregate`
 Builds raw-count pseudobulk matrices via [decoupler](https://decoupler.readthedocs.io/en/latest/) from the integrated object. Named analyses in `analysis.pseudobulk.analyses` choose one of four aggregations: all cells per sample, per cell type, per region, or per cell type and region. Sample metadata from `core_samples.tsv` are preserved for downstream models, and configured levels are excluded consistently before aggregation and testing.
@@ -174,7 +187,16 @@ Differential expression runs only for tests requested in the named analysis:
 
 - explicit pairwise Wald contrasts, with optional categorical covariates;
 - paired Wald contrasts using `paired_by: sample`, retaining complete pairs;
-- and an optional omnibus likelihood-ratio test (LRT) across sufficiently replicated, non-excluded levels, with DEGpatterns gene-group clustering when enough genes are significant.
+- optional one-vs-rest Wald tests for level-specific biomarkers when at least three eligible levels remain;
+- and an optional omnibus likelihood-ratio test (LRT) when at least three eligible levels remain after exclusion, replication, and pairing filters, with DEGpatterns gene-group clustering when enough genes are significant.
+
+If fewer than three eligible levels remain for a subgroup or cell type, LRT and DEGpatterns
+are skipped, the reason is recorded in the rule log and `LRT/SKIPPED_insufficient.txt`, and
+configured pairwise contrasts continue normally.
+
+One-vs-rest tests use the configured covariates and pairing. For every eligible level they
+write a result table, volcano plot, and heatmaps under `one_vs_rest/`, plus tables, a barplot,
+and a heatmap summarizing genes uniquely upregulated in one level-versus-rest comparison.
 
 Multiple `group_by` columns create a combined categorical group for comparisons such as drug versus vehicle within one phenotype. Produces TSV tables, volcano plots, and metadata-annotated heatmaps between configured groups. Note that SpaceBlocks does not currently support fitting statistical interactions.
 
@@ -184,7 +206,7 @@ Runs squidpy neighbourhood enrichment per sample and per `region`, plus per-regi
 #### `subcluster` *(optional)*
 Re-clustering of the specified subcompartment(s) (a config-specified subset of cell types) for cell-subtype exploration.
 
-Generates integrated (Harmony) and unintegrated results, with UMAPs coloured by `region`, spatial niche, and external metadata columns, marker tables, and composition barplots.
+Generates integrated (Harmony) and unintegrated results, using seeded, undirected igraph Leiden with two iterations at each configured resolution. Outputs include UMAPs coloured by `region`, spatial niche, and external metadata columns, marker tables, and composition barplots.
 
 #### `sample_report`
 Assembles a compact, multi-page PDF with graphical outputs per sample, ideal to share with internal and external collaborators.

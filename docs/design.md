@@ -35,19 +35,24 @@ SpaceBlocks/
   mode: atera         convert_zarr_ate      → generate_qupath_ate  → prepare_input_ate
     (alpha)                                 ↘ generate_qupath_he_ate (opt.) ↗
   mode: merscope                            → generate_qupath_mer  → prepare_input_mer
+  optional GeoJSON    process_geojson → prepare_input_* (HeadBlock modes only)
   mode: decoupled     (no HeadBlock — you provide the contract h5ads)
         │  ‖ COREBLOCK INPUT POINT (validate_input): contract h5ad structure validation
         ▼  each HeadBlock writes the unfiltered contract h5ad; although these can also be prepared manually (mode: decoupled)
 ── CoreBlock (technology-agnostic) ──────────────────────────────────────────────
   STEP 1 · preprocessing
-    validate_input → [qc_sweep] → preprocess_umap → leiden_analysis
-                                 → generate_annotation_template
-                                 → ingest_ref (opt.) → spatial_niches (opt.)
+    validate_input ─┬→ qc_sweep (opt.)
+                    └→ preprocess_umap ─┬→ leiden_analysis
+                                        ├→ generate_annotation_template
+                                        ├→ ingest_ref (opt.)
+                                        └→ spatial_niches (opt.; joint across samples)
   STEP 2 · postprocessing
-    annotate_cells → integrate_samples → pseudobulk_aggregate → pseudobulk_de
-                   → neighbourhood_analysis → subcluster → sample_report
+    annotate_cells ─┬→ integrate_samples ─┬→ pseudobulk_aggregate → pseudobulk_de
+                    │                     └→ subcluster (opt.)
+                    ├→ neighbourhood_analysis
+                    └→ sample_report
   STEP 3 · exploration
-    explore_genes_integrated → explore_genes_sample
+    integrate_samples → explore_genes_integrated → explore_genes_sample
 ```
 
 See the [Rule reference](rules.md) for a one-paragraph description of every rule.
@@ -58,17 +63,20 @@ The point where the HeadBlocks meet the CoreBlocks is the `validate_input` rule.
 
 It is a single coupling point with one h5ad per sample. Every HeadBlock produces the same contract file structure, so the CoreBlock is identical for all technologies:
 
-- **Path** — one config key (`contract.unfiltered_h5ad`, derived in the Snakefile), *written* by
-  the active HeadBlock's `prepare_input_*` and *read* by `validate_input`, `qc_sweep`, and
-  `preprocess_umap`, so producer and consumers can never drift.
+- **Path** — one config key (`contract.unfiltered_h5ad`, derived in the Snakefile) is read by
+  `validate_input`, `qc_sweep`, and `preprocess_umap`. In HeadBlock modes it points to the
+  nested output written by `prepare_input_*`; in decoupled mode it resolves to
+  `contract_dir/{sample}.h5ad`.
 - **Shape of AnnData object:**
   - `X` — raw integer counts (no filtering, no normalisation).
   - `obsm["spatial"]` — per-cell `(x, y)` centroids, finite.
   - `uns["spatial"][sample]` — `{images: {hires}, scalefactors}` when a tissue/morphology image
     exists; omitted otherwise (the CoreBlock then scatters on coordinates).
-  - `obs` — `sample` (required); `region_annotation` when a GeoJSON was provided; and
-    `cell_id` (optional but strongly recommended, and **must equal `obs_names`** to prevent
-    unexpected behaviour, since downstream joins key on it — `validate_input` warns otherwise).
+  - `obs` — `sample` (required); optional `region_annotation`; optional external-annotation
+    columns; and `cell_id` (optional but strongly recommended, and **must equal
+    `obs_names`** to prevent unexpected behaviour, since downstream joins key on it —
+    `validate_input` warns otherwise). HeadBlocks create `region_annotation` from an optional
+    GeoJSON. Decoupled contracts must carry any region or direct external labels themselves.
 - **The image is a HeadBlock concern.** The CoreBlock never rebuilds an image — it consumes the
   embedded `uns["spatial"]` image when present and otherwise scatters on `obsm["spatial"]`.
 
@@ -82,8 +90,8 @@ For what every file is and why it is useful, see [Outputs](outputs.md); the tree
 ```
 {post_processing_outdir}/
 ├── Samples/{sample}/
-│   ├── {sample}_unfiltered.h5ad                 CONTRACT H5AD (from HeadBlocks: prepare_input_{vhd,x5k})
-│   ├── QuPath_image/…                            generate_qupath_{vhd,x5k}
+│   ├── {sample}_unfiltered.h5ad                 CONTRACT H5AD (HeadBlock modes only)
+│   ├── QuPath_image/…                            generate_qupath_* (HeadBlock modes only)
 │   ├── validation/input_validation.json         validate_input
 │   ├── qc_sweep/                                 qc_sweep (optional)
 │   ├── adata_{sample}.h5ad, metadata_{sample}.tsv, {sample}_report.tsv   preprocess_umap
@@ -98,16 +106,26 @@ For what every file is and why it is useful, see [Outputs](outputs.md); the tree
 └── cluster_annotations_template.tsv              generate_annotation_template
 ```
 
+Decoupled source contracts remain under `contract_dir`; the workflow does not copy them into
+this output tree.
+
 ## Key design decisions
 
 - **HeadBlock/CoreBlock split.** A technology-specific set of rules (HeadBlock) produces a standardized unfiltered AnnData file (contract); the common CoreBlocks consume it for the analyses. Inclusion of new platform/s only requires the development of a new HeadBlock, and the CoreBlock does not need to be changed, unless it has to be expanded.
 - **`validate_input` is a DAG gate.** The division is ensured by a validation rule, which can pass or produce a hard/soft failure.
   - A `.json` is written if the contract structure is validated.
   - A hard failure prevents the `.json` from being written, and thus the CoreBlock from running.
-  - Soft issues (missing region annotation, no mito genes, no image) are recorded, but do not necessarily prevent CoreBlocks from running (the config file has a parameter for soft-passing).
-- **Coherent naming.** Head rules carry a 3-letter technology code (`_vhd`, `_x5k`) so the organization is easy to follow and heads can coexist.
+  - Soft issues (missing region annotation, no mito genes, no image) are recorded. Missing
+    regions become a hard failure only when `contract.require_region: true`.
+- **Coherent naming.** Head rules carry a 3-letter technology code (`_vhd`, `_x5k`, `_ate`, `_mer`) so the organization is easy to follow and heads can coexist.
 - **`qc_sweep` rule is diagnostic only** — it never filters, clusters, or writes an h5ad.
-- **External annotation takes over.** When enabled, it becomes the primary annotation everywhere. The [Configuration](configuration.md) allows flexibility to retain all cells or remove externally unannotated ones.
+- **Region ownership follows the input mode.** HeadBlocks validate and join optional GeoJSONs;
+  decoupled contracts arrive with `region_annotation` already attached or run without
+  region-dependent analyses.
+- **External annotation takes over.** When enabled, it becomes the primary annotation
+  everywhere. Labels come from per-sample metadata or, for decoupled contracts, directly from
+  `obs`. Keeping unannotated cells preserves the normal QC path; removing them makes the
+  external labels define the preprocessing cell set.
 - **Config-driven colours** — regions, sample metadata, and cell types are applied consistently across every plot, with a grey fallback for undefined levels. This allows precise and consistent colour representations throughout the analyses.
 - **Retries scale memory.** `mem_mb` grows with the attempt number, so an OOM-killed job is resubmitted with more RAM.
 
@@ -130,7 +148,7 @@ If you wished to write a new HeadBlock:
 - Add the mode in the `Snakefile` parameter `KNOWN_HEADS`.
 - Create a `demo/` (public data download, GeoJSON region annotations, short documentation) with a prepared config example and instructions for reproducibility with a test run.
 - Include the documentation in the `demos.md`.
-- Create a Pull Request to the `development` branch. We will revise it promptly.
+- Create a Pull Request to the `dev` branch. We will revise it promptly.
 
 ### Extending the CoreBlocks
 
