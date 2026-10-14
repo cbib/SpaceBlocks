@@ -9,9 +9,9 @@
 # options are trimmed here — add Rep2/Rep3 as extra core_samples rows to enable them.
 mode: merscope
 
-post_processing_outdir: /scratch/CBiB/soterino/demos/merscope/results
-logdir: /scratch/CBiB/soterino/demos/merscope/logs
-spaceranger_processing_outdir: /scratch/CBiB/soterino/demos/merscope/_unused
+post_processing_outdir: demos/merscope/results
+logdir: demos/merscope/logs
+spaceranger_processing_outdir: demos/merscope/_unused
 geojson_path: demos/merscope/geojson            # optional: {sample}_morphology.geojson
 contract_dir: ''                                # '' → contracts under results/Samples/
 random_seed: 0
@@ -21,7 +21,7 @@ core_samples: demos/merscope/core_samples.tsv
 
 # ── MERSCOPE head ────────────────────────────────────────────────────────────
 merscope:
-  merscope_dir: /scratch/CBiB/soterino/demos/merscope/data/{sample}   # region dir per sample
+  merscope_dir: demos/merscope/data/{sample}   # region dir per sample
   z_index: 3                     # mosaic z-plane (DAPI/PolyT always present); set to a
                                  # plane your download actually ships if z3 is absent
   hires_pixel_size_um: 1.0       # target µm/px of the QuPath + embedded background image

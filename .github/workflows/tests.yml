@@ -37,7 +37,7 @@ jobs:
           python-version: "3.12"
       - name: Install validation dependencies
         run: pip install snakemake pandas jsonschema
-        # Pin to the committed .tests fixture so editing the shipped default config
+        # Pin to the committed .test fixture so editing the shipped default config
         # (or an example config pointing at generated paths) cannot break CI.
       - name: Lint workflow
         run: snakemake -s workflow/Snakefile -d .test --lint --workflow-profile none
