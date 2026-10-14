@@ -14,9 +14,9 @@
 # meaningfully — see demos/xenium5k/xenium5k_config.yaml for a config that does.
 mode: atera
 
-post_processing_outdir: /scratch/CBiB/soterino/demos/atera/results
-logdir: /scratch/CBiB/soterino/demos/atera/logs
-spaceranger_processing_outdir: /scratch/CBiB/soterino/demos/atera/zarr
+post_processing_outdir: demos/atera/results
+logdir: demos/atera/logs
+spaceranger_processing_outdir: demos/atera/zarr
 geojson_path: demos/atera/geojson
 random_seed: 0
 
@@ -52,7 +52,7 @@ external_annotation:
 atera:
   # The preview ships as ONE sample, so atera_dir carries no {sample} placeholder.
   # For a real multi-sample run use a pattern, e.g. /path/to/atera/{sample}/outs.
-  atera_dir: /scratch/CBiB/soterino/atera/outs
+  atera_dir: demos/atera/data/outs
   # Level 2 = 0.85 um/px. Both QuPath images (fluorescence composite and registered
   # H&E) are exported on this morphology grid, so they overlay exactly and share one
   # pixel->micron scalar. Level 3 halves the resolution and the file size.
@@ -61,13 +61,13 @@ atera:
   pixel_size_um: 0.2125             # experiment.xenium: pixel_size
 
   # OPTIONAL registered H&E. These three files are SUPPLEMENTAL downloads that sit
-  # next to outs/, not inside it, so they are given as absolute {sample} patterns.
+  # next to outs/, not inside it, so they use repository-relative {sample} patterns.
   # Setting he_image + he_alignment adds a second QuPath annotation image AND makes
   # the H&E the embedded contract background (resampled onto the morphology grid).
   # Leave both empty to annotate the fluorescence composite instead.
-  he_image: /scratch/CBiB/soterino/atera/{sample}_he_image.ome.tif
-  he_alignment: /scratch/CBiB/soterino/atera/{sample}_he_alignment.csv
-  he_keypoints: /scratch/CBiB/soterino/atera/{sample}_keypoints.csv
+  he_image: demos/atera/data/{sample}_he_image.ome.tif
+  he_alignment: demos/atera/data/{sample}_he_alignment.csv
+  he_keypoints: demos/atera/data/{sample}_keypoints.csv
   # Source level for the H&E warp. Level 2 = 1.10 um/px, fine enough to feed the
   # 0.85 um/px morphology grid above with only ~1.3x upsampling. Raising this makes the
   # warped image soft; the rule warns when it has to upsample by more than 5%.

@@ -2,17 +2,17 @@
 # Build the contracts first (demos/xenium5k/format_xenium*.py),
 # then point the Snakefile at this file. Resources are deliberately low (tiny test).
 mode: decoupled
-post_processing_outdir: /scratch/CBiB/soterino/demos/xenium5k/results
-logdir: /scratch/CBiB/soterino/demos/xenium5k/logs
-spaceranger_processing_outdir: /scratch/CBiB/soterino/demos/xenium5k/_unused
-geojson_path: /scratch/CBiB/soterino/demos/xenium5k/_unused
+post_processing_outdir: demos/xenium5k/results
+logdir: demos/xenium5k/logs
+spaceranger_processing_outdir: demos/xenium5k/_unused
+geojson_path: demos/xenium5k/_unused
 contract_dir: demos/xenium5k/contracts
 random_seed: 0
 use_precomputed_clusters: true
 precomputed_metadata_dir: 'demos/xenium5k/metadata'
 core_samples: demos/xenium5k/contracts/core_samples.tsv
 xenium5k:
-  xenium_dir: /scratch/CBiB/soterino/demos/xenium5k/results/{sample}
+  xenium_dir: demos/xenium5k/data/{sample}
   qupath_pyramid_level: 3
   hires_pyramid_level: 3
   pixel_size_um: 0.2125
@@ -85,7 +85,7 @@ external_annotation:
   enabled: false
   column: manual_celltype
   keep_unannotated: true
-ingest_ref: '/scratch/CBiB/soterino/ingest_ref_data/bcc_and_normal_Garnier_PNAS_2024.h5ad'   # optional: annotated reference h5ad for scanpy ingest. For this skin/melanoma
+ingest_ref: 'demos/xenium5k/data/bcc_and_normal_Garnier_PNAS_2024.h5ad'   # optional: annotated reference h5ad for scanpy ingest. For this skin/melanoma
                  # example, download one from https://spatial-skin-atlas.cellgeni.sanger.ac.uk/
                  # and set ingest_ref_label_key to its cell-type column.
 ingest_ref_label_key: 04_celltypes
