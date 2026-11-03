@@ -122,9 +122,8 @@ Full, searchable documentation lives at **https://cbib.github.io/SpaceBlocks/**:
 
 If you use SpaceBlocks in your research, please cite:
 
-> _Authors. SpaceBlocks: \<title\>. \<preprint / journal\>, \<year\>. \<DOI\>_
-
-<!-- A BibTeX entry and a Zenodo DOI badge will be added on the first release. -->
+> Oterino-Sogo, S., Mechkouri, N., García-Ruano, D., Groppi, A., Rezvani, H.R., Nikoslki, M. (2026). SpaceBlocks: an expert-supervised workflow for cohort-level spatial transcriptomics analysis. bioRxiv.
+> https://www.biorxiv.org/content/10.64898/2026.10.30.763100v1
 
 ## Contributing
 
@@ -133,3 +132,5 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the arc
 ## License
 
 Released under the MIT License — see [LICENSE](LICENSE.md).
+
+Authors would like to thank Khurasan Studio for granting them full permission of use for their Pavelt font for the SpaceBlocks logo.
